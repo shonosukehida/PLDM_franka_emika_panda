@@ -55,5 +55,32 @@ number of l1 predictor params: 793600
 number of l1 backbone params: 1426096
 compiling model
 compilation finished after 1.100s
-Epoch:   0%|          | 0/3 [00:00<?, ?it/s]
-Loss: 1.0922, train: 0.042s, data: 0.058s, log: 0.001s:  57%|█████▋    | 27490/48000 [46:27<34:11, 10.00it/s]  
+Loss: 1.1259, train: 0.042s, data: 0.058s, log: 0.001s:  58%|█████▊    | 27837/48000 [47:01<34:04,  9.86it/s]
+Epoch:   0%|          | 0/3 [47:01<?, ?it/s]og: 0.001s:  58%|█████▊    | 27837/48000 [47:01<33:59,  9.89it/s]  
+Traceback (most recent call last):
+  File "/home/hida/PLDM/pldm/train.py", line 573, in <module>
+    main(cfg)
+  File "/home/hida/PLDM/pldm/train.py", line 565, in main
+    trainer.train()
+  File "/home/hida/PLDM/pldm/train.py", line 347, in train
+    for step, batch in (
+  File "/home/hida/PLDM/.venv/lib/python3.11/site-packages/tqdm/std.py", line 1181, in __iter__
+    for obj in iterable:
+  File "/home/hida/PLDM/pldm/data/utils.py", line 100, in __iter__
+    for batch in self.dataloader:
+  File "/home/hida/PLDM/.venv/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 708, in __next__
+    data = self._next_data()
+           ^^^^^^^^^^^^^^^^^
+  File "/home/hida/PLDM/.venv/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 764, in _next_data
+    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hida/PLDM/.venv/lib/python3.11/site-packages/torch/utils/data/_utils/fetch.py", line 52, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hida/PLDM/.venv/lib/python3.11/site-packages/torch/utils/data/_utils/fetch.py", line 52, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+            ~~~~~~~~~~~~^^^^^
+  File "/home/hida/PLDM/pldm_envs/wall/data/offline_wall.py", line 112, in __getitem__
+    ).to(self.device)
+      ^^^^^^^^^^^^^^^
+KeyboardInterrupt
