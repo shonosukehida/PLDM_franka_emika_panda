@@ -56,4 +56,4 @@ number of l1 backbone params: 1426096
 compiling model
 compilation finished after 1.100s
 Epoch:   0%|          | 0/3 [00:00<?, ?it/s]
-Loss: 1.2298, train: 0.043s, data: 0.058s, log: 0.001s:  54%|█████▍    | 26097/48000 [44:06<37:17,  9.79it/s]  
+Loss: 1.1892, train: 0.048s, data: 0.055s, log: 0.001s:  55%|█████▍    | 26189/48000 [44:16<38:26,  9.46it/s]  
