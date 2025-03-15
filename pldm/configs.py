@@ -6,6 +6,7 @@ from typing import Any, Iterable, Tuple, Union, cast, List
 
 from omegaconf import OmegaConf
 
+
 DataClass = Any
 DataClassType = Any
 
@@ -215,18 +216,9 @@ class DataclassArgParser(argparse.ArgumentParser):
 
 def omegaconf_parse(cls):
     parser = argparse.ArgumentParser(fromfile_prefix_chars="@")
-    parser.add_argument(
-        "--configs",
-        nargs="*",
-        default=[],
-        help="Configs to load",
-    )
-    parser.add_argument(
-        "--values",
-        nargs="*",
-        default=[],
-        help="Dot values to change configs",
-    )
+    parser.add_argument("--configs", nargs="*", default=[], help="Configs to load",)
+    parser.add_argument("--values", nargs="*", default=[], help="Dot values to change configs",)
+    parser.add_argument("--device", type=int, default=2)
     args, _unknown = parser.parse_known_args()
 
     return omegaconf_parse_files_vals(cls, args.configs, args.values)

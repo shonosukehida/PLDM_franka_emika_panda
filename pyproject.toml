@@ -12,7 +12,21 @@ requires-python = ">=3.8"
 dynamic = ["description"]
 packages = ["pldm", "pldm_envs"]
 dependencies = [
+    "arm-pytorch-utilities>=0.4.3",
+    "d4rl>=1.1",
+    "editdistance>=0.8.1",
+    "gdown>=5.2.0",
+    "gym<0.25.0",
+    "gymnasium>=1.1.1",
+    "ipython>=8.12.3",
+    "numpy>=1.24.4",
+    "omegaconf>=2.3.0",
+    "statsmodels>=0.14.1",
     "torch>=2.5.1",
+    "torchvision>=0.20.1",
+    "tqdm>=4.67.1",
+    "wandb>=0.19.8",
+    "zarr>=2.16.1",
 ]
 
 [tool.ruff]

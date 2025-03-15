@@ -54,6 +54,7 @@ class Logger:
         if self.wandb_enabled:
             assert project is not None, "wandb requires project name"
             wandb.init(
+                entity='shonosukehida',
                 project=project,
                 name=name,
                 group=group,

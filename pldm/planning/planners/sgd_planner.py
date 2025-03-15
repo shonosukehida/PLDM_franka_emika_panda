@@ -25,6 +25,7 @@ class SGDPlanner(Planner):
                 taking loss against objective
         """
         super().__init__()
+        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
         self.config = config
         self.model = model
         self.normalizer = normalizer
@@ -57,12 +58,12 @@ class SGDPlanner(Planner):
         batch_size = current_state.shape[0]
 
         if not repr_input:
-            current_state = self.model.backbone(current_state.cuda()).encodings
+            current_state = self.model.backbone(current_state.to(self.device)).encodings
 
         actions = torch.zeros(
             (batch_size, plan_size, self.action_dim),
             requires_grad=True,
-            device=torch.device("cuda"),
+            device=torch.device("cuda:2"),
         )
 
         if curr_propio_pos is not None:

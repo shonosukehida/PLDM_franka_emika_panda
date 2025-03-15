@@ -1,5 +1,5 @@
 from typing import NamedTuple, List, Any, Optional, Dict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import itertools
 import os
 
@@ -34,9 +34,9 @@ class ProbeTargetConfig(ConfigBase):
 class ProbingConfig(ConfigBase):
     probe_targets: str = "locations"
     l2_probe_targets: str = "locations"
-    locations: ProbeTargetConfig = ProbeTargetConfig()
-    propio_pos: ProbeTargetConfig = ProbeTargetConfig()
-    propio_vel: ProbeTargetConfig = ProbeTargetConfig()
+    locations: ProbeTargetConfig = field(default_factory=ProbeTargetConfig)
+    propio_pos: ProbeTargetConfig = field(default_factory=ProbeTargetConfig)
+    propio_vel: ProbeTargetConfig = field(default_factory=ProbeTargetConfig)
     full_finetune: bool = False
     lr: float = 1e-3
     epochs: int = 3
@@ -96,6 +96,7 @@ class ProbingEvaluator:
         config: ProbingConfig = default_config,
         quick_debug: bool = False,
     ):
+        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
         self.config = config
         self.model = model
         self.quick_debug = quick_debug
@@ -218,7 +219,7 @@ class ProbingEvaluator:
                 arch_subclass=probe_target_cfg.subclass,
             )
 
-            probers[probe_target] = prober.cuda()
+            probers[probe_target] = prober.to(self.device)
 
             # load prober logic
             ckpt_path = self._infer_prober_path(
@@ -270,8 +271,8 @@ class ProbingEvaluator:
         for epoch in tqdm(range(epochs), desc=f"Probe {level} prediction epochs"):
             for batch in tqdm(dataset, desc="Probe prediction step"):
                 # put time first
-                states = batch.states.cuda().transpose(0, 1)
-                actions = batch.actions.cuda().transpose(0, 1)
+                states = batch.states.to(self.device).transpose(0, 1)
+                actions = batch.actions.to(self.device).transpose(0, 1)
                 optional_fields = get_optional_fields(batch, device=states.device)
 
                 with self._context_manager():
@@ -295,7 +296,7 @@ class ProbingEvaluator:
                     if not config.full_finetune:
                         pred_encs = pred_encs.detach()
 
-                    target = getattr(batch, probe_target).cuda()
+                    target = getattr(batch, probe_target).to(self.device)
                     target = target[:, :: model.subsampling_ratio()]
 
                     if (
@@ -321,7 +322,7 @@ class ProbingEvaluator:
                             sampled_target_locs[i, :] = target[i, indices]
 
                         pred_encs = sampled_pred_encs
-                        target = sampled_target_locs.cuda()
+                        target = sampled_target_locs.to(self.device)
 
                     pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
 
@@ -412,9 +413,9 @@ class ProbingEvaluator:
 
         for idx, batch in enumerate(tqdm(val_ds, desc="Eval probe pred")):
             # put time first
-            states = batch.states.cuda().transpose(0, 1)
+            states = batch.states.to(self.device).transpose(0, 1)
 
-            actions = batch.actions.cuda().transpose(0, 1)
+            actions = batch.actions.to(self.device).transpose(0, 1)
 
             optional_fields = get_optional_fields(batch, device=states.device)
 
@@ -431,7 +432,7 @@ class ProbingEvaluator:
 
                 encs = self._get_enc_output_for_attr(enc_output, probe_target)
 
-                target = getattr(batch, probe_target).cuda()
+                target = getattr(batch, probe_target).to(self.device)
                 target = target[:, :: model.subsampling_ratio()]
 
                 pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
@@ -544,7 +545,7 @@ class ProbingEvaluator:
                 input_dim=jepa.spatial_repr_dim,
                 arch_subclass=probe_target_cfg.subclass,
             )
-            probers[probe_target] = prober.cuda()
+            probers[probe_target] = prober.to(self.device)
 
         all_parameters = []
         for probe_target, prober in probers.items():
@@ -582,8 +583,8 @@ class ProbingEvaluator:
 
         for epoch in tqdm(range(config.epochs_enc), desc="Eval enc"):
             for batch in dataset:
-                states = batch.states.cuda().transpose(0, 1)
-                actions = batch.actions.cuda().transpose(0, 1)
+                states = batch.states.to(self.device).transpose(0, 1)
+                actions = batch.actions.to(self.device).transpose(0, 1)
 
                 optional_fields = get_optional_fields(batch, device=states.device)
 
@@ -596,7 +597,7 @@ class ProbingEvaluator:
 
                 losses_list = []
                 for probe_target, prober in probers.items():
-                    target = getattr(batch, probe_target)[:, 0].cuda().float()
+                    target = getattr(batch, probe_target)[:, 0].to(self.device).float()
 
                     pred = prober(e)
 
@@ -645,8 +646,8 @@ class ProbingEvaluator:
             probing_losses[probe_target] = []
 
         for idx, batch in enumerate(val_dataset):
-            states = batch.states.cuda().transpose(0, 1)
-            actions = batch.actions.cuda().transpose(0, 1)
+            states = batch.states.to(self.device).transpose(0, 1)
+            actions = batch.actions.to(self.device).transpose(0, 1)
 
             optional_fields = get_optional_fields(batch, device=states.device)
 
@@ -657,7 +658,7 @@ class ProbingEvaluator:
             e = forward_result.backbone_output.encodings[0]
 
             for probe_target, prober in probers.items():
-                target = getattr(batch, probe_target)[:, 0].cuda().float()
+                target = getattr(batch, probe_target)[:, 0].to(self.device).float()
                 pred = prober(e)
 
                 losses = location_losses(pred, target)
@@ -698,9 +699,9 @@ class ProbingEvaluator:
         pixel_mapper=None,
     ):
         # infer
-        states = batch.states.cuda().transpose(0, 1)
+        states = batch.states.to(self.device).transpose(0, 1)
 
-        actions = batch.actions.cuda().transpose(0, 1)
+        actions = batch.actions.to(self.device).transpose(0, 1)
 
         optional_fields = get_optional_fields(batch, device=states.device)
 

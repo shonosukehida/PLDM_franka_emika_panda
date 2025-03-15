@@ -1,6 +1,6 @@
 from typing import Optional, NamedTuple
 from enum import Enum, auto
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pldm.configs import ConfigBase
 
 from pldm_envs.wall.data.offline_wall import OfflineWallDatasetConfig
@@ -37,13 +37,11 @@ class Datasets(NamedTuple):
 @dataclass
 class DataConfig(ConfigBase):
     dataset_type: DatasetType = DatasetType.Single
-    dot_config: DotDatasetConfig = DotDatasetConfig()
-    wall_config: WallDatasetConfig = WallDatasetConfig()
-    offline_wall_config: OfflineWallDatasetConfig = OfflineWallDatasetConfig()
-    wall_expert_config: WallExpertDatasetConfig = WallExpertDatasetConfig()
-
-    # if "AMD" not in torch.cuda.get_device_name(0):
-    d4rl_config: D4RLDatasetConfig = D4RLDatasetConfig()
+    dot_config: DotDatasetConfig = field(default_factory=DotDatasetConfig)
+    wall_config: WallDatasetConfig = field(default_factory=WallDatasetConfig)
+    offline_wall_config: OfflineWallDatasetConfig = field(default_factory=OfflineWallDatasetConfig)
+    wall_expert_config: WallExpertDatasetConfig = field(default_factory=WallExpertDatasetConfig)
+    d4rl_config: D4RLDatasetConfig = field(default_factory=D4RLDatasetConfig)
 
     normalize: bool = False
     min_max_normalize_state: bool = False

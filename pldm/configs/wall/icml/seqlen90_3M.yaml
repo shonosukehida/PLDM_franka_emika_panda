@@ -10,10 +10,10 @@ data:
   offline_wall_config:
     n_steps: *n_steps
     use_offline: true
-    offline_data_path: "/pldm_envs/wall/presaved_datasets/wall-visual-config_rand_expert_40-v0.npz"
+    offline_data_path: "/home/hida/PLDM/pldm_envs/wall/presaved_datasets/rendered/good_quality_data.npz"
     lazy_load: false
     batch_size: 64
-    device: cuda
+    device: cuda:2
     img_size: 65
     train: true
   wall_config:
@@ -115,7 +115,7 @@ objectives_l1:
     use_pred: false
 optimizer_type: Adam
 output_dir: test
-output_root: /pldm/checkpoints
+output_root: ./checkpoints
 eval_cfg:
   env_name: *env_name
   log_heatmap: false

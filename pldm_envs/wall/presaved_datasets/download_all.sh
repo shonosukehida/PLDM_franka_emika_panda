@@ -1,5 +1,5 @@
 # change if you need to
-OUTPUT_PATH=./presaved_datasets
+OUTPUT_PATH=.
 
 FILE_ID=1NwR-ui-akIgR2xcoJHYiHjOk9U5bYCa0
 gdown "https://drive.google.com/uc?id=${FILE_ID}" -O "${OUTPUT_PATH}/wall_data.tar.gz"

@@ -1,3 +1,6 @@
+# import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+
 import multiprocessing
 import warnings
 
@@ -6,7 +9,7 @@ warnings.filterwarnings("ignore", message="Ill-formed record")
 from typing import Optional
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import dataclasses
 import random
 import time
@@ -71,9 +74,9 @@ class TrainConfig(ConfigBase):
     optimizer_type: OptimizerType = OptimizerType.LARS
     optimizer_schedule: LRSchedule = LRSchedule.Cosine
 
-    data: DataConfig = DataConfig()
+    data: DataConfig = field(default_factory=DataConfig)
 
-    objectives_l1: ObjectivesConfig = ObjectivesConfig()
+    objectives_l1: ObjectivesConfig = field(default_factory=ObjectivesConfig)
 
     eval_at_beginning: bool = False
     eval_during_training: bool = False
@@ -81,12 +84,12 @@ class TrainConfig(ConfigBase):
     save_every_n_epochs: int = 5
     eval_every_n_epochs: int = 20
 
-    hjepa: HJEPAConfig = HJEPAConfig()
+    hjepa: HJEPAConfig = field(default_factory=HJEPAConfig)
 
     resume_if_possible: bool = True
     compile_model: bool = True
 
-    eval_cfg: EvalConfig = EvalConfig()
+    eval_cfg: EvalConfig = field(default_factory=EvalConfig)
 
     def __post_init__(self):
         if self.quick_debug:
@@ -153,6 +156,7 @@ class Trainer:
     def __init__(self, config: TrainConfig):
         self.config = config
 
+        print(f"Logger output path: {self.config.output_path}")
         Logger.run().initialize(
             output_path=self.config.output_path,
             wandb_enabled=self.config.wandb,
@@ -199,6 +203,8 @@ class Trainer:
             and bool(sample_data.propio_vel.shape[-1])
         )
 
+        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
+        
         # create model
         self.model = HJEPA(
             config.hjepa,
@@ -206,9 +212,9 @@ class Trainer:
             normalizer=self.ds.normalizer,
             use_propio_pos=use_propio_pos,
             use_propio_vel=use_propio_vel,
-        )
+        ).to(self.device)
 
-        self.model = self.model.cuda()
+        self.model = self.model.to(self.device)
 
         # create objectives
         self.objectives_l1 = self.config.objectives_l1.build_objectives_list(
@@ -274,7 +280,7 @@ class Trainer:
         if latest_checkpoint is None:
             return False
         print("resuming from", latest_checkpoint)
-        checkpoint = torch.load(latest_checkpoint)
+        checkpoint = torch.load(latest_checkpoint, map_location=self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.epoch = checkpoint["epoch"]
@@ -284,7 +290,7 @@ class Trainer:
 
     def maybe_load_model(self):
         if self.config.load_checkpoint_path is not None:
-            checkpoint = torch.load(self.config.load_checkpoint_path)
+            checkpoint = torch.load(self.config.load_checkpoint_path, map_location=self.device)
             state_dict = checkpoint["model_state_dict"]
             # remove "_orig_mod." prefix from the keys
             state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
@@ -358,8 +364,8 @@ class Trainer:
                     data_time = None
 
                 # move to cuda and swap batch and time
-                s = batch.states.cuda().transpose(0, 1)
-                a = batch.actions.cuda().transpose(0, 1)
+                s = batch.states.to(self.device).transpose(0, 1)
+                a = batch.actions.to(self.device).transpose(0, 1)
 
                 lr = scheduler.adjust_learning_rate(step)
 
@@ -370,7 +376,7 @@ class Trainer:
 
                 optional_fields = get_optional_fields(batch, device=s.device)
 
-                forward_result = self.model.forward_posterior(s, a, **optional_fields)
+                forward_result = self.model.forward_posterior(s.to(self.device), a.to(self.device), **optional_fields)
 
                 loss_infos = []
 
@@ -450,12 +456,12 @@ class Trainer:
 
         for step, batch in tqdm(enumerate(self.val_ds)):
             # move to cuda and swap batch and time
-            s = batch.states.cuda().transpose(0, 1)
-            a = batch.actions.cuda().transpose(0, 1)
+            s = batch.states.to(self.device).transpose(0, 1)
+            a = batch.actions.to(self.device).transpose(0, 1)
 
             optional_fields = get_optional_fields(batch, device=s.device)
 
-            forward_result = self.model.forward_posterior(s, a, **optional_fields)
+            forward_result = self.model.forward_posterior(s.to(self.device), a.to(self.device), **optional_fields)
 
             loss_infos = []
 

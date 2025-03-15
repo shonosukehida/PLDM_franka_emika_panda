@@ -111,6 +111,8 @@ class MPPIPlanner:
         device = next(model.parameters()).device
 
         latent_actions = l2 and model.config.predictor.z_dim > 0
+        
+        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
         self.model = model
         self.config = config
         self.dynamics = LearnedDynamics(
@@ -203,10 +205,10 @@ class MPPIPlanner:
                     raise ValueError("Need proprio states to plan")
 
                 backbone_output = self.model.backbone(
-                    current_state.cuda(), propio=curr_propio_states.cuda()
+                    current_state.to(self.device), propio=curr_propio_states.to(self.device)
                 )
             else:
-                backbone_output = self.model.backbone(current_state.cuda())
+                backbone_output = self.model.backbone(current_state.to(self.device))
 
             current_state = backbone_output.encodings
 

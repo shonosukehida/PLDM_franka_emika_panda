@@ -64,12 +64,13 @@ class IDMObjective(torch.nn.Module):
         super().__init__()
         self.config = config
         self.name_prefix = name_prefix
+        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
 
         if config.arch == "conv":
             input_dim = (repr_dim[0] * 2, *repr_dim[1:])
             self.action_predictor = build_conv(
                 CONV_LAYERS_CONFIG[config.arch_subclass], input_dim=input_dim
-            ).cuda()
+            ).to(self.device)
         else:
             if isinstance(repr_dim, tuple):
                 repr_dim = reduce(operator.mul, repr_dim)
@@ -77,7 +78,7 @@ class IDMObjective(torch.nn.Module):
                 arch=config.arch,
                 input_dim=repr_dim * 2,
                 output_shape=config.action_dim,
-            ).cuda()
+            ).to(self.device)
 
     def __call__(self, batch, results: List[ForwardResult]) -> IDMLossInfo:
         result = results[-1]

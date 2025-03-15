@@ -3,7 +3,7 @@ from pldm_envs.utils.normalizer import Normalizer
 from pldm.data.enums import DataConfig
 
 
-def get_optional_fields(data, device="cuda", transpose_TB=True):
+def get_optional_fields(data, device="cuda:2", transpose_TB=True):
     fields = [
         "propio_vel",
         "propio_pos",

@@ -1,7 +1,7 @@
 from pldm.configs import ConfigBase
 import torch
 from typing import Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import dataclasses
 
 from pldm.probing.evaluator import ProbingConfig, ProbingEvaluator
@@ -20,13 +20,13 @@ from pldm_envs.diverse_maze.utils import PixelMapper as D4RLPixelMapper
 @dataclass
 class EvalConfig(ConfigBase):
     env_name: str = MISSING
-    probing: ProbingConfig = ProbingConfig()
+    probing: ProbingConfig = field(default_factory=ProbingConfig)
     eval_l1: bool = True
     eval_l2: bool = False
     log_heatmap: bool = True
     disable_planning: bool = False
-    wall_planning: WallMPCConfig = WallMPCConfig()
-    d4rl_planning: D4RLMPCConfig = D4RLMPCConfig()
+    wall_planning: WallMPCConfig = field(default_factory=WallMPCConfig)
+    d4rl_planning: D4RLMPCConfig = field(default_factory=D4RLMPCConfig)
 
     def __post_init__(self):
         self.wall_planning.env_name = self.env_name

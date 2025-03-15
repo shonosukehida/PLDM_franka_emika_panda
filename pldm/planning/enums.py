@@ -3,7 +3,6 @@ from pldm.configs import ConfigBase
 import sys
 from pldm.planning.planners.enums import PlannerConfig
 from omegaconf import MISSING
-import sys
 from typing import Optional, NamedTuple, List
 import torch
 
@@ -28,7 +27,7 @@ class MPCConfig(ConfigBase):
     n_envs_batch_size: int = 4
     n_steps: int = 200  # Number of steps to run the env for
     visualize_planning: bool = True
-    level1: PlannerConfig = PlannerConfig()
+    level1: PlannerConfig = field(default_factory=PlannerConfig)
     plot_failure_only: bool = False
     log_pred_dist_every: int = sys.maxsize
     plot_every: int = 16
@@ -45,10 +44,10 @@ class MPCConfig(ConfigBase):
     start_target_from_data: bool = False
     set_start_target_path: Optional[str] = None
     levels: str = ""
-    easy: LevelConfig = LevelConfig()
-    medium: LevelConfig = LevelConfig()
-    hard: LevelConfig = LevelConfig()
-    ogbench: LevelConfig = LevelConfig()
+    easy: LevelConfig = field(default_factory=LevelConfig)
+    medium: LevelConfig = field(default_factory=LevelConfig)
+    hard: LevelConfig = field(default_factory=LevelConfig)
+    ogbench: LevelConfig = field(default_factory=LevelConfig)
 
 
 class MPCResult(NamedTuple):

@@ -36,6 +36,7 @@ class ReprTargetMPCObjective(BaseMPCObjective):
         pred_encoder: Optional[torch.nn.Module] = None,
         propio_cost: bool = False,
     ):
+        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
         self.sum_all_diffs = sum_all_diffs
         self.model = model
         self.target_enc = target_enc
@@ -50,7 +51,7 @@ class ReprTargetMPCObjective(BaseMPCObjective):
             self.target_enc = target_obs
         else:
             self.target_enc = self.model.backbone(
-                target_obs.float().cuda()
+                target_obs.float().to(self.device)
             ).encodings.detach()
 
     def set_idx(self, idx: Union[int, List[int]]):
@@ -132,6 +133,7 @@ class ReprTargetMPCObjective2(BaseMPCObjective):
         idx: Optional[Union[int, List[int]]] = None,
         sum_last_n: int = 3,
     ):
+        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
         self.model = model
         self.target_enc = target_enc
         self.sum_all_diffs = sum_all_diffs
@@ -141,7 +143,7 @@ class ReprTargetMPCObjective2(BaseMPCObjective):
         if repr_input:
             self.target_enc = target_obs
         else:
-            self.target_enc = self.model.encoder(target_obs.float().cuda()).detach()
+            self.target_enc = self.model.encoder(target_obs.float().to(self.device)).detach()
 
     def set_idx(self, idx: Union[int, List[int]]):
         self.idx = idx

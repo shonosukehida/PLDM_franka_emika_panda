@@ -62,6 +62,7 @@ class VICRegObjective(torch.nn.Module):
         super().__init__()
         if isinstance(repr_dim, tuple):
             repr_dim = reduce(operator.mul, repr_dim)
+        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
         self.config = config
         self.name_prefix = name_prefix
         self.pred_attr = pred_attr
@@ -69,7 +70,7 @@ class VICRegObjective(torch.nn.Module):
             arch=config.projector,
             embedding=repr_dim,
             random=config.random_projector,
-        ).cuda()
+        ).to(self.device)
 
     def __call__(self, _batch, result: List[ForwardResult]) -> VICRegLossInfo:
         result = result[-1]  # VICReg objective only uses the highest level result

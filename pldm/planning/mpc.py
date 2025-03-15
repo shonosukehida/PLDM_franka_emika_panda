@@ -32,7 +32,7 @@ class MPCEvaluator(ABC):
         self.quick_debug = quick_debug
         self.prefix = prefix
         self.pixel_mapper = pixel_mapper
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
         self.image_based = image_based
 
     def close(self):
