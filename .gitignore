@@ -6,5 +6,5 @@ checkpoint/
 *__pycache__*
 *npz
 wandb
-nohup.put
+nohup.out
 checkpoints

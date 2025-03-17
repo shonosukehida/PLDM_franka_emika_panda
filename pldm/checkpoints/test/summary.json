@@ -1,3 +1,10 @@
 {
-    "n_params": 2218672
+    "n_params": 2218672,
+    "wall_mediumplanning_error_mean": 83.18810272216797,
+    "wall_mediumplanning_error_mean_rmse": 9.12075138092041,
+    "wall_mediumsuccess_rate": 0.8899999856948853,
+    "wall_mediumcross_wall_rate": 0.8899999856948853,
+    "wall_mediuminit_plan_cross_wall_rate": 0.25,
+    "wall_mediumavg_termination_step": 104.29,
+    "custom_step": 143999
 }
