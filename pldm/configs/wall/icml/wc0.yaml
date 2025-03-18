@@ -1,3 +1,4 @@
+#wall condition 0
 n_steps: &n_steps 16
 val_n_steps: *n_steps
 env_name: &env_name wall

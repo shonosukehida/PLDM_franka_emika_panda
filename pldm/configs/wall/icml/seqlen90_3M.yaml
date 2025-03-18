@@ -26,7 +26,7 @@ data:
     action_upper_bd: 1.8
     action_param_xy: true
     batch_size: 64
-    device: cuda
+    device: cuda:2
     dot_std: 1.3
     border_wall_loc: 5
     fix_wall_batch_k: null
