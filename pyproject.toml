@@ -19,6 +19,7 @@ dependencies = [
     "gym<0.25.0",
     "gymnasium>=1.1.1",
     "ipython>=8.12.3",
+    "mujoco-py>=2.1.2.14",
     "numpy>=1.24.4",
     "omegaconf>=2.3.0",
     "statsmodels>=0.14.1",
