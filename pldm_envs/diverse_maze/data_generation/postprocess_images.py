@@ -75,7 +75,7 @@ def main():
 
     args = parser.parse_args()
 
-    config = torch.load(f"{args.data_path}/metadata.pt")
+    config = torch.load(f"{args.data_path}/metadata.pt", weights_only=False)
 
     image_list = list_images(args, config=config)
     num_images = len(image_list)

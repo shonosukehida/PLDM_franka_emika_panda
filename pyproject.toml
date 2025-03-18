@@ -13,6 +13,7 @@ dynamic = ["description"]
 packages = ["pldm", "pldm_envs"]
 dependencies = [
     "arm-pytorch-utilities>=0.4.3",
+    "cython==0.29.36",
     "d4rl>=1.1",
     "editdistance>=0.8.1",
     "gdown>=5.2.0",
