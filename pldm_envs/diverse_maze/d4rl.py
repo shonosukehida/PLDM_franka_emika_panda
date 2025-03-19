@@ -131,7 +131,7 @@ class D4RLDataset(torch.utils.data.Dataset):
     def _prepare_saved_ds(self):
         assert self.config.path is not None
         print("loading saved dataset from", self.config.path)
-        self.splits = torch.load(self.config.path)
+        self.splits = torch.load(self.config.path, weights_only=False)
         self.cum_lengths = np.cumsum(
             [
                 len(x["observations"])

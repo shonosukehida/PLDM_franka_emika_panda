@@ -33,10 +33,10 @@ def main():
     propio_path = data_path / "data.p"
 
     config_path = data_path / "metadata.pt"
-    config = torch.load(config_path)
+    config = torch.load(config_path, weights_only=False)
 
     # all_splits = d4rl_ds.splits
-    all_splits = torch.load(propio_path)
+    all_splits = torch.load(propio_path, weights_only=False)
 
     print(f"{len(all_splits)=}")
     if args.workers_num is None:
@@ -55,7 +55,7 @@ def main():
     if "diverse" in config["env"]:
         # retrieve map metadata for generating custom environments
         map_metadata_path = data_path / "train_maps.pt"
-        map_metadata = torch.load(map_metadata_path)
+        map_metadata = torch.load(map_metadata_path, weights_only=False)
     else:
         env = ant_draw.load_environment(config["env"])
         drawer = maze_draw.create_drawer(env, env.name)

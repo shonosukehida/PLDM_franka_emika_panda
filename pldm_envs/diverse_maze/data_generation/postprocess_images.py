@@ -27,7 +27,7 @@ def process_image(transform, image_path: str):
         episode_idx = int(image_path.split("/")[-1].split("_")[0])
         print(episode_idx)
         BAD_EPISODES[episode_idx] = True
-        return np.zeros((81, 81, 3))
+        return np.zeros((64, 64, 3), dtype=np.uint8)
 
 
 def list_images(args, config: dict):
@@ -41,7 +41,7 @@ def list_images(args, config: dict):
     """
 
     if args.skip_bad_episodes:
-        bad_episodes = torch.load(f"{args.data_path}/bad_episodes.pt")
+        bad_episodes = torch.load(f"{args.data_path}/bad_episodes.pt",weights_only=False)
     else:
         bad_episodes = {}
 
@@ -99,6 +99,8 @@ def main():
         episode_dict[episode_idx].append((timestep, image_path))
 
     img_size = config["img_size"]
+    print(f"Configured image size: {img_size}")
+
 
     data_shape = (num_images, *img_size)
 

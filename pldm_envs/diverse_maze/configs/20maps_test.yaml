@@ -3,7 +3,7 @@ num_blocks_width_in_img: 8
 n_episodes: 1
 train_maps_n: 2
 episode_length: 100
-img_size: [64, 64, 3]
+img_size: [81, 81, 3]
 qvel_norm_prior: true 
 qvel_norm_prior_type: uniform
 action_repeat: 4 

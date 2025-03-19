@@ -28,6 +28,8 @@ dependencies = [
     "torch>=2.5.1",
     "torchvision>=0.20.1",
     "tqdm>=4.67.1",
+    "uvicorn>=0.33.0",
+    "uvloop>=0.21.0",
     "wandb>=0.19.8",
     "zarr>=2.16.1",
 ]

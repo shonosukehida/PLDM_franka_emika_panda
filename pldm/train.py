@@ -288,7 +288,7 @@ class Trainer:
 
     def maybe_load_model(self):
         if self.config.load_checkpoint_path is not None:
-            checkpoint = torch.load(self.config.load_checkpoint_path, map_location=self.device)
+            checkpoint = torch.load(self.config.load_checkpoint_path, map_location=self.device, )
             state_dict = checkpoint["model_state_dict"]
             # remove "_orig_mod." prefix from the keys
             state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
