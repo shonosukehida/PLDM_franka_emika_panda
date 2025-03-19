@@ -10,7 +10,7 @@ data:
   offline_wall_config:
     n_steps: *n_steps
     use_offline: true
-    offline_data_path: "/home/hida/PLDM/pldm_envs/wall/presaved_datasets/rendered/good_quality_data.npz"
+    offline_data_path: "../PLDM/pldm_envs/wall/presaved_datasets/rendered/good_quality_data.npz"
     lazy_load: false
     batch_size: 64
     device: cuda:2

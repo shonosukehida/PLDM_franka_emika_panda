@@ -2,7 +2,7 @@ bash_*
 *.sbatch
 logs/
 .vscode/
-checkpoint/
+# checkpoint/
 *__pycache__*
 *npz
 wandb
