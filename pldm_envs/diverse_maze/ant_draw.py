@@ -69,6 +69,10 @@ def load_environment(
                 # Call the __init__ method of MazeEnv with the custom maze layout
                 super(CustomMazeEnv, self).__init__(maze_spec=map_key, **kwargs)
 
+                # Mujocoシミュレーターの `sim` を適切に初期化
+                if hasattr(self, 'model'):
+                    self.sim = getattr(self.model, 'sim', None)
+
             def step(self, action):
                 # Call the original step method to get next state, reward, etc.
                 next_state, original_reward, done, info = super().step(action)

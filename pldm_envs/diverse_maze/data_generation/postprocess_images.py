@@ -68,7 +68,7 @@ def list_images(args, config: dict):
 def main():
     parser = argparse.ArgumentParser(description="save images to numpy array")
     parser.add_argument("--data_path", type=str, help="Path to the data")
-    parser.add_argument("--quick_debug", action="store_true")
+    parser.add_argument("--quick_debug", action="store_true", default=False)
     parser.add_argument("--num_workers", type=int, default=10)
     parser.add_argument("--stop_at_episode", type=int, default=sys.maxsize)
     parser.add_argument("--skip_bad_episodes", action="store_true")
@@ -148,9 +148,11 @@ def main():
             break
 
     if BAD_EPISODES:
+        print(f"Warning: Some bad episodes were detected. Saving bad_episodes.pt")
         torch.save(BAD_EPISODES, f"{args.data_path}/bad_episodes.pt")
-    else:
-        np.save(f"{args.data_path}/images.npy", zarr_dataset)
+
+    # `BAD_EPISODES` が空でも非空でも `images.npy` を保存する
+    np.save(f"{args.data_path}/images.npy", zarr_dataset)
 
 
 if __name__ == "__main__":

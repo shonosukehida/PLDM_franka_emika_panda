@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--workers_num", type=int, default=1)
     parser.add_argument("--worker_id", type=int, default=0)
     parser.add_argument("--save_replace", action="store_true")
-    parser.add_argument("--quick_debug", action="store_true")
+    parser.add_argument("--quick_debug", action="store_true", default=False)
 
     args = parser.parse_args()
 
@@ -76,6 +76,13 @@ def main():
                 continue
 
             image = drawer.render_state(obs)
+            print(f"Image type: {type(image)} for split_idx {split_idx}, img_idx {img_idx}")
+            
+            # 追加: 画像の中身を確認
+            if image is None:
+                print(f"Warning: render_state returned None for split_idx {split_idx}, img_idx {img_idx}")
+                continue
+            
             save_image(image, image_path)
 
             if args.quick_debug and img_idx > 10:

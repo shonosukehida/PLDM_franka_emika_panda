@@ -18,7 +18,7 @@ dependencies = [
     "editdistance>=0.8.1",
     "gdown>=5.2.0",
     "gym<0.25.0",
-    "gymnasium>=1.1.1",
+    "gymnasium[mujoco]>=1.1.1",
     "ipython>=8.12.3",
     "mujoco>=3.2.3",
     "mujoco-py>=2.1.2.14",
