@@ -96,7 +96,7 @@ class ProbingEvaluator:
         config: ProbingConfig = default_config,
         quick_debug: bool = False,
     ):
-        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.config = config
         self.model = model
         self.quick_debug = quick_debug

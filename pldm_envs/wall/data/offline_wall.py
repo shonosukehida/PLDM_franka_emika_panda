@@ -10,7 +10,7 @@ class OfflineWallDatasetConfig:
     batch_size: int = 64
     img_size: int = 65
     train: bool = True
-    device: str = "cuda:2"
+    device: str = "cuda"
     repeat_actions: int = 1
     image_based: bool = True
     use_offline: bool = False
@@ -78,7 +78,7 @@ class OfflineWallDataset:
         probing=False,
     ):
         self.config = config
-        self.device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if "npz" in config.offline_data_path:
             self.states, self.actions, self.locations = load_npz(

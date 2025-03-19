@@ -1,6 +1,3 @@
-# import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-
 import multiprocessing
 import warnings
 
@@ -51,6 +48,7 @@ def seed_everything(seed):
 
 @dataclass
 class TrainConfig(ConfigBase):
+    device: int = 0
     env_name: str = MISSING
     n_steps: int = 17
     val_n_steps: int = 17
@@ -203,7 +201,7 @@ class Trainer:
             and bool(sample_data.propio_vel.shape[-1])
         )
 
-        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device(f'cuda:{self.config.device_id}' if torch.cuda.is_available() else 'cpu')
         
         # create model
         self.model = HJEPA(

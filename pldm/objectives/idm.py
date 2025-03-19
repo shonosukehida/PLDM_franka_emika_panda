@@ -64,7 +64,7 @@ class IDMObjective(torch.nn.Module):
         super().__init__()
         self.config = config
         self.name_prefix = name_prefix
-        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         if config.arch == "conv":
             input_dim = (repr_dim[0] * 2, *repr_dim[1:])

@@ -25,7 +25,7 @@ class SGDPlanner(Planner):
                 taking loss against objective
         """
         super().__init__()
-        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.config = config
         self.model = model
         self.normalizer = normalizer
@@ -63,7 +63,7 @@ class SGDPlanner(Planner):
         actions = torch.zeros(
             (batch_size, plan_size, self.action_dim),
             requires_grad=True,
-            device=torch.device("cuda:2"),
+            device=torch.device("cuda"),
         )
 
         if curr_propio_pos is not None:

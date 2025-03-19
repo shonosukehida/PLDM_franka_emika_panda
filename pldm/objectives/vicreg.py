@@ -62,7 +62,7 @@ class VICRegObjective(torch.nn.Module):
         super().__init__()
         if isinstance(repr_dim, tuple):
             repr_dim = reduce(operator.mul, repr_dim)
-        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.config = config
         self.name_prefix = name_prefix
         self.pred_attr = pred_attr

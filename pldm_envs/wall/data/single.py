@@ -32,7 +32,7 @@ class DotDatasetConfig:
     n_steps: int = 91
     img_size: int = 64
     train: bool = True
-    device: str = "cuda:2"
+    device: str = "cuda"
     repeat_actions: int = 1
     n_steps_reduce_factor: int = 1
     border_wall_loc: int = 5  # wall located x pixels away from border

@@ -8,3 +8,4 @@ logs/
 wandb
 nohup.out
 checkpoints
+_*

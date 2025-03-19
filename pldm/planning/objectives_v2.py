@@ -36,7 +36,7 @@ class ReprTargetMPCObjective(BaseMPCObjective):
         pred_encoder: Optional[torch.nn.Module] = None,
         propio_cost: bool = False,
     ):
-        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.sum_all_diffs = sum_all_diffs
         self.model = model
         self.target_enc = target_enc
@@ -133,7 +133,7 @@ class ReprTargetMPCObjective2(BaseMPCObjective):
         idx: Optional[Union[int, List[int]]] = None,
         sum_last_n: int = 3,
     ):
-        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = model
         self.target_enc = target_enc
         self.sum_all_diffs = sum_all_diffs

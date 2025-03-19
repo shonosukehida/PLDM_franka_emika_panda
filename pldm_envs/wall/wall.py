@@ -36,7 +36,7 @@ class DotWall(gym.Env):
         self.level = level
         self.img_size = img_size
         if device is None:
-            self.device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = device
         self.dot_std = 1.3

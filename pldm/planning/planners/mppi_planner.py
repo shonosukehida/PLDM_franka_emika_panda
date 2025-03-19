@@ -112,7 +112,7 @@ class MPPIPlanner:
 
         latent_actions = l2 and model.config.predictor.z_dim > 0
         
-        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = model
         self.config = config
         self.dynamics = LearnedDynamics(

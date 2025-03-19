@@ -218,19 +218,21 @@ def omegaconf_parse(cls):
     parser = argparse.ArgumentParser(fromfile_prefix_chars="@")
     parser.add_argument("--configs", nargs="*", default=[], help="Configs to load",)
     parser.add_argument("--values", nargs="*", default=[], help="Dot values to change configs",)
-    parser.add_argument("--device", type=int, default=2)
+    parser.add_argument("--device", type=int, default=0)
     args, _unknown = parser.parse_known_args()
 
-    return omegaconf_parse_files_vals(cls, args.configs, args.values)
+    return omegaconf_parse_files_vals(cls, args.configs, args.values, args.device)
 
 
-def omegaconf_parse_files_vals(cls, files_paths: List[str], dotlist: List[str]):
+def omegaconf_parse_files_vals(cls, files_paths: List[str], dotlist: List[str], device_id: int):
     configs = [OmegaConf.structured(cls)]
     for path in files_paths:
         configs.append(OmegaConf.load(path))
     configs.append(OmegaConf.from_dotlist(dotlist))
     omega_config = OmegaConf.merge(*configs)
     res = cls.parse_from_dict(OmegaConf.to_container(omega_config))
+    
+    res.device_id = device_id
     return res
 
 

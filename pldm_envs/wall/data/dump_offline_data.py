@@ -29,7 +29,7 @@ def update_config_from_yaml(config_class, yaml_data):
 
 
 def create_and_save_ds(ds, save_dir, suffix="", save_locations=False):
-    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ds.device = device
 
     all_states = []
