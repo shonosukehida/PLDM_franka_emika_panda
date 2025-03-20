@@ -10,3 +10,4 @@ nohup.out
 checkpoints
 _*
 *.npy
+**/nohup.out
