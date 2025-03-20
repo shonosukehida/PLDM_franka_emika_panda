@@ -17,6 +17,8 @@ from contextlib import (
     redirect_stdout,
 )
 
+from gym.envs.mujoco import MujocoEnv
+
 
 @contextmanager
 def suppress_output():
@@ -64,14 +66,16 @@ def load_environment(
     # create custom environment if layout is provided
     if map_key is not None:
         # Define Custom Environment
-        class CustomMazeEnv(MazeEnv):
+        class CustomMazeEnv(MazeEnv, MujocoEnv):
             def __init__(self, **kwargs):
                 # Call the __init__ method of MazeEnv with the custom maze layout
-                super(CustomMazeEnv, self).__init__(maze_spec=map_key, **kwargs)
+                super().__init__(maze_spec=kwargs.get("maze_spec", None), **kwargs)
 
-                # Mujocoシミュレーターの `sim` を適切に初期化
+                # MujocoEnv の初期化
                 if hasattr(self, 'model'):
                     self.sim = getattr(self.model, 'sim', None)
+                else:
+                    raise RuntimeError("MujocoEnv のシミュレーターが正しく初期化されていません。")
 
             def step(self, action):
                 # Call the original step method to get next state, reward, etc.

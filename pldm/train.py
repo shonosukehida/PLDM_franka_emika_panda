@@ -5,6 +5,7 @@ warnings.filterwarnings("ignore", message="Ill-formed record")
 
 from typing import Optional
 import os
+import datetime
 import shutil
 from dataclasses import dataclass, field
 import dataclasses
@@ -130,9 +131,12 @@ class TrainConfig(ConfigBase):
         # general
         self.val_n_steps = self.n_steps
         self.eval_cfg.eval_l2 = not self.hjepa.disable_l2
-
+        
+        
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        
         self.output_path = os.path.join(
-            self.output_root.rstrip("/"), self.output_dir.lstrip("/")
+            self.output_root.rstrip("/"), f'{self.output_dir.lstrip("/")}_{timestamp}'
         )
         self.run_group = self.output_dir
 

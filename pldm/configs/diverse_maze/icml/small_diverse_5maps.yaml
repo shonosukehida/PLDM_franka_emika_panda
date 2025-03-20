@@ -90,17 +90,17 @@ objectives_l1:
     global_coeff: 1.4108
 optimizer_type: Adam
 output_dir: maze2d_small_diverse
-output_root: ./pldm/checkpoints
+output_root: ../pldm/checkpoints
 eval_cfg:
   env_name: *env_name
   log_heatmap: false
   eval_l1: true
   probing:
     l1_depth: *n_steps
-    train_images_path: ./pldm_envs/diverse_maze/presaved_datasets/40maps_eval/images.npy
-    train_path: ./pldm_envs/diverse_maze/presaved_datasets/40maps_eval/data.p
-    val_images_path: ./pldm_envs/diverse_maze/presaved_datasets/40maps_eval/images.npy
-    val_path: ./pldm_envs/diverse_maze/presaved_datasets/40maps_eval/data.p
+    train_images_path: ../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/images.npy
+    train_path: ../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/data.p
+    val_images_path: ../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/images.npy
+    val_path: ../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/data.p
     probe_targets: 'locations,propio_vel'
     locations:
       arch: 'conv'
