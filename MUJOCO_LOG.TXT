@@ -28,3 +28,9 @@ ERROR: gladLoadGL error
 Wed Mar 19 16:34:19 2025
 ERROR: could not create window
 
+Thu Mar 20 12:34:31 2025
+ERROR: could not create window
+
+Thu Mar 20 12:38:07 2025
+ERROR: could not create window
+
