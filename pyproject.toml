@@ -22,6 +22,7 @@ dependencies = [
     "imageio>=2.37.0",
     "imageio-ffmpeg>=0.6.0",
     "ipython>=8.12.3",
+    "joblib>=1.4.2",
     "mujoco==3.3.0",
     "mujoco-py>=2.1.2.14",
     "mujoco-python-viewer>=0.1.4",

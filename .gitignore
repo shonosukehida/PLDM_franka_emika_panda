@@ -12,3 +12,4 @@ _*
 *.npy
 **/nohup.out
 *.mp4
+*.p
