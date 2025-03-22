@@ -11,3 +11,4 @@ checkpoints
 _*
 *.npy
 **/nohup.out
+*.mp4
