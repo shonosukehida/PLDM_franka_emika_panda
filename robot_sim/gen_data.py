@@ -42,6 +42,11 @@ for ep in range(EPISODES):
     # 初期観測
     obs = np.concatenate([data.qpos[:], data.qvel[:]])
     episode_obs.append(obs.copy())
+    
+    # 🔽 初期画像の取得・保存を追加
+    renderer.update_scene(data, camera=camera_id)
+    img = renderer.render()
+    all_images.append(img)
 
     for t in range(STEPS_PER_EPISODE):
         # ランダム行動
