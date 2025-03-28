@@ -571,5 +571,10 @@ def main(config: TrainConfig):
 
 
 if __name__ == "__main__":
-    cfg = TrainConfig.parse_from_command_line()
-    main(cfg)
+    try:
+        cfg = TrainConfig.parse_from_command_line()
+        main(cfg)
+    except Exception as e:
+        import traceback
+        print("🔥 TRAINING CRASHED")
+        traceback.print_exc()

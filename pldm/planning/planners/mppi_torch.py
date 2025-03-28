@@ -103,7 +103,14 @@ class MPPI:
 
         self.noise_mu = noise_mu.to(self.d)
         self.noise_sigma = noise_sigma.to(self.d)
-        self.noise_sigma_inv = torch.inverse(self.noise_sigma)
+        
+
+        try:
+            self.noise_sigma_inv = torch.linalg.pinv(self.noise_sigma)
+        except RuntimeError as e:
+            print("WARNING: pinv failed on CUDA. Switching to CPU.")
+            self.noise_sigma_inv = torch.linalg.pinv(self.noise_sigma.cpu()).to(self.noise_sigma.device)
+            
         self.noise_dist = MultivariateNormal(
             self.noise_mu, covariance_matrix=self.noise_sigma
         )
@@ -171,6 +178,7 @@ class MPPI:
             state = torch.tensor(state)
         self.state = state.to(dtype=self.dtype, device=self.d)
         cost_total = self._compute_total_cost_batch()
+        torch.cuda.empty_cache()
         beta = torch.min(cost_total)
         self.cost_total_non_zero = _ensure_non_zero(cost_total, beta, 1 / self.lambda_)
         eta = torch.sum(self.cost_total_non_zero)

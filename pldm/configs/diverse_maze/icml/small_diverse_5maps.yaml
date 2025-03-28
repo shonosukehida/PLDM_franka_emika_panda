@@ -10,14 +10,14 @@ data:
     random_actions: false
     img_size: 64
     alpha: 0.6
-    batch_size: 128
+    batch_size: 64 #128
     beta: 0.4
     crop_length: null
     images_path: ../pldm_envs/diverse_maze/presaved_datasets/5maps/images.npy
     path: ../pldm_envs/diverse_maze/presaved_datasets/5maps/data.p
     location_only: false
     normalize: true
-    num_workers: 10
+    num_workers: 0 #10
     prioritized: false
     quick_debug: false
     sample_length: *n_steps
@@ -125,14 +125,14 @@ eval_cfg:
     visualize_probing: true
     load_prober: false
   d4rl_planning:
-    n_envs: 85
-    n_envs_batch_size: 16
+    n_envs: 10 #85
+    n_envs_batch_size: 4 #16
     n_steps: 192
     levels: "medium"
     medium:
       n_steps: 200
-      n_envs: 80
-      max_plan_length: 100
+      n_envs: 20 #80
+      max_plan_length: 50 #100
       plot_every: 10
       min_block_radius: 4
       max_block_radius: 9999
@@ -151,15 +151,15 @@ eval_cfg:
       planner_type: PlannerType.MPPI
       min_step: 0
       max_step: 1
-      max_plan_length: 128
+      max_plan_length: 64 #128
       sgd:
         action_change_reg: 0
         l2_reg: 0
         lr: 0.03
         n_iters: 200
       mppi:
-        noise_sigma: 5
-        num_samples: 500
+        noise_sigma: 3 #5
+        num_samples: 32 #500
         lambda_: 0.0025
     #d4rl specific
     position_only: true
