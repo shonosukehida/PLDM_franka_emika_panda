@@ -165,10 +165,11 @@ class MPCEvaluator(ABC):
             targets: (bs, 4)
             loss_history: list of a_T (n_iters,)
         """
-
+        #ゴール位置
         targets = [e.get_target() for e in envs]
         targets = torch.from_numpy(np.stack(targets))
 
+        #ゴール画像から得られた埋め込みベクトル
         targets_t = torch.stack([e.get_target_obs() for e in envs]).to(self.device)
 
         # encode target obs
