@@ -1,3 +1,5 @@
+#frankaの行動・観測をデータとして保存 (ランダム行動)
+
 import mujoco
 import numpy as np
 import torch

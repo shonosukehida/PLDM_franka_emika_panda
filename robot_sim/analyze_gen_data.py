@@ -60,4 +60,5 @@ def check_data(data_path):
     print("\n✅ Dataset format looks good!")
 
 if __name__ == "__main__":
-    check_data("robot_sim/dataset")
+    data_path = "robot_sim/dataset"
+    check_data(data_path)

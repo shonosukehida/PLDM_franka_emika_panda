@@ -1,3 +1,5 @@
+#franka ロボットを動かし, その動きをリアルタイムに表示・録画するシミュレーション
+
 import mujoco
 import mujoco.viewer
 import numpy as np
@@ -32,7 +34,7 @@ video_path = os.path.join(output_path, video_filename)
 if SAVE_VIDEO:
     writer = imageio.get_writer(video_path, fps=30)
 frame_count = 0
-max_frames = 300  # 10秒（30fps）なら300フレーム
+max_frames = 3000  # 10秒（30fps）なら300フレーム
 
 # 初期の目標
 target_ctrl = np.random.uniform(ctrlrange[:, 0], ctrlrange[:, 1])
