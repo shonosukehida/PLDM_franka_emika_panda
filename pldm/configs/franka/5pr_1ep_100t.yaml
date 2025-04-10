@@ -1,0 +1,8 @@
+dataset_type: franka
+
+franka_config:
+  data_dir: pldm_envs/franka/presaved_datasets/5pr_1ep_100t
+  use_goal_images: true
+
+batch_size: 16
+image_size: 128

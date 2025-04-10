@@ -10,6 +10,8 @@ from pldm_envs.wall.data.wall_expert import WallExpertDatasetConfig
 
 from pldm_envs.diverse_maze.enums import D4RLDatasetConfig
 
+from pldm_envs.franka.enums import FrankaConfig
+
 
 class DatasetType(Enum):
     Single = auto()
@@ -19,6 +21,7 @@ class DatasetType(Enum):
     D4RL = auto()
     D4RLEigf = auto()
     LocoMaze = auto()
+    Franka = 'franka'
 
 
 class ProbingDatasets(NamedTuple):
@@ -42,6 +45,7 @@ class DataConfig(ConfigBase):
     offline_wall_config: OfflineWallDatasetConfig = field(default_factory=OfflineWallDatasetConfig)
     wall_expert_config: WallExpertDatasetConfig = field(default_factory=WallExpertDatasetConfig)
     d4rl_config: D4RLDatasetConfig = field(default_factory=D4RLDatasetConfig)
+    franka_config: FrankaConfig = field(default_factory=FrankaConfig)
 
     normalize: bool = False
     min_max_normalize_state: bool = False

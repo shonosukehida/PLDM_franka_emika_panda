@@ -45,6 +45,8 @@ class DatasetFactory:
             return self._create_d4rl_datasets()
         elif self.config.dataset_type == DatasetType.LocoMaze:
             return self._create_locomaze_datasets()
+        elif self.config.dataset_type == DatasetType.Franka: 
+            return self._create_franka_datasets()
         else:
             raise NotImplementedError
 
@@ -212,3 +214,9 @@ class DatasetFactory:
         )
 
         return datasets
+    
+    def _create_franka_datasets(self):
+        ds = FrankaDataset(self.config.franka_config)
+        ds = make_dataloader(ds=ds, loader_config=self.config)
+        return Datasets(ds=ds, val_ds=None)
+        
