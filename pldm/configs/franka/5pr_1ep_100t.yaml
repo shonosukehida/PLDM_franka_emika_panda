@@ -1,8 +1,101 @@
+n_steps: &n_steps 15
+
 dataset_type: franka
 
 franka_config:
-  data_dir: pldm_envs/franka/presaved_datasets/5pr_1ep_100t
+  train_dir: pldm_envs/franka/presaved_datasets/5pr_1ep_100t
   use_goal_images: true
 
 batch_size: 16
 image_size: 128
+epochs: 50
+optimizer_type: Adam
+output_dir: franka_push_test
+output_root: ./checkpoints
+
+model:
+  action_dim: 7
+
+hjepa:
+  l1_n_steps: *n_steps
+  train_l1: true
+  freeze_l1: false
+  disable_l2: true
+  step_skip: 4
+  level1:
+    action_dim: 7
+    encode_only: false
+    use_z_goal: false
+    momentum: 0
+    backbone:
+      arch: menet6
+      backbone_subclass: d4rl_a  # そのままでよければ保持（変更も可能）
+      backbone_mlp: null
+      backbone_width_factor: 2
+      input_dim: 4
+      channels: 3
+      propio_dim: 2
+      propio_encoder_arch: 'id'
+    predictor:
+      residual: true
+      action_encoder_arch: 'id'
+      predictor_arch: conv2
+      predictor_subclass: d4rl_b_p
+      rnn_converter_arch: ''
+      rnn_layers: 1
+      rnn_state_dim: 512
+      z_dim: 0
+      z_min_std: 0.1
+
+objectives_l1:
+  idm:
+    action_dim: 7
+    coeff: 5.0
+    arch: 'conv'
+    use_pred: false
+    arch_subclass: a
+  objectives:
+    - ObjectiveType.VICRegObs
+    - ObjectiveType.IDM
+    - ObjectiveType.PredictionPropio
+
+vicreg_obs:
+  adjust_cov: true
+  cov_chunk_size: null
+  cov_coeff: 10.0
+  cov_coeff_t: 0
+  cov_per_feature: false
+  projector: id
+  random_projector: false
+  sim_coeff: 1
+  std_coeff: 25.0
+  std_coeff_t: 2.0
+  sim_coeff_t: 0.1
+
+prediction_propio:
+  global_coeff: 1.0
+
+# eval_cfg:
+#   log_heatmap: false
+#   eval_l1: true
+#   probing:
+#     l1_depth: *n_steps
+#     train_images_path: path/to/franka/train_images.npy
+#     train_path: path/to/franka/data.p
+#     val_images_path: path/to/franka/val_images.npy
+#     val_path: path/to/franka/data.p
+#     probe_targets: 'propio_vel'
+#     propio_vel:
+#       arch: 'conv'
+#       subclass: 'c'
+#     epochs: 5
+#     lr: 0.0032
+#     visualize_probing: false
+
+quick_debug: false
+run_group: test
+run_name: test
+run_project: PLDM-franka
+save_every_n_epochs: 1
+seed: 42
+wandb: true
