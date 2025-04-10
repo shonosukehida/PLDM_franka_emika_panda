@@ -20,6 +20,9 @@ from pldm_envs.utils.normalizer import Normalizer
 from pldm.data.enums import DataConfig, DatasetType, ProbingDatasets, Datasets
 
 
+from pldm_envs.franka.franka_dataset import FrankaDataset
+
+
 class DatasetFactory:
     def __init__(
         self,
