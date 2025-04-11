@@ -21,7 +21,7 @@ class DatasetType(Enum):
     D4RL = auto()
     D4RLEigf = auto()
     LocoMaze = auto()
-    Franka = 'franka'
+    Franka = auto()
 
 
 class ProbingDatasets(NamedTuple):

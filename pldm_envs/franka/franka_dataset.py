@@ -6,10 +6,13 @@ import numpy as np
 
 class FrankaDataset(Dataset):
     def __init__(self, config):
-        train_dir = config["train_dir"]
-        self.data = torch.load(os.path.join(train_dir, "data.p"), map_location="cpu")
-        self.images = np.load(os.path.join(train_dir, "images.npy"))
-        self.goal_images = np.load(os.path.join(train_dir, "goal_images.npy")) if config.get("use_goal_images", True) else None
+        self.data = torch.load(config.path, map_location="cpu")
+        self.images = np.load(config.images_path)
+        self.goal_images = (
+            np.load(config.goal_images_path)
+            if hasattr(config, "goal_images_path") and config.goal_images_path is not None
+            else None
+        )
 
         self.T = self.data[0]["actions"].shape[0]
         self.image_shape = self.images.shape[1:]
