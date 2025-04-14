@@ -1,45 +1,56 @@
-# pldm/data/franka_dataset.py
 import torch
 from torch.utils.data import Dataset
-import os
 import numpy as np
+from pldm_envs.franka.enums import FrankaSample
+
 
 class FrankaDataset(Dataset):
-    def __init__(self, config):
-        self.data = torch.load(config.path, map_location="cpu")
-        self.images = np.load(config.images_path)
-        self.goal_images = (
-            np.load(config.goal_images_path)
-            if hasattr(config, "goal_images_path") and config.goal_images_path is not None
-            else None
-        )
+    def __init__(self, config, images_tensor=None):
+        self.config = config
 
-        self.T = self.data[0]["actions"].shape[0]
-        self.image_shape = self.images.shape[1:]
+        print("loading saved dataset from", config.path)
+        self.data = torch.load(config.path, map_location="cpu", weights_only=False)
+
+        if config.images_path is not None:
+            print("states will contain images")
+            if images_tensor is None:
+                self.images_tensor = np.load(config.images_path, mmap_mode="r")
+            else:
+                self.images_tensor = images_tensor
+            print("shape of images is:", self.images_tensor.shape)
+        else:
+            print("states will contain proprioceptive info")
+
+        self.T = self.data[0]["actions"].shape[0]  # each episode has T steps
+        self.T_plus_1 = self.T + 1
+        self.image_shape = self.images_tensor.shape[1:] if config.images_path else (31,)
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        ep = self.data[idx]
-        obs = ep["observations"][:-1]         # shape: (T, 31)
-        next_obs = ep["observations"][1:]     # shape: (T, 31)
-        actions = ep["actions"]               # shape: (T, 7)
+        d = self.data[idx]
 
-        img_start = idx * (self.T + 1)
-        imgs = self.images[img_start:img_start + self.T + 1]  # (T+1, H, W, C)
-        imgs = imgs.transpose(0, 3, 1, 2) / 255.0              # (T+1, C, H, W)
+        observations = torch.tensor(d["observations"], dtype=torch.float32)  # (T+1, 31)
+        actions = torch.tensor(d["actions"], dtype=torch.float32)  # (T, 7)
+        goal_obs = torch.tensor(d["goal_obs"], dtype=torch.float32)
 
-        sample = {
-            "obs": torch.tensor(obs, dtype=torch.float32),
-            "next_obs": torch.tensor(next_obs, dtype=torch.float32),
-            "actions": torch.tensor(actions, dtype=torch.float32),
-            "images": torch.tensor(imgs[:-1], dtype=torch.float32),
-            "next_images": torch.tensor(imgs[1:], dtype=torch.float32),
-        }
+        if self.config.images_path is not None:
+            image_start_index = idx * self.T_plus_1
+            image_end_index = image_start_index + self.T_plus_1
+            images = torch.from_numpy(self.images_tensor[image_start_index:image_end_index])
+            images = images.permute(0, 3, 1, 2).float()  # (T+1, C, H, W)
+            states = images  # [T+1, C, H, W]
+        else:
+            states = observations  # fallback to proprio
 
-        if self.goal_images is not None:
-            goal_img = self.goal_images[idx].transpose(2, 0, 1) / 255.0  # (C, H, W)
-            sample["goal_image"] = torch.tensor(goal_img, dtype=torch.float32)
+        locations = observations[:, :2]  # (T+1, 2)
 
-        return sample
+        return FrankaSample(
+            states=states,  # (T+1, C, H, W) or (T+1, D)
+            actions=actions,  # (T, 7)
+            locations=locations,  # (T+1, 2)
+            indices=idx,
+            propio_vel=torch.empty(0),
+            propio_pos=torch.empty(0),
+        )

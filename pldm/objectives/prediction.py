@@ -64,9 +64,11 @@ class PredictionObjective(torch.nn.Module):
                 raise NotImplementedError
 
         pred_loss = (encodings - predictions).pow(2).mean()
+        
+        if result.backbone_output.propio_component is None:
+            return PredictionLossInfo(
+                total_loss=torch.tensor(0.0, device=self.device),
+                pred_loss=torch.tensor(0.0, device=self.device),
+                name_prefix=self.name_prefix,
+            )
 
-        return PredictionLossInfo(
-            total_loss=pred_loss * self.config.global_coeff,
-            pred_loss=pred_loss,
-            loss_name=f"prediction_{self.pred_attr}",
-        )

@@ -1,20 +1,20 @@
 n_steps: &n_steps 15
 val_n_steps: *n_steps
-env_name: &env_name maze2d_small_diverse
+env_name: &env_name franka
 
 base_lr: 0.041037
 data:
   dataset_type: DatasetType.Franka
-  d4rl_config:
+  franka_config:
     env_name: *env_name
     random_actions: false
     img_size: 64
     alpha: 0.6
-    batch_size: 64 #128
+    batch_size: 5 #128
     beta: 0.4
     crop_length: null
-    images_path: ../pldm_envs/franka/presaved_datasets/5pr_1ep_100t/images.npy
-    path: ../pldm_envs/franka/presaved_datasets/5pr_1ep_100t/data.p
+    images_path: ./pldm_envs/franka/presaved_datasets/5pr_1ep_100t/images.npy
+    path: ./pldm_envs/franka/presaved_datasets/5pr_1ep_100t/data.p
     location_only: false
     normalize: true
     num_workers: 0 #10
@@ -44,7 +44,7 @@ hjepa:
       backbone_width_factor: 2
       input_dim: 4
       channels: 3
-      propio_dim: 2
+      propio_dim: null
       propio_encoder_arch: 'id'
     predictor:
       residual: true
@@ -58,14 +58,14 @@ hjepa:
       z_min_std: 0.1
     encode_only: false
     use_z_goal: false
-    action_dim: 2
+    action_dim: 7
     momentum: 0
   step_skip: 4
 load_checkpoint_path: null
 load_l1_only: false
 objectives_l1:
   idm:
-    action_dim: 2
+    action_dim: 7
     coeff: 5.3964
     arch: 'conv'
     use_pred: false
@@ -73,7 +73,7 @@ objectives_l1:
   objectives:
   - ObjectiveType.VICRegObs
   - ObjectiveType.IDM
-  - ObjectiveType.PredictionPropio
+  # - ObjectiveType.PredictionPropio
   vicreg_obs:
     adjust_cov: true
     cov_chunk_size: null
@@ -90,7 +90,7 @@ objectives_l1:
     global_coeff: 1.4108
 optimizer_type: Adam
 output_dir: franka
-output_root: ../pldm/checkpoints
+output_root: ./pldm/checkpoints
 # eval_cfg:
 #   env_name: *env_name
 #   log_heatmap: false

@@ -25,23 +25,26 @@ class IDMLossInfo(NamedTuple):
         }
 
 
-CONV_LAYERS_CONFIG = {
-    "a": [
-        (-1, 32, 3, 1, 1),
-        ("max_pool", 2, 2, 0),
-        (32, 32, 3, 1, 1),
-        ("max_pool", 2, 2, 0),
-        (32, 32, 3, 1, 1),
-        ("fc", -1, 2),
-    ],
-    "b": [
-        (-1, 32, 3, 1, 1),
-        ("max_pool", 2, 2, 0),
-        (32, 32, 3, 1, 1),
-        ("max_pool", 2, 2, 0),
-        ("fc", -1, 2),
-    ],
-}
+def get_conv_layers_config(subclass: str, action_dim: int):
+    base = {
+        "a": [
+            (-1, 32, 3, 1, 1),
+            ("max_pool", 2, 2, 0),
+            (32, 32, 3, 1, 1),
+            ("max_pool", 2, 2, 0),
+            (32, 32, 3, 1, 1),
+            ("fc", -1, action_dim),
+        ],
+        "b": [
+            (-1, 32, 3, 1, 1),
+            ("max_pool", 2, 2, 0),
+            (32, 32, 3, 1, 1),
+            ("max_pool", 2, 2, 0),
+            ("fc", -1, action_dim),
+        ],
+    }
+    return base[subclass]
+
 
 
 @dataclass
@@ -68,9 +71,8 @@ class IDMObjective(torch.nn.Module):
 
         if config.arch == "conv":
             input_dim = (repr_dim[0] * 2, *repr_dim[1:])
-            self.action_predictor = build_conv(
-                CONV_LAYERS_CONFIG[config.arch_subclass], input_dim=input_dim
-            ).to(self.device)
+            layers_config = get_conv_layers_config(config.arch_subclass, config.action_dim)
+            self.action_predictor = build_conv(layers_config, input_dim=input_dim).to(self.device)
         else:
             if isinstance(repr_dim, tuple):
                 repr_dim = reduce(operator.mul, repr_dim)
