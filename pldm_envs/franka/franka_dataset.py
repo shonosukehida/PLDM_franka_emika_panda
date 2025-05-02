@@ -4,6 +4,7 @@ import numpy as np
 from pldm_envs.franka.enums import FrankaSample
 
 
+
 class FrankaDataset(Dataset):
     def __init__(self, config, images_tensor=None):
         self.config = config
@@ -30,10 +31,10 @@ class FrankaDataset(Dataset):
 
     def __getitem__(self, idx):
         d = self.data[idx]
-
+        
         observations = torch.tensor(d["observations"], dtype=torch.float32)  # (T+1, 31)
         actions = torch.tensor(d["actions"], dtype=torch.float32)  # (T, 7)
-        goal_obs = torch.tensor(d["goal_obs"], dtype=torch.float32)
+        goal_obs = torch.tensor(d["goal_obs"], dtype=torch.float32) 
 
         if self.config.images_path is not None:
             image_start_index = idx * self.T_plus_1
@@ -44,13 +45,22 @@ class FrankaDataset(Dataset):
         else:
             states = observations  # fallback to proprio
 
-        locations = observations[:, :2]  # (T+1, 2)
+
+        # 分離して取得する
+        qpos = observations[:, :16]   # (T+1, 16)
+        qvel = observations[:, 16:]  # (T+1, 15)
+
+        # Panda Arm: joint1~7 の部分のみを抜き出す
+        propio_pos = qpos[:, :7]  # (T+1, 7)
+        propio_vel = qvel[:, :7]  # (T+1, 7)
+
+        locations = qpos[:, 9:11]  # 青boxの x, y 位置（qpos[9], qpos[10]）
 
         return FrankaSample(
-            states=states,  # (T+1, C, H, W) or (T+1, D)
-            actions=actions,  # (T, 7)
-            locations=locations,  # (T+1, 2)
+            states=states,
+            actions=actions,
+            locations=locations,
             indices=idx,
-            propio_vel=torch.empty(0),
-            propio_pos=torch.empty(0),
+            propio_pos=propio_pos,
+            propio_vel=propio_vel,
         )

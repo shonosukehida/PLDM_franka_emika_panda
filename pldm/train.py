@@ -387,8 +387,12 @@ class Trainer:
                         objective(batch, [forward_result.level1])
                         for objective in self.objectives_l1
                     ]
+                for i, loss in enumerate(loss_infos):
+                    if loss is None:
+                        print(f"[WARNING] loss_infos[{i}] is None → skipping this objective")
 
-                total_loss = sum([loss_info.total_loss for loss_info in loss_infos])
+                print("loss_infos:", loss_infos)
+                total_loss = sum([loss_info.total_loss for loss_info in loss_infos if loss_info is not None])
                 if total_loss.isnan():
                     raise RuntimeError("NaN loss")
                 total_loss.backward()

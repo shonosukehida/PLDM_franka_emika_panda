@@ -44,7 +44,7 @@ hjepa:
       backbone_width_factor: 2
       input_dim: 4
       channels: 3
-      propio_dim: null
+      propio_dim: 7
       propio_encoder_arch: 'id'
     predictor:
       residual: true
@@ -73,7 +73,7 @@ objectives_l1:
   objectives:
   - ObjectiveType.VICRegObs
   - ObjectiveType.IDM
-  # - ObjectiveType.PredictionPropio
+  - ObjectiveType.PredictionPropio
   vicreg_obs:
     adjust_cov: true
     cov_chunk_size: null
@@ -132,7 +132,7 @@ output_root: ./pldm/checkpoints
 #     medium:
 #       n_steps: 200
 #       n_envs: 20 #80
-#       max_plan_length: 50 #100
+#       max_plan_length: 100 
 #       plot_every: 10
 #       min_block_radius: 4
 #       max_block_radius: 9999
@@ -158,8 +158,8 @@ output_root: ./pldm/checkpoints
 #         lr: 0.03
 #         n_iters: 200
 #       mppi:
-#         noise_sigma: 3 #5
-#         num_samples: 32 #500
+#         noise_sigma: 5 #5
+#         num_samples: 500 #500
 #         lambda_: 0.0025
 #     #d4rl specific
 #     position_only: true
