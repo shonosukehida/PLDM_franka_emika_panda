@@ -221,10 +221,14 @@ class MeNet6(SequenceBackbone):
         torch.Size([bs, 32, 27, 27])
         torch.Size([bs, 16, 27, 27])
         """
+        
         obs = self.layers(x)
+        print("obs.shape =", obs.shape)               
+        
 
         if self.config.propio_dim and propio is not None:
             propio_states = self.propio_encoder(propio)
+            print("propio_states.shape =", propio_states.shape) 
             encodings = torch.cat([obs, propio_states], dim=1)
         else:
             propio_states = None

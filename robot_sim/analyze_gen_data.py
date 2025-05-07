@@ -5,6 +5,9 @@ from PIL import Image
 import imageio
 from tqdm import tqdm
 
+# /====CONFIG====/
+DATA_PATH = "pldm_envs/franka/presaved_datasets/pairs_5_ep_1_timestep_100"
+
 def check_data(data_path):
     data_p_path = os.path.join(data_path, "data.p")
     images_path = os.path.join(data_path, "images.npy")
@@ -117,7 +120,7 @@ def save_videos(data, images, save_dir="robot_sim/analyze/video", fps=5):
 
 
 if __name__ == "__main__":
-    data_path = "pldm_envs/franka/presaved_datasets/5pr_1ep_100t"
+    data_path = DATA_PATH
     data, images = check_data(data_path)
 
     if data is not None and images is not None:

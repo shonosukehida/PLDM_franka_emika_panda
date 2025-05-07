@@ -13,8 +13,8 @@ data:
     batch_size: 5 #128
     beta: 0.4
     crop_length: null
-    images_path: ./pldm_envs/franka/presaved_datasets/5pr_1ep_100t/images.npy
-    path: ./pldm_envs/franka/presaved_datasets/5pr_1ep_100t/data.p
+    images_path: ./pldm_envs/franka/presaved_datasets/pairs_5_ep_1_timestep_100/images.npy
+    path: ./pldm_envs/franka/presaved_datasets/pairs_5_ep_1_timestep_100/data.p
     location_only: false
     normalize: true
     num_workers: 0 #10
@@ -42,15 +42,15 @@ hjepa:
       backbone_subclass: d4rl_a
       backbone_mlp: null
       backbone_width_factor: 2
-      input_dim: 4
+      input_dim: 14
       channels: 3
-      propio_dim: 7
+      propio_dim: 14
       propio_encoder_arch: 'id'
     predictor:
       residual: true
       action_encoder_arch: 'id'
       predictor_arch: conv2
-      predictor_subclass: d4rl_b_p
+      predictor_subclass: franka_b_p
       rnn_converter_arch: ''
       rnn_layers: 1
       rnn_state_dim: 512
@@ -164,8 +164,8 @@ output_root: ./pldm/checkpoints
 #     #d4rl specific
 #     position_only: true
 quick_debug: false
-run_group: test
-run_name: test
+run_group: pldm_franka
+run_name: pldm_franka
 run_project: Franka
 save_every_n_epochs: 1
 seed: 246

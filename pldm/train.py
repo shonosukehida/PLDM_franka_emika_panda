@@ -451,7 +451,8 @@ class Trainer:
                 self.epoch % self.config.eval_every_n_epochs == 0
                 and self.config.eval_during_training
             ) or self.epoch >= self.config.epochs:
-                self.validate()
+                pass
+                # self.validate()
 
     @torch.no_grad()
     def eval_on_objectives(self):

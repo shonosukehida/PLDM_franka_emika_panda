@@ -32,35 +32,41 @@ class FrankaDataset(Dataset):
     def __getitem__(self, idx):
         d = self.data[idx]
         
-        observations = torch.tensor(d["observations"], dtype=torch.float32)  # (T+1, 31)
-        actions = torch.tensor(d["actions"], dtype=torch.float32)  # (T, 7)
-        goal_obs = torch.tensor(d["goal_obs"], dtype=torch.float32) 
+        # T+1 長の観測と T 長の行動
+        observations = torch.tensor(d["observations"], dtype=torch.float32)  # (T+1, D)
+        actions = torch.tensor(d["actions"], dtype=torch.float32)  # (T, action_dim)
+        goal_obs = torch.tensor(d["goal_obs"], dtype=torch.float32)
 
+        # スライス範囲（T+1 → T にする）
+        start = 0
+        end = start + self.config.sample_length + 1  # sample_length = T
+        T = self.config.sample_length
+
+        # proprio 情報を位置/速度で分離
+        qpos = observations[:, :7]   # (T+1, 7)
+        qvel = observations[:, 7:]   # (T+1, 7)
+
+        propio_pos = qpos[start:end-1]  # (T, 7)
+        propio_vel = qvel[start:end-1]  # (T, 7)
+
+        # 青boxの位置情報（必要なら）
+        locations = qpos[start:end-1, 9:11]  # (T, 2)
+
+        # 画像のスライス
         if self.config.images_path is not None:
             image_start_index = idx * self.T_plus_1
             image_end_index = image_start_index + self.T_plus_1
             images = torch.from_numpy(self.images_tensor[image_start_index:image_end_index])
             images = images.permute(0, 3, 1, 2).float()  # (T+1, C, H, W)
-            states = images  # [T+1, C, H, W]
+            states = images[start:end-1]  # (T, C, H, W)
         else:
-            states = observations  # fallback to proprio
-
-
-        # 分離して取得する
-        qpos = observations[:, :16]   # (T+1, 16)
-        qvel = observations[:, 16:]  # (T+1, 15)
-
-        # Panda Arm: joint1~7 の部分のみを抜き出す
-        propio_pos = qpos[:, :7]  # (T+1, 7)
-        propio_vel = qvel[:, :7]  # (T+1, 7)
-
-        locations = qpos[:, 9:11]  # 青boxの x, y 位置（qpos[9], qpos[10]）
+            states = observations[start:end-1]  # (T, D)
 
         return FrankaSample(
-            states=states,
-            actions=actions,
-            locations=locations,
+            states=states,             # (T, ...)
+            actions=actions[start:end-1],  # (T, 7)
+            locations=locations,       # (T, 2)
             indices=idx,
-            propio_pos=propio_pos,
-            propio_vel=propio_vel,
+            propio_pos=propio_pos,     # (T, 7)
+            propio_vel=propio_vel,     # (T, 7)
         )

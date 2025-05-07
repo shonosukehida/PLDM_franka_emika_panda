@@ -9,11 +9,10 @@ PAIRS = 5
 MIN_DIST = 0.4
 EPISODES_PER_PAIR = 1
 STEPS_PER_EPISODE = 100
-SAVE_PATH = f"pldm_envs/franka/presaved_datasets/pairs_{PAIRS}_ep_{EPISODES_PER_PAIR}"
+SAVE_PATH = f"pldm_envs/franka/presaved_datasets/pairs_{PAIRS}_ep_{EPISODES_PER_PAIR}_timestep_{STEPS_PER_EPISODE}"
 IMAGE_SIZE = (64, 64)
 MODEL_PATH = "mujoco_menagerie/franka_emika_panda/scene.xml"
-CAMERA_NAME = "top_view"
-CAMERA_NAME = ""
+CAMERA_NAME = "top_view" # "": default
 
 # ==== SETUP ====
 os.makedirs(SAVE_PATH, exist_ok=True)
@@ -24,7 +23,7 @@ data = mujoco.MjData(model)
 renderer = mujoco.Renderer(model, height=IMAGE_SIZE[0], width=IMAGE_SIZE[1])
 camera_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, CAMERA_NAME)
 
-obs_dim = model.nq + model.nv
+obs_dim = model.nq + model.nv #.nq:位置成分の次元数, .nv: 速度成分の次元数
 act_dim = model.nu
 ctrlrange = model.actuator_ctrlrange
 
@@ -89,7 +88,7 @@ for start_pos, goal_pos in pairs:
     mujoco.mj_forward(model, data)
     renderer.update_scene(data, camera=camera_id)
     goal_img = renderer.render()
-    goal_obs = np.concatenate([data.qpos[:], data.qvel[:]])
+    goal_obs = np.concatenate([data.qpos[:7], data.qvel[:7]])
     goal_obs_list.append((goal_obs.copy(), goal_img.copy()))
 
 # ==== MAIN LOOP ====
@@ -104,7 +103,10 @@ for pair_idx, (start_pos, goal_pos) in enumerate(tqdm(pairs)):
         episode_obs = []
         episode_actions = []
 
-        obs = np.concatenate([data.qpos[:], data.qvel[:]])
+        franka_qpos = data.qpos[:7]  # 関節角度: joint1〜joint7
+        franka_qvel = data.qvel[:7]  # 関節速度: joint1〜joint7
+        obs = np.concatenate([franka_qpos, franka_qvel])
+
         episode_obs.append(obs.copy())
         renderer.update_scene(data, camera=camera_id)
         all_images.append(renderer.render())
@@ -115,7 +117,7 @@ for pair_idx, (start_pos, goal_pos) in enumerate(tqdm(pairs)):
             for _ in range(10): #1 STEPS_PER_EPISODE あたりに進めるステップ数
                 mujoco.mj_step(model, data)
 
-            obs = np.concatenate([data.qpos[:], data.qvel[:]])
+            obs = np.concatenate([franka_qpos, franka_qvel])
             episode_obs.append(obs.copy())
             episode_actions.append(action.copy())
             renderer.update_scene(data, camera=camera_id)
