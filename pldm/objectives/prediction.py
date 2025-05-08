@@ -37,6 +37,7 @@ class PredictionObjective(torch.nn.Module):
         self.config = config
         self.pred_attr = pred_attr
         self.name_prefix = name_prefix
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def __call__(self, _batch, result: List[ForwardResult]) -> PredictionLossInfo:
         result = result[-1]  # Prediction objective only uses the highest level result
@@ -65,10 +66,10 @@ class PredictionObjective(torch.nn.Module):
 
         pred_loss = (encodings - predictions).pow(2).mean()
         
-        if result.backbone_output.propio_component is None:
-            return PredictionLossInfo(
-                total_loss=torch.tensor(0.0, device=self.device),
-                pred_loss=torch.tensor(0.0, device=self.device),
-                name_prefix=self.name_prefix,
-            )
+        # if result.backbone_output.propio_component is None:
+        return PredictionLossInfo(
+            total_loss=pred_loss * self.config.global_coeff,
+            pred_loss=pred_loss,
+            loss_name=f"prediction_{self.pred_attr}",
+        )
 

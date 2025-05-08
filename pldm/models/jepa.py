@@ -235,6 +235,84 @@ class JEPA(torch.nn.Module):
             pred_output=pred_output,
             actions=actions,
         )
+        
+        
+    def forward_closed(
+        self,
+        input_states: torch.Tensor,          # [T+1, B, C, H, W]
+        actions: torch.Tensor,               # [T, B, A]
+        propio_pos: Optional[torch.Tensor] = None,
+        propio_vel: Optional[torch.Tensor] = None,
+    ):
+        """
+        deterministic な closed-loop rollout。
+        z_0 = h(s_0), 以降は z_{t+1} = f(z_t, a_t) を繰り返す
+        """
+
+        T = actions.shape[0]
+
+        # === proprio の準備 ===
+        prop_batch = None
+        if propio_pos is not None and propio_pos.numel():
+            prop_batch = propio_pos
+        if propio_vel is not None and propio_vel.numel():
+            prop_batch = torch.cat([prop_batch, propio_vel], dim=-1) if prop_batch is not None else propio_vel
+
+        # === s_0 の準備 ===
+        s0 = input_states[0]       # [B, C, H, W]
+        p0 = prop_batch[0] if prop_batch is not None else None
+
+        # === エンコーダに通して初期状態取得 ===
+        initial_backbone = self.backbone.forward(s0, propio=p0)
+        current_state = initial_backbone.encodings  # [B, D]
+
+        # === rollout ===
+        state_preds = [current_state]
+        for t in range(T):
+            current_state = self.predictor.forward(current_state, actions[t])
+            state_preds.append(current_state)
+        state_preds = torch.stack(state_preds)  # [T+1, B, D]
+
+        # === rollout 結果 state_preds の分割 ===
+        if self.predictor.pred_propio_dim:
+            if isinstance(self.predictor.pred_propio_dim, int):
+                obs_component = state_preds[:, :, :-self.predictor.pred_propio_dim]
+                propio_component = state_preds[:, :, -self.predictor.pred_propio_dim:]
+            else:
+                pred_propio_channels = self.predictor.pred_propio_dim[0]
+                obs_component = state_preds[:, :, :-pred_propio_channels]
+                propio_component = state_preds[:, :, -pred_propio_channels:]
+        else:
+            obs_component = state_preds
+            propio_component = None
+
+        # === 本物のs[0:T+1]からのバックボーン出力列を得る ===
+        if prop_batch is not None:
+            backbone_output = self.backbone.forward_multiple(input_states, propio=prop_batch)
+        else:
+            backbone_output = self.backbone.forward_multiple(input_states)
+
+        # === 結果まとめ ===
+        pred_output = PredictorOutput(
+            predictions=state_preds,
+            obs_component=obs_component,
+            propio_component=propio_component,
+            prior_mus=None,
+            prior_vars=None,
+            prior_logits=None,
+            priors=None,
+            posterior_mus=None,
+            posterior_vars=None,
+            posterior_logits=None,
+            posteriors=None,
+        )
+
+        return ForwardResult(
+            backbone_output=backbone_output,
+            ema_backbone_output=None,
+            pred_output=pred_output,
+            actions=actions,
+        )
 
     def update_ema(self):
         if self.config.momentum > 0:

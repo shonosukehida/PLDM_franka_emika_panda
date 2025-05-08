@@ -189,7 +189,7 @@ class Trainer:
         # infer obs shape
         sample_data = next(iter(self.ds))
         input_dim = sample_data.states.shape[2:]
-        print("Inferred input_dim:", input_dim)
+
         if len(input_dim) == 1:
             input_dim = input_dim[0]
 
@@ -204,6 +204,9 @@ class Trainer:
             and sample_data.propio_vel is not None
             and bool(sample_data.propio_vel.shape[-1])
         )
+        print("use_propio_pos:", use_propio_pos)
+        print("use_propio_vel:", use_propio_vel)
+
 
         self.device = torch.device(f'cuda:{self.config.device_id}' if torch.cuda.is_available() else 'cpu')
         
@@ -377,6 +380,7 @@ class Trainer:
                 self.optimizer.zero_grad()
 
                 optional_fields = get_optional_fields(batch, device=s.device)
+                # print('confirm optional_fields:',optional_fields["propio_pos"].shape, optional_fields["propio_vel"].shape)
 
                 forward_result = self.model.forward_posterior(s.to(self.device), a.to(self.device), **optional_fields)
 

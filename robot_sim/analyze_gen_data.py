@@ -37,6 +37,14 @@ def check_data(data_path):
             print(f" - {k}: shape {v.shape}")
         else:
             print(f" - {k}: type {type(v)}")
+    # [1.2] Check for propio keys
+    expected_keys = ["propio_pos", "propio_vel"]
+    print("\n[1.2] Checking propio-related keys:")
+    for key in expected_keys:
+        if key in example:
+            print(f"✅ {key} exists, shape = {example[key].shape}")
+        else:
+            print(f"❌ {key} is missing!")
 
     actions = example["actions"]
     observations = example["observations"]
@@ -57,6 +65,8 @@ def check_data(data_path):
     print("\n[2] Checking images.npy...")
     try:
         images = np.load(images_path)
+        print(f"📐 images shape: {images.shape}")
+
     except Exception as e:
         print(f"❌ Failed to load images.npy: {e}")
         return data, None
@@ -82,6 +92,8 @@ def check_data(data_path):
         print("\n[4] Saving goal_images.npy as images...")
         try:
             goal_imgs = np.load(goal_img_path)
+            print(f"📐 goal_images shape: {goal_imgs.shape}")
+
             save_goal_dir = "robot_sim/analyze/goal"
             os.makedirs(save_goal_dir, exist_ok=True)
 

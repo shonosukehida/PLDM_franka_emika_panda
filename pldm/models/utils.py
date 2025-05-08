@@ -93,7 +93,7 @@ class Expander2D(nn.Module):
         self.h = h
 
     def forward(self, x):
-        print("Expander2D input:", x.shape)
+        # print("Expander2D input:", x.shape)
         # Reshape to (..., n, 1, 1)
         x = x.unsqueeze(-1).unsqueeze(-1)
 
