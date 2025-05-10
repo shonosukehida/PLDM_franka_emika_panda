@@ -5,6 +5,7 @@ env_name: &env_name franka
 base_lr: 0.041037
 data:
   dataset_type: DatasetType.Franka
+  min_max_normalize_state: false
   franka_config:
     env_name: *env_name
     random_actions: false
@@ -25,6 +26,7 @@ data:
     stack_states: 1
     train: true
     val_fraction: 0.2
+    
 epochs: 10
 eval_at_beginning: false
 eval_during_training: false
@@ -70,10 +72,16 @@ objectives_l1:
     arch: 'conv'
     use_pred: false
     arch_subclass: a
-  objectives:
+  open_objectives:
   - ObjectiveType.VICRegObs
+  # - ObjectiveType.VICReg
   - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
+  closed_objectives:
+  # - ObjectiveType.VICRegObs
+  - ObjectiveType.VICReg
+  - ObjectiveType.IDM
+  # - ObjectiveType.PredictionPropio
   vicreg_obs:
     adjust_cov: true
     cov_chunk_size: null
@@ -91,82 +99,82 @@ objectives_l1:
 optimizer_type: Adam
 output_dir: franka
 output_root: ./pldm/checkpoints
-# eval_cfg:
-#   env_name: *env_name
-#   log_heatmap: false
-#   eval_l1: true
-#   probing:
-#     l1_depth: *n_steps
-#     train_images_path: ../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/images.npy
-#     train_path: ../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/data.p
-#     val_images_path: ../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/images.npy
-#     val_path: ../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/data.p
-#     probe_targets: 'locations,propio_vel'
-#     locations:
-#       arch: 'conv'
-#       subclass: 'c'
-#     propio_vel:
-#       arch: 'conv'
-#       subclass: 'c'
-#     l2_probe_targets: 'locations'
-#     probe_mpc: false
-#     probe_wall: false
-#     probe_propio: true
-#     probe_encoder: false
-#     probe_preds: true
-#     epochs: 5
-#     epochs_enc: 5
-#     epochs_latent: 5
-#     full_finetune: false
-#     lr: 0.0032
-#     max_samples: 2000000
-#     max_samples_enc: 2000000
-#     schedule: Cosine
-#     visualize_probing: true
-#     load_prober: false
-#   d4rl_planning:
-#     n_envs: 10 #85
-#     n_envs_batch_size: 4 #16
-#     n_steps: 192
-#     levels: "medium"
-#     medium:
-#       n_steps: 200
-#       n_envs: 20 #80
-#       max_plan_length: 100 
-#       plot_every: 10
-#       min_block_radius: 4
-#       max_block_radius: 9999
-#       override_config: true
-#     log_pred_dist_every: 9999999
-#     plot_every: 16
-#     set_start_target_path: "../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
-#     action_repeat: 4
-#     action_repeat_mode: 'id'
-#     img_size: 64
-#     replan_every: 4
-#     image_obs: true
-#     stack_states: 1
-#     data_path: '../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/'
-#     level1:
-#       planner_type: PlannerType.MPPI
-#       min_step: 0
-#       max_step: 1
-#       max_plan_length: 64 #128
-#       sgd:
-#         action_change_reg: 0
-#         l2_reg: 0
-#         lr: 0.03
-#         n_iters: 200
-#       mppi:
-#         noise_sigma: 5 #5
-#         num_samples: 500 #500
-#         lambda_: 0.0025
-#     #d4rl specific
-#     position_only: true
+eval_cfg:
+  env_name: *env_name
+  log_heatmap: false
+  eval_l1: true
+  probing:
+    l1_depth: *n_steps
+    train_images_path: ./pldm_envs/franka/presaved_datasets/val_pairs_50_ep_5_timestep_100/images.npy
+    train_path: ./pldm_envs/franka/presaved_datasets/val_pairs_50_ep_5_timestep_100/data.p
+    val_images_path: ./pldm_envs/franka/presaved_datasets/val_pairs_50_ep_5_timestep_100/images.npy
+    val_path: ./pldm_envs/franka/presaved_datasets/val_pairs_50_ep_5_timestep_100/data.p
+    probe_targets: 'locations,propio_vel'
+    locations:
+      arch: 'conv'
+      subclass: 'c'
+    propio_vel:
+      arch: 'conv'
+      subclass: 'c'
+    l2_probe_targets: 'locations'
+    probe_mpc: false
+    probe_wall: false
+    probe_propio: true
+    probe_encoder: false
+    probe_preds: true
+    epochs: 5
+    epochs_enc: 5
+    epochs_latent: 5
+    full_finetune: false
+    lr: 0.0032
+    max_samples: 2000000
+    max_samples_enc: 2000000
+    schedule: Cosine
+    visualize_probing: true
+    load_prober: false
+  d4rl_planning:
+    n_envs: 10 #85
+    n_envs_batch_size: 4 #16
+    n_steps: 192
+    levels: "medium"
+    medium:
+      n_steps: 200
+      n_envs: 20 #80
+      max_plan_length: 100 
+      plot_every: 10
+      min_block_radius: 4
+      max_block_radius: 9999
+      override_config: true
+    log_pred_dist_every: 9999999
+    plot_every: 16
+    set_start_target_path: null #"../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
+    action_repeat: 4
+    action_repeat_mode: 'id'
+    img_size: 64
+    replan_every: 4
+    image_obs: true
+    stack_states: 1
+    data_path: './pldm_envs/franka/presaved_datasets/val_pairs_50_ep_5_timestep_100/'
+    level1:
+      planner_type: PlannerType.MPPI
+      min_step: 0
+      max_step: 1
+      max_plan_length: 64 #128
+      sgd:
+        action_change_reg: 0
+        l2_reg: 0
+        lr: 0.03
+        n_iters: 200
+      mppi:
+        noise_sigma: 5 #5
+        num_samples: 500 #500
+        lambda_: 0.0025
+    #d4rl specific
+    position_only: true
 quick_debug: false
 run_group: pldm_franka
 run_name: pldm_franka
 run_project: Franka
 save_every_n_epochs: 1
 seed: 246
-wandb: true
+wandb: false

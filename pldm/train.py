@@ -221,8 +221,12 @@ class Trainer:
 
         self.model = self.model.to(self.device)
 
-        # create objectives
-        self.objectives_l1 = self.config.objectives_l1.build_objectives_list(
+        # create open objectives
+        self.open_objectives_l1 = self.config.objectives_l1.build_open_objectives_list(
+            name_prefix="l1", repr_dim=self.model.level1.spatial_repr_dim
+        )
+        # create open objectives
+        self.closed_objectives_l1 = self.config.objectives_l1.build_closed_objectives_list(
             name_prefix="l1", repr_dim=self.model.level1.spatial_repr_dim
         )
         # other stuff...
@@ -371,6 +375,7 @@ class Trainer:
                 # move to cuda and swap batch and time
                 s = batch.states.to(self.device).transpose(0, 1)
                 a = batch.actions.to(self.device).transpose(0, 1)
+                # a = batch.actions.to(self.device).transpose(0, 1)[:s.shape[0] - 1]
 
                 lr = scheduler.adjust_learning_rate(step)
 
@@ -381,15 +386,46 @@ class Trainer:
 
                 optional_fields = get_optional_fields(batch, device=s.device)
                 # print('confirm optional_fields:',optional_fields["propio_pos"].shape, optional_fields["propio_vel"].shape)
+                
+                
+                with torch.no_grad():
+                    closed_output = self.model.level1.forward_closed(
+                        input_states=s,  # [T+1, B, C, H, W]
+                        actions=a,       # [T, B, A]
+                        propio_pos=optional_fields.get("propio_pos", None),
+                        propio_vel=optional_fields.get("propio_vel", None),
+                    )
+                    # print('closed_output_type:', type(closed_output))
+                    # print('closed_output_instance:', closed_output.pred_output._fields)
+                    # print('closed_output.pred_output.obs_component:',closed_output.pred_output.obs_component.shape)
+                    # print('closed_output.pred_output.predictions:',closed_output.pred_output.predictions.shape)
+                    # print('clo    print("[DEBUG] input_states.shape:", s.shape)
+                    
+                    print("[DEBUG] input_states.shape:", s.shape)
+                    print("[DEBUG] actions.shape:", a.shape)
+                    print("[DEBUG] closed_output.pred_output.predictions.shape:", closed_output.pred_output.predictions.shape)
+                    print("[DEBUG] closed_output.backbone_output.encodings.shape:", closed_output.backbone_output.encodings.shape)
 
+                    closed_loss_infos = [
+                        objective(batch, [closed_output])
+                        for objective in self.closed_objectives_l1
+                    ]
+                    closed_total_loss = sum(info.total_loss for info in closed_loss_infos)
+
+                    Logger.run().log({
+                        "closed_loop_loss": closed_total_loss.item(),
+                        "custom_step": step,
+                        "epoch": epoch,
+                    }, commit=False)
+                    Logger.run().commit()
+                
+                
                 forward_result = self.model.forward_posterior(s.to(self.device), a.to(self.device), **optional_fields)
-
                 loss_infos = []
-
                 if self.config.hjepa.train_l1:
                     loss_infos += [
                         objective(batch, [forward_result.level1])
-                        for objective in self.objectives_l1
+                        for objective in self.open_objectives_l1
                     ]
                 for i, loss in enumerate(loss_infos):
                     if loss is None:

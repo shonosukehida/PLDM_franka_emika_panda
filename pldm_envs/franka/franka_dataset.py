@@ -26,47 +26,48 @@ class FrankaDataset(Dataset):
         self.T_plus_1 = self.T + 1
         self.image_shape = self.images_tensor.shape[1:] if config.images_path else (31,)
 
+
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
         d = self.data[idx]
-        
-        # T+1 長の観測と T 長の行動
-        observations = torch.tensor(d["observations"], dtype=torch.float32)  # (T+1, D)
-        actions = torch.tensor(d["actions"], dtype=torch.float32)  # (T, action_dim)
+        T = self.config.sample_length  # 15
+
+        obs_np = d["observations"][:T]  # ← T個だけ
+        act_np = d["actions"][:T-1]     # ← T-1個だけ
         goal_obs = torch.tensor(d["goal_obs"], dtype=torch.float32)
 
-        # スライス範囲（T+1 → T にする）
-        start = 0
-        end = start + self.config.sample_length + 1  # sample_length = T
-        T = self.config.sample_length
+        # 整合性チェック
+        assert obs_np.shape[0] == T, f"Expected T obs, got {obs_np.shape[0]}"
+        assert act_np.shape[0] == T - 1, f"Expected T-1 actions, got {act_np.shape[0]}"
 
-        # proprio 情報を位置/速度で分離
-        qpos = observations[:, :7]   # (T+1, 7)
-        qvel = observations[:, 7:]   # (T+1, 7)
+        observations = torch.tensor(obs_np, dtype=torch.float32)
+        actions = torch.tensor(act_np, dtype=torch.float32)
 
-        propio_pos = qpos[start:end-1]  # (T, 7)
-        propio_vel = qvel[start:end-1]  # (T, 7)
+        # proprio 情報を分離
+        qpos = observations[:, :7]
+        qvel = observations[:, 7:]
+        propio_pos = qpos
+        propio_vel = qvel
+        locations = qpos[:, 9:11]
 
-        # 青boxの位置情報（必要なら）
-        locations = qpos[start:end-1, 9:11]  # (T, 2)
-
-        # 画像のスライス
+        # 画像も T枚でOK
         if self.config.images_path is not None:
-            image_start_index = idx * self.T_plus_1
-            image_end_index = image_start_index + self.T_plus_1
-            images = torch.from_numpy(self.images_tensor[image_start_index:image_end_index])
-            images = images.permute(0, 3, 1, 2).float()  # (T+1, C, H, W)
-            states = images[start:end-1]  # (T, C, H, W)
+            image_start_index = idx * self.T_plus_1  # このままでOK（保存形式がT+1固定なら）
+            images = self.images_tensor[image_start_index:image_start_index + T]
+            images = torch.from_numpy(images).permute(0, 3, 1, 2).float()  # (T, C, H, W)
+            states = images
         else:
-            states = observations[start:end-1]  # (T, D)
+            states = observations  # (T, D)
 
         return FrankaSample(
-            states=states,             # (T, ...)
-            actions=actions[start:end-1],  # (T, 7)
-            locations=locations,       # (T, 2)
+            states=states,
+            actions=actions,
+            locations=locations,
             indices=idx,
-            propio_pos=propio_pos,     # (T, 7)
-            propio_vel=propio_vel,     # (T, 7)
+            propio_pos=propio_pos,
+            propio_vel=propio_vel,
         )
+
+

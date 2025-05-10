@@ -216,7 +216,57 @@ class DatasetFactory:
         return datasets
     
     def _create_franka_datasets(self):
+
         ds = FrankaDataset(self.config.franka_config)
-        ds = make_dataloader(ds=ds, loader_config=self.config)
-        return Datasets(ds=ds, val_ds=None)
-        
+        ds = make_dataloader(
+            ds=ds, 
+            loader_config=self.config, 
+            )
+
+        val_ds = FrankaDataset(
+            dataclasses.replace(
+                self.config.franka_config,
+                path=self.probing_cfg.train_path,
+                images_path=self.probing_cfg.train_images_path,
+                sample_length=self.probing_cfg.l1_depth,
+            ),
+        )
+
+        probe_ds = FrankaDataset(
+            dataclasses.replace(
+                self.config.franka_config,
+                path=self.probing_cfg.train_path,
+                images_path=self.probing_cfg.train_images_path,
+                sample_length=self.probing_cfg.l1_depth,
+            ),
+        )
+        probe_ds = make_dataloader(
+            ds=probe_ds,
+            loader_config=self.config,
+            normalizer=ds.normalizer,
+            suffix="probe_train",
+        )
+
+        probe_val_ds = FrankaDataset(
+            dataclasses.replace(
+                self.config.franka_config,
+                path=self.probing_cfg.val_path,
+                images_path=self.probing_cfg.val_images_path,
+                sample_length=self.probing_cfg.l1_depth,
+                train=False,
+                crop_length=50000,
+                batch_size=64,
+            ),
+        )
+
+        probe_val_ds = make_dataloader(
+            ds=probe_val_ds,
+            loader_config=self.config,
+            normalizer=ds.normalizer,
+            suffix="probe_val",
+        )
+        return Datasets(
+            ds=ds, 
+            val_ds=val_ds,
+            probing_datasets=ProbingDatasets(ds=probe_ds, val_ds=probe_val_ds),
+            )

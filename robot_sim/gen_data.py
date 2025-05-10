@@ -5,9 +5,9 @@ import os
 from tqdm import tqdm
 
 # ==== CONFIG ====
-PAIRS = 5
+PAIRS = 50
 MIN_DIST = 0.4
-EPISODES_PER_PAIR = 1
+EPISODES_PER_PAIR = 5
 STEPS_PER_EPISODE = 100
 SAVE_PATH = f"pldm_envs/franka/presaved_datasets/pairs_{PAIRS}_ep_{EPISODES_PER_PAIR}_timestep_{STEPS_PER_EPISODE}"
 IMAGE_SIZE = (64, 64)
