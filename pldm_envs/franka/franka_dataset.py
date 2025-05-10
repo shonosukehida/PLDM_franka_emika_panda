@@ -4,16 +4,17 @@ import numpy as np
 from pldm_envs.franka.enums import FrankaSample
 
 
-
 class FrankaDataset(Dataset):
     def __init__(self, config, images_tensor=None):
         self.config = config
+        self.sample_length = config.sample_length
+        self.stack_states = config.stack_states
+        self.use_images = config.images_path is not None
 
         print("loading saved dataset from", config.path)
-        self.data = torch.load(config.path, map_location="cpu", weights_only=False)
+        self.splits = torch.load(config.path, map_location="cpu", weights_only=False)
 
-        if config.images_path is not None:
-            print("states will contain images")
+        if self.use_images:
             if images_tensor is None:
                 self.images_tensor = np.load(config.images_path, mmap_mode="r")
             else:
@@ -22,44 +23,57 @@ class FrankaDataset(Dataset):
         else:
             print("states will contain proprioceptive info")
 
-        self.T = self.data[0]["actions"].shape[0]  # each episode has T steps
-        self.T_plus_1 = self.T + 1
-        self.image_shape = self.images_tensor.shape[1:] if config.images_path else (31,)
+        self.episode_lengths = [len(d["observations"]) for d in self.splits]
+        self.cum_obs_counts = np.cumsum(self.episode_lengths)
 
+        self.flattened_indices = []
+        for ep_idx, d in enumerate(self.splits):
+            usable = self.episode_lengths[ep_idx] - self.sample_length - (self.stack_states - 1)
+            for t in range(usable):
+                self.flattened_indices.append((ep_idx, t))
 
     def __len__(self):
-        return len(self.data)
+        return len(self.flattened_indices)
 
     def __getitem__(self, idx):
-        d = self.data[idx]
-        T = self.config.sample_length  # 15
+        ep_idx, start_idx = self.flattened_indices[idx]
+        episode = self.splits[ep_idx]
 
-        obs_np = d["observations"][:T]  # ← T個だけ
-        act_np = d["actions"][:T-1]     # ← T-1個だけ
-        goal_obs = torch.tensor(d["goal_obs"], dtype=torch.float32)
+        length = self.sample_length + self.stack_states - 1
+        end_idx = start_idx + length
 
-        # 整合性チェック
-        assert obs_np.shape[0] == T, f"Expected T obs, got {obs_np.shape[0]}"
-        assert act_np.shape[0] == T - 1, f"Expected T-1 actions, got {act_np.shape[0]}"
+        obs = episode["observations"][start_idx:end_idx]  # (L, D)
+        actions = episode["actions"][start_idx:end_idx - 1]  # (L-1, A)
 
-        observations = torch.tensor(obs_np, dtype=torch.float32)
-        actions = torch.tensor(act_np, dtype=torch.float32)
+        obs = torch.tensor(obs, dtype=torch.float32)
+        actions = torch.tensor(actions, dtype=torch.float32)
 
-        # proprio 情報を分離
-        qpos = observations[:, :7]
-        qvel = observations[:, 7:]
+        qpos = obs[:, :7]
+        qvel = obs[:, 7:]
         propio_pos = qpos
         propio_vel = qvel
         locations = qpos[:, 9:11]
 
-        # 画像も T枚でOK
-        if self.config.images_path is not None:
-            image_start_index = idx * self.T_plus_1  # このままでOK（保存形式がT+1固定なら）
-            images = self.images_tensor[image_start_index:image_start_index + T]
-            images = torch.from_numpy(images).permute(0, 3, 1, 2).float()  # (T, C, H, W)
+        if self.use_images:
+            if ep_idx == 0:
+                img_start = start_idx
+            else:
+                img_start = self.cum_obs_counts[ep_idx - 1] + start_idx
+            images = torch.from_numpy(self.images_tensor[img_start:img_start + length])
+            images = images.permute(0, 3, 1, 2).float()
             states = images
         else:
-            states = observations  # (T, D)
+            states = obs
+
+        if self.stack_states > 1:
+            states = torch.stack([
+                states[i:i + self.stack_states] for i in range(self.sample_length)
+            ], dim=0)
+            states = states.flatten(1, 2)
+            actions = actions[(self.stack_states - 1):]
+            locations = locations[(self.stack_states - 1):]
+            propio_pos = propio_pos[(self.stack_states - 1):]
+            propio_vel = propio_vel[(self.stack_states - 1):]
 
         return FrankaSample(
             states=states,
@@ -69,5 +83,3 @@ class FrankaDataset(Dataset):
             propio_pos=propio_pos,
             propio_vel=propio_vel,
         )
-
-

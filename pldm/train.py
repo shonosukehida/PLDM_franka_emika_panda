@@ -401,10 +401,10 @@ class Trainer:
                     # print('closed_output.pred_output.predictions:',closed_output.pred_output.predictions.shape)
                     # print('clo    print("[DEBUG] input_states.shape:", s.shape)
                     
-                    print("[DEBUG] input_states.shape:", s.shape)
-                    print("[DEBUG] actions.shape:", a.shape)
-                    print("[DEBUG] closed_output.pred_output.predictions.shape:", closed_output.pred_output.predictions.shape)
-                    print("[DEBUG] closed_output.backbone_output.encodings.shape:", closed_output.backbone_output.encodings.shape)
+                    # print("[DEBUG] input_states.shape:", s.shape)
+                    # print("[DEBUG] actions.shape:", a.shape)
+                    # print("[DEBUG] closed_output.pred_output.predictions.shape:", closed_output.pred_output.predictions.shape)
+                    # print("[DEBUG] closed_output.backbone_output.encodings.shape:", closed_output.backbone_output.encodings.shape)
 
                     closed_loss_infos = [
                         objective(batch, [closed_output])
