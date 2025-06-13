@@ -37,6 +37,7 @@ class FrankaConfig:
     stack_states: int = 1
     img_size: int = 64
     random_actions: bool = False
+    chunked_actions: bool = False
 
     use_goal_images: bool = True  # PLDM特有のオプション
 

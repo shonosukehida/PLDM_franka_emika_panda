@@ -152,6 +152,27 @@ PROBER_CONV_LAYERS_CONFIG = {
         (32, 32, 3, 1, 1),
         ("fc", -1, 2),
     ],
+
+    "d": [
+        (-1, 32, 3, 1, 1),
+        ("max_pool", 2, 2, 0),
+        (32, 32, 3, 1, 1),
+        ("max_pool", 2, 2, 0),
+        (32, 32, 3, 1, 1),
+        (32, 32, 3, 1, 1),
+        ("fc", -1, 3),
+    ],
+
+    "e": [
+        (-1, 32, 3, 1, 1),
+        ("max_pool", 2, 2, 0),
+        (32, 32, 3, 1, 1),
+        ("max_pool", 2, 2, 0),
+        (32, 32, 3, 1, 1),
+        (32, 32, 3, 1, 1),
+        ("fc", -1, 7),
+    ],
+
 }
 
 
@@ -191,7 +212,6 @@ class Prober(torch.nn.Module):
             output = self.prober(e)
 
         # output = output.view(*output.shape[:-1], *self.output_shape)
-
         return output
 
 

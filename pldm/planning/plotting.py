@@ -30,21 +30,31 @@ def log_planning_plots(
 
     img_size = result.observations[0][0].shape[-1]
 
-    if pixel_mapper is not None:
+
+    if pixel_mapper is not None: ##
+        # targets_pixels = torch.as_tensor(
+        #     pixel_mapper.obs_coord_to_pixel_coord(result.targets)
+        # )
         targets_pixels = torch.as_tensor(
-            pixel_mapper.obs_coord_to_pixel_coord(result.targets)
+            pixel_mapper(result.targets)
         )
 
+        # locations_pixels = [
+        #     torch.as_tensor(pixel_mapper.obs_coord_to_pixel_coord(x))
+        #     for x in result.locations
+        # ]
         locations_pixels = [
-            torch.as_tensor(pixel_mapper.obs_coord_to_pixel_coord(x))
-            for x in result.locations
+            torch.as_tensor(pixel_mapper(x)) for x in result.locations
         ]
 
+        # pred_locations_pixels = [
+        #     torch.as_tensor(pixel_mapper.obs_coord_to_pixel_coord(x))
+        #     for x in result.pred_locations
+        # ]
         pred_locations_pixels = [
-            torch.as_tensor(pixel_mapper.obs_coord_to_pixel_coord(x))
-            for x in result.pred_locations
+            torch.as_tensor(pixel_mapper(x)) for x in result.pred_locations
         ]
-    else:
+    else: #x
         targets_pixels = result.targets
         locations_pixels = result.locations
         pred_locations_pixels = result.pred_locations
@@ -65,6 +75,9 @@ def log_planning_plots(
             if i > report.terminations[idx]:
                 break
             plt.subplot(grid_size, grid_size, subplot_idx + 1)
+            
+            # print('RESULT.OBSERVATONS', result.observations[i][idx].shape)
+            
 
             if "wall" in prefix:
                 img = -1 * result.observations[i][idx].sum(dim=0).detach().cpu()
@@ -78,7 +91,7 @@ def log_planning_plots(
                     + 0.5870 * img[:, :, 1]
                     + 0.1140 * img[:, :, 2]
                 )
-
+                
                 # Normalize the grayscale image to the range [0, 1]
                 img = (img - img.min()) / (img.max() - img.min())
             else:

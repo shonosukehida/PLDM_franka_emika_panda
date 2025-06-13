@@ -15,10 +15,12 @@ dependencies = [
     "arm-pytorch-utilities>=0.4.3",
     "cython==0.29.36",
     "d4rl>=1.1",
+    "defusedxml>=0.7.1",
     "editdistance>=0.8.1",
     "gdown>=5.2.0",
     "gym<0.25.0",
     "gymnasium[mujoco]>=1.1.1",
+    "ikpy>=3.4.2",
     "imageio>=2.37.0",
     "imageio-ffmpeg>=0.6.0",
     "ipython>=8.12.3",
@@ -29,6 +31,7 @@ dependencies = [
     "numpy>=1.24.4",
     "numpy-quaternion>=2023.0.3",
     "omegaconf>=2.3.0",
+    "rospkg>=1.6.0",
     "scipy>=1.15.2",
     "statsmodels>=0.14.1",
     "torch>=2.5.1",
@@ -37,6 +40,7 @@ dependencies = [
     "uvicorn>=0.33.0",
     "uvloop>=0.21.0",
     "wandb>=0.19.8",
+    "xacro>=1.13.3",
     "zarr>=2.16.1",
 ]
 

@@ -40,6 +40,7 @@ from pldm.models.hjepa import HJEPA, HJEPAConfig
 from pldm.objectives import ObjectivesConfig
 import pldm.utils as utils
 
+from pldm.objectives.idm import IDMObjective
 
 def seed_everything(seed):
     torch.manual_seed(seed)
@@ -89,6 +90,8 @@ class TrainConfig(ConfigBase):
     compile_model: bool = True
 
     eval_cfg: EvalConfig = field(default_factory=EvalConfig)
+    
+    use_closed_loss_func: bool = False
 
     def __post_init__(self):
         if self.quick_debug:
@@ -133,10 +136,10 @@ class TrainConfig(ConfigBase):
         self.eval_cfg.eval_l2 = not self.hjepa.disable_l2
         
         
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         
         self.output_path = os.path.join(
-            self.output_root.rstrip("/"), f'{self.output_dir.lstrip("/")}_{timestamp}'
+            self.output_root.rstrip("/"), f'{self.output_dir.lstrip("/")}_{self.timestamp}'
         )
         self.run_group = self.output_dir
 
@@ -157,13 +160,14 @@ class TrainConfig(ConfigBase):
 class Trainer:
     def __init__(self, config: TrainConfig):
         self.config = config
+        print('use_closed_loss:',self.config.use_closed_loss_func)
 
         print(f"Logger output path: {self.config.output_path}")
         Logger.run().initialize(
             output_path=self.config.output_path,
             wandb_enabled=self.config.wandb,
             project=config.run_project,
-            name=config.run_name,
+            name=f"{config.run_name}_{config.timestamp}",
             group=config.run_group,
             config=dataclasses.asdict(config),
         )
@@ -184,10 +188,23 @@ class Trainer:
         self.datasets = datasets
 
         self.ds = datasets.ds
+        print('self.ds.normalizer:', self.ds.normalizer)
+        print('self.ds.normalizer.state_dict():', self.ds.normalizer.state_dict())
         self.val_ds = datasets.val_ds
 
         # infer obs shape
         sample_data = next(iter(self.ds))
+        
+        # # propio_pos/vel の正規化状態を確認
+        # print("=== propio_pos sample ===")
+        # print(sample_data.propio_pos[0])  # shape: [T, 7]
+        # print("mean:", sample_data.propio_pos[0].mean().item())
+        # print("std :", sample_data.propio_pos[0].std().item())
+
+        # print("=== propio_vel sample ===")
+        # print(sample_data.propio_vel[0])  # shape: [T, 7]
+        # print("mean:", sample_data.propio_vel[0].mean().item())
+        # print("std :", sample_data.propio_vel[0].std().item())
         input_dim = sample_data.states.shape[2:]
 
         if len(input_dim) == 1:
@@ -225,10 +242,12 @@ class Trainer:
         self.open_objectives_l1 = self.config.objectives_l1.build_open_objectives_list(
             name_prefix="l1", repr_dim=self.model.level1.spatial_repr_dim
         )
-        # create open objectives
-        self.closed_objectives_l1 = self.config.objectives_l1.build_closed_objectives_list(
-            name_prefix="l1", repr_dim=self.model.level1.spatial_repr_dim
-        )
+        # create closed objectives
+        self.closed_objectives_l1 = None
+        if self.config.use_closed_loss_func:
+            self.closed_objectives_l1 = self.config.objectives_l1.build_closed_objectives_list(
+                name_prefix="l1", repr_dim=self.model.level1.spatial_repr_dim
+            )
         # other stuff...
 
         load_result = self.maybe_load_model()
@@ -323,6 +342,34 @@ class Trainer:
                 len(res.unexpected_keys) == 0
             ), f"Unexpected keys when loading weights: {res.unexpected_keys}"
             print(f"loaded model from {self.config.load_checkpoint_path}")
+
+            # IDM のパラメータを読み込む
+            if "idm_open_state_dicts" in checkpoint:
+                for obj in self.open_objectives_l1:
+                    if isinstance(obj, IDMObjective):
+                        state = checkpoint["idm_open_state_dicts"].get(obj.name_prefix, None)
+                        if state is not None:
+                            obj.action_predictor.load_state_dict(state)
+                            print(f"✅ open-IDM loaded for {obj.name_prefix}")
+                        else:
+                            print(f"⚠️ No open-IDM weights found for {obj.name_prefix}")
+
+            if "idm_closed_state_dicts" in checkpoint:
+                if self.closed_objectives_l1 is not None:
+                    for obj in self.closed_objectives_l1:
+                        if isinstance(obj, IDMObjective):
+                            state = checkpoint["idm_closed_state_dicts"].get(obj.name_prefix, None)
+                            if state is not None:
+                                obj.action_predictor.load_state_dict(state)
+                                print(f"✅ closed-IDM loaded for {obj.name_prefix}")
+                            else:
+                                print(f"⚠️ No closed-IDM weights found for {obj.name_prefix}")
+            if "normalizer" in checkpoint:
+                self.ds.normalizer.load_state_dict(checkpoint["normalizer"])
+                print("✅ Normalizer loaded!")
+            else:
+                print("⚠️ No normalizer found in checkpoint.")
+
             return True
         return False
 
@@ -375,7 +422,20 @@ class Trainer:
                 # move to cuda and swap batch and time
                 s = batch.states.to(self.device).transpose(0, 1)
                 a = batch.actions.to(self.device).transpose(0, 1)
-                # a = batch.actions.to(self.device).transpose(0, 1)[:s.shape[0] - 1]
+                print('====state====')
+                print('s.type:', type(s))
+                print('s.shape:', s.shape)
+                print('s.mean:', s.mean())
+                print('s.std:', s.std())
+                print('s.min:', s.min())
+                print('s.max:', s.max())
+                print('====action====')
+                print('a.type:', type(a))
+                print('a.shape:', a.shape)
+                print('a.mean:', a.mean())
+                print('a.std:', a.std())
+                print('a.min:', a.min())
+                print('a.max:', a.max())
 
                 lr = scheduler.adjust_learning_rate(step)
 
@@ -389,34 +449,60 @@ class Trainer:
                 
                 
                 with torch.no_grad():
-                    closed_output = self.model.level1.forward_closed(
-                        input_states=s,  # [T+1, B, C, H, W]
-                        actions=a,       # [T, B, A]
-                        propio_pos=optional_fields.get("propio_pos", None),
-                        propio_vel=optional_fields.get("propio_vel", None),
-                    )
-                    # print('closed_output_type:', type(closed_output))
-                    # print('closed_output_instance:', closed_output.pred_output._fields)
-                    # print('closed_output.pred_output.obs_component:',closed_output.pred_output.obs_component.shape)
-                    # print('closed_output.pred_output.predictions:',closed_output.pred_output.predictions.shape)
-                    # print('clo    print("[DEBUG] input_states.shape:", s.shape)
+                    # closed_output = self.model.level1.forward_closed(
+                    #     input_states=s,  # [T+1, B, C, H, W]
+                    #     actions=a,       # [T, B, A]
+                    #     propio_pos=optional_fields.get("propio_pos", None),
+                    #     propio_vel=optional_fields.get("propio_vel", None),
+                    # )
+
+                    # if self.closed_objectives_l1 is not None:
+                    #     closed_loss_infos = [
+                    #         objective(batch, [closed_output])
+                    #         for objective in self.closed_objectives_l1
+                    #     ]
+                    # else:
+                    #     closed_loss_infos = [
+                    #         objective(batch, [closed_output])
+                    #         for objective in self.open_objectives_l1
+                    #     ]
+                    # closed_total_loss = sum(info.total_loss for info in closed_loss_infos)
+
+                    # Logger.run().log(
+                    #     {
+                    #     "closed_loop_loss": closed_total_loss.item(),
+                    #     "custom_step": step,
+                    #     "epoch": epoch,
                     
-                    # print("[DEBUG] input_states.shape:", s.shape)
-                    # print("[DEBUG] actions.shape:", a.shape)
-                    # print("[DEBUG] closed_output.pred_output.predictions.shape:", closed_output.pred_output.predictions.shape)
-                    # print("[DEBUG] closed_output.backbone_output.encodings.shape:", closed_output.backbone_output.encodings.shape)
-
-                    closed_loss_infos = [
-                        objective(batch, [closed_output])
-                        for objective in self.closed_objectives_l1
+                    #     }, 
+                    #     commit=False, 
+                    #     )
+                    # Logger.run().commit()
+                    
+                    
+                    #実際のopen_forward (のはず)
+                    open_output = self.model.forward_open(
+                        input_states=s,  # [T, B, C, H, W] = [15, 64, 3, 64, 64]
+                        actions=a,       # [T - 1, B, D] = [14, 64, 2]
+                        propio_pos=optional_fields.get("propio_pos", None), #[T, B, D]
+                        propio_vel=optional_fields.get("propio_vel", None), #[T, B, D]
+                        
+                    )
+                    
+                    open_loss_infos = [
+                        objective(batch, [open_output.level1])
+                        for objective in self.open_objectives_l1
                     ]
-                    closed_total_loss = sum(info.total_loss for info in closed_loss_infos)
-
-                    Logger.run().log({
-                        "closed_loop_loss": closed_total_loss.item(),
-                        "custom_step": step,
+                    open_total_loss = sum(info.total_loss for info in open_loss_infos)
+                    
+                    
+                    Logger.run().log(
+                        {
+                        "open_loop_loss": open_total_loss.item(),
+                        "custom_step": self.step,
                         "epoch": epoch,
-                    }, commit=False)
+                        },
+                                     )
                     Logger.run().commit()
                 
                 
@@ -438,6 +524,8 @@ class Trainer:
                 total_loss.backward()
                 self.optimizer.step()
                 self.model.update_ema()  # if ema is enabled, update ema encoder
+                
+                self.validate_loss_val_ds() 
 
                 train_time = time.time() - start_time
                 log_start_time = time.time()
@@ -445,7 +533,7 @@ class Trainer:
                 self.metric_tracker.update("train_time", train_time)
                 self.metric_tracker.update("data_time", data_time)
 
-                if self.config.quick_debug or (step % 100 == 0):
+                if self.config.quick_debug or (step % 100 == 0) or True:
                     metric_log = self.metric_tracker.build_log_dict()
                     pbar.set_description(
                         f"Loss: {total_loss.item():.4f}, "
@@ -476,7 +564,7 @@ class Trainer:
                     )
                     Logger.run().commit()
 
-                    if step - first_step == 5:
+                    if step - first_step == 5 and False:
                         return
 
                 self.metric_tracker.update("log_time", time.time() - log_start_time)
@@ -491,8 +579,7 @@ class Trainer:
                 self.epoch % self.config.eval_every_n_epochs == 0
                 and self.config.eval_during_training
             ) or self.epoch >= self.config.epochs:
-                pass
-                # self.validate()
+                self.validate()
 
     @torch.no_grad()
     def eval_on_objectives(self):
@@ -515,7 +602,7 @@ class Trainer:
             if self.config.hjepa.train_l1:
                 loss_infos += [
                     objective(batch, [forward_result.level1])
-                    for objective in self.objectives_l1
+                    for objective in self.open_objectives_l1
                 ]
 
             for loss_info in loss_infos:
@@ -560,6 +647,7 @@ class Trainer:
             epoch=self.epoch,
             probing_datasets=self.datasets.probing_datasets,
             l2_probing_datasets=self.datasets.l2_probing_datasets,
+            objectives_l1=self.config.objectives_l1,
             load_checkpoint_path=self.config.load_checkpoint_path,
             output_path=self.config.output_path,
             data_config=self.config.data.wall_config,  # TODO: refactor name to data_config
@@ -587,6 +675,19 @@ class Trainer:
     def save_model(self):
         if self.config.output_path is not None:
             os.makedirs(self.config.output_path, exist_ok=True)
+            
+            # IDM の action_predictor を含むすべての open objectives を対象に保存
+            idm_open_state_dicts = {}
+            for obj in self.open_objectives_l1:
+                if isinstance(obj, IDMObjective):
+                    idm_open_state_dicts[obj.name_prefix] = obj.action_predictor.state_dict()
+            
+            idm_closed_state_dicts = {}
+            if self.closed_objectives_l1 is not None:
+                for obj in self.closed_objectives_l1:
+                    if isinstance(obj, IDMObjective):
+                        idm_closed_state_dicts[obj.name_prefix] = obj.action_predictor.state_dict()
+                    
             torch.save(
                 {
                     "model_state_dict": self.model.state_dict(),
@@ -594,12 +695,69 @@ class Trainer:
                     "epoch": self.epoch,
                     "step": self.step,
                     "sample_step": self.sample_step,
+                    "idm_open_state_dicts": idm_open_state_dicts,
+                    "idm_closed_state_dicts": idm_closed_state_dicts,
+                    "normalizer": self.ds.normalizer.state_dict(), 
                 },
                 os.path.join(
                     self.config.output_path,
                     f"epoch={self.epoch}_sample_step={self.sample_step}.ckpt",
                 ),
             )
+            
+    #val-loss の可視化
+    @torch.no_grad()
+    def validate_loss_val_ds(self):
+        if self.val_ds is None:
+            return
+        self.model.eval()
+        open_losses = []
+        closed_losses = []
+
+        for step, batch in enumerate(self.val_ds):
+            s = batch.states.to(self.device).transpose(0, 1)
+            a = batch.actions.to(self.device).transpose(0, 1)
+            optional_fields = get_optional_fields(batch, device=s.device)
+
+            # official - loop
+            open_result = self.model.forward_posterior(s, a, **optional_fields)
+            open_loss_infos = [
+                obj(batch, [open_result.level1]) for obj in self.open_objectives_l1
+            ]
+            open_total_loss = sum(info.total_loss.item() for info in open_loss_infos)
+            open_losses.append(open_total_loss)
+
+            # Closed-loop
+            # closed_result = self.model.level1.forward_closed(
+            #     input_states=s,
+            #     actions=a,
+            #     propio_pos=optional_fields.get("propio_pos", None),
+            #     propio_vel=optional_fields.get("propio_vel", None),
+            # )
+            # if self.closed_objectives_l1 is not None:
+            #     closed_loss_infos = [
+            #         obj(batch, [closed_result]) for obj in self.closed_objectives_l1
+            #     ]
+            # else:
+            #     closed_loss_infos = [
+            #         obj(batch, [closed_result]) for obj in self.open_objectives_l1
+            #     ]
+            # closed_total_loss = sum(info.total_loss.item() for info in closed_loss_infos)
+            # closed_losses.append(closed_total_loss)
+
+            if self.config.quick_debug or step >= 2:
+                break
+
+        Logger.run().log(
+            {
+            "val_loop_loss": np.mean(open_losses),
+            # "val_closed_loop_loss": np.mean(closed_losses),
+            "val_epoch": self.epoch,
+            "val_sample_step": self.sample_step,
+            "val_step": self.step, 
+            },
+            )
+        Logger.run().commit()
 
 
 def main(config: TrainConfig):

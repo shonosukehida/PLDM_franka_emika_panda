@@ -91,6 +91,7 @@ class NormalizedDataLoader:
         self.dataloader = dataloader
         self.normalizer = normalizer
         self.config = dataloader.config
+        self.dataset = dataloader.dataset
 
     def __len__(self):
         return len(self.dataloader)
@@ -122,9 +123,10 @@ def make_dataloader(ds, loader_config, normalizer=None, suffix="", train=True):
         pin_memory=False,
     )
     loader.config = config
-    print('MIN_MAX_NORMALIZE_STATE:',loader_config.min_max_normalize_state)
+    
+
     if loader_config.normalize:
-        if normalizer is None:
+        if normalizer is None: #probe_ds を作成する際にこのif 文を通っていない --> OK? 先にtrain-dataset作成時にnormalizerを作っている
             normalizer = Normalizer.build_normalizer(
                 loader,
                 n_samples=1 if loader_config.quick_debug else 100,

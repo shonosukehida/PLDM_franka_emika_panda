@@ -6,18 +6,19 @@ base_lr: 0.041037
 data:
   dataset_type: DatasetType.Franka
   min_max_normalize_state: false
+  normalize: true
   franka_config:
     env_name: *env_name
     random_actions: false
     img_size: 64
     alpha: 0.6
-    batch_size: 5 #128
+    batch_size: 64 #128
     beta: 0.4
     crop_length: null
-    images_path: ./pldm_envs/franka/presaved_datasets/pairs_5_ep_1_timestep_100/images.npy
-    path: ./pldm_envs/franka/presaved_datasets/pairs_5_ep_1_timestep_100/data.p
+    images_path: pldm_envs/franka/presaved_datasets/pairs_5_ep_2000_timestep_100/images.npy
+    path: pldm_envs/franka/presaved_datasets/pairs_5_ep_2000_timestep_100/data.p
     location_only: false
-    normalize: true
+    # normalize: true
     num_workers: 0 #10
     prioritized: false
     quick_debug: false
@@ -32,7 +33,7 @@ eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
 eval_mpcs: 20
-eval_only: false
+eval_only: true
 hjepa:
   l1_n_steps: *n_steps
   train_l1: true
@@ -63,8 +64,10 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: null
+load_checkpoint_path: pldm/checkpoints/franka_20250607_150152/epoch=10_sample_step=9459648.ckpt 
 load_l1_only: false
+
+use_closed_loss_func: &use_closed_loss_func false
 objectives_l1:
   idm:
     action_dim: 7
@@ -78,10 +81,10 @@ objectives_l1:
   - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   closed_objectives:
-  # - ObjectiveType.VICRegObs
-  - ObjectiveType.VICReg
+  - ObjectiveType.VICRegObs
+  # - ObjectiveType.VICReg
   - ObjectiveType.IDM
-  # - ObjectiveType.PredictionPropio
+  - ObjectiveType.PredictionPropio
   vicreg_obs:
     adjust_cov: true
     cov_chunk_size: null
@@ -103,25 +106,28 @@ eval_cfg:
   env_name: *env_name
   log_heatmap: false
   eval_l1: true
+  task_type: franka
   probing:
+    exe_probing: true
     l1_depth: *n_steps
-    train_images_path: ./pldm_envs/franka/presaved_datasets/val_pairs_50_ep_5_timestep_100/images.npy
-    train_path: ./pldm_envs/franka/presaved_datasets/val_pairs_50_ep_5_timestep_100/data.p
-    val_images_path: ./pldm_envs/franka/presaved_datasets/val_pairs_50_ep_5_timestep_100/images.npy
-    val_path: ./pldm_envs/franka/presaved_datasets/val_pairs_50_ep_5_timestep_100/data.p
+    train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy
+    train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
+    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy
+    val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
     probe_targets: 'locations,propio_vel'
     locations:
       arch: 'conv'
-      subclass: 'c'
+      subclass: 'd'
     propio_vel:
       arch: 'conv'
-      subclass: 'c'
+      subclass: 'e'
     l2_probe_targets: 'locations'
     probe_mpc: false
     probe_wall: false
     probe_propio: true
     probe_encoder: false
     probe_preds: true
+    use_closed_loss_func: *use_closed_loss_func
     epochs: 5
     epochs_enc: 5
     epochs_latent: 5
@@ -131,15 +137,16 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: true
-    load_prober: false
-  d4rl_planning:
+    load_prober: true
+  disable_planning: false
+  franka_planning:
     n_envs: 10 #85
-    n_envs_batch_size: 4 #16
+    n_envs_batch_size: 5 #16
     n_steps: 192
-    levels: "medium"
-    medium:
+    levels: "easy"
+    easy:
       n_steps: 200
-      n_envs: 20 #80
+      n_envs: 10 #80
       max_plan_length: 100 
       plot_every: 10
       min_block_radius: 4
@@ -169,8 +176,45 @@ eval_cfg:
         noise_sigma: 5 #5
         num_samples: 500 #500
         lambda_: 0.0025
-    #d4rl specific
-    position_only: true
+  # d4rl_planning:
+  #   n_envs: 10 #85
+  #   n_envs_batch_size: 4 #16
+  #   n_steps: 192
+  #   levels: "medium"
+  #   medium:
+  #     n_steps: 200
+  #     n_envs: 20 #80
+  #     max_plan_length: 100 
+  #     plot_every: 10
+  #     min_block_radius: 4
+  #     max_block_radius: 9999
+  #     override_config: true
+  #   log_pred_dist_every: 9999999
+  #   plot_every: 16
+  #   set_start_target_path: null #"../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
+  #   action_repeat: 4
+  #   action_repeat_mode: 'id'
+  #   img_size: 64
+  #   replan_every: 4
+  #   image_obs: true
+  #   stack_states: 1
+  #   data_path: './pldm_envs/franka/presaved_datasets/val_pairs_50_ep_5_timestep_100/'
+  #   level1:
+  #     planner_type: PlannerType.MPPI
+  #     min_step: 0
+  #     max_step: 1
+  #     max_plan_length: 64 #128
+  #     sgd:
+  #       action_change_reg: 0
+  #       l2_reg: 0
+  #       lr: 0.03
+  #       n_iters: 200
+  #     mppi:
+  #       noise_sigma: 5 #5
+  #       num_samples: 500 #500
+  #       lambda_: 0.0025
+  #   #d4rl specific
+  #   position_only: true
 quick_debug: false
 run_group: pldm_franka
 run_name: pldm_franka

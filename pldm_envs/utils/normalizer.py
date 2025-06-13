@@ -301,17 +301,65 @@ class Normalizer:
     def normalize_sample(self, sample):
         replaced = {}
         if self._has_attr(sample, "states"):
+            
             replaced["states"] = self.normalize_state(sample.states)
+            
+            # print("=== states sample ===")
+            # print(replaced['states'][:10].shape)  # 先頭10要素のチャンネル表示
+            # print("mean:", replaced['states'].mean().item())
+            # print("std :", replaced['states'].std().item())
+            
         if self._has_attr(sample, "locations"):
+            # print('=== before normalize locations sample ====')
+            # print('shape:', sample.locations.shape)
+            # print('mean:', sample.locations.mean().item())
+            # print('std:', sample.locations.std().item())
+            
             replaced["locations"] = self.normalize_location(sample.locations)
+
+            # print("=== locations sample ===")
+            # print(replaced['locations'][:10].shape)  # 先頭10要素のチャンネル表示
+            # print("mean:", replaced['locations'].mean().item())
+            # print("std :", replaced['locations'].std().item())
+    
         if self._has_attr(sample, "actions"):
             replaced["actions"] = self.normalize_action(sample.actions)
+
+            # print("=== actions sample ===")
+            # print(replaced['actions'][:10].shape)  # 先頭10要素のチャンネル表示
+            # print("mean:", replaced['actions'].mean().item())
+            # print("std :", replaced['actions'].std().item())
+        
+
         if self._has_attr(sample, "goal"):
+            print('=== before normalize locations sample ====')
+            print('shape:', sample.goal.shape)
+            print('mean:', sample.goal.mean().item())
+            print('std:', sample.goal.std().item())
+            
             replaced["goal"] = self.normalize_location(sample.goal)
+            
+            print("=== goal sample ===")
+            print(replaced['goal'][:10].shape)  # 先頭10要素のチャンネル表示
+            print("mean:", replaced['goal'].mean().item())
+            print("std :", replaced['goal'].std().item())
+            
         if self._has_attr(sample, "propio_pos"):
             replaced["propio_pos"] = self.normalize_propio_pos(sample.propio_pos)
+
+            # print("=== propio_pos sample ===")
+            # print(replaced['propio_pos'][:10].shape)
+            # print("mean:", replaced['propio_pos'].mean().item())
+            # print("std :", replaced['propio_pos'].std().item())
+            
         if self._has_attr(sample, "propio_vel"):
             replaced["propio_vel"] = self.normalize_propio_vel(sample.propio_vel)
+            
+            # print("=== propio_vel sample ===")
+            # print(replaced['propio_vel'][:10].shape)
+            # print("mean:", replaced['propio_vel'].mean().item())
+            # print("std :", replaced['propio_vel'].std().item())
+            
         if self._has_attr(sample, "chunked_locations"):
             replaced["chunked_locations"] = self.normalize_location(
                 sample.chunked_locations
@@ -382,3 +430,30 @@ class Normalizer:
             state["propio_vel_mean"],
             state["propio_vel_std"],
         )
+
+    def state_dict(self):
+        return {
+            "state_mean": self.state_mean,
+            "state_std": self.state_std,
+            "action_mean": self.action_mean,
+            "action_std": self.action_std,
+            "location_mean": self.location_mean,
+            "location_std": self.location_std,
+            "propio_pos_mean": self.propio_pos_mean,
+            "propio_pos_std": self.propio_pos_std,
+            "propio_vel_mean": self.propio_vel_mean,
+            "propio_vel_std": self.propio_vel_std,
+        }
+
+    def load_state_dict(self, state):
+        self.state_mean = torch.tensor(state["state_mean"], dtype=torch.float32)
+        self.state_std = torch.tensor(state["state_std"], dtype=torch.float32)
+        self.action_mean = torch.tensor(state["action_mean"], dtype=torch.float32)
+        self.action_std = torch.tensor(state["action_std"], dtype=torch.float32)
+        self.location_mean = torch.tensor(state["location_mean"], dtype=torch.float32)
+        self.location_std = torch.tensor(state["location_std"], dtype=torch.float32)
+        self.propio_pos_mean = torch.tensor(state["propio_pos_mean"], dtype=torch.float32)
+        self.propio_pos_std = torch.tensor(state["propio_pos_std"], dtype=torch.float32)
+        self.propio_vel_mean = torch.tensor(state["propio_vel_mean"], dtype=torch.float32)
+        self.propio_vel_std = torch.tensor(state["propio_vel_std"], dtype=torch.float32)
+

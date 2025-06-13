@@ -1,0 +1,18 @@
+is_val: false
+pairs: 10
+min_dist: 0.4
+episodes_per_pair: 1
+steps_per_episode: 100
+image_size: [64, 64]
+model_path: mujoco_menagerie/franka_emika_panda/scene.xml
+camera_name: top_view
+save_dir: pldm_envs/franka/presaved_datasets
+#スタート位置, ゴール位置のrange
+goal_x_range: [0.1, 0.7]
+goal_y_range: [-0.3, 0.3]
+goal_z_range: [0.05, 0.05]
+
+
+x_range: [0.1, 0.7] #[-0.1, 0.9]
+y_range: [-0.3, 0.3] #[-0.5, 0.5]
+z_range: [0.05, 0.05] #[0.0 , 1.0]

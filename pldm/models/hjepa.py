@@ -72,9 +72,12 @@ class HJEPA(torch.nn.Module):
 
         if self.config.train_l1:
             # sample a subsequence of length l1_n_steps
-            sub_idx = random.randint(0, input_states.shape[0] - self.config.l1_n_steps)
-            l1_input_states = input_states[sub_idx : sub_idx + self.config.l1_n_steps]
-            l1_actions = actions[sub_idx : sub_idx + self.config.l1_n_steps - 1]
+            # sub_idx = random.randint(0, input_states.shape[0] - self.config.l1_n_steps)
+            # l1_input_states = input_states[sub_idx : sub_idx + self.config.l1_n_steps]
+            # l1_actions = actions[sub_idx : sub_idx + self.config.l1_n_steps - 1]
+            
+            l1_input_states = input_states 
+            l1_actions = actions
 
             forward_result_l1 = self.level1.forward_posterior(
                 l1_input_states,
@@ -85,6 +88,30 @@ class HJEPA(torch.nn.Module):
                 chunked_propio_pos=chunked_propio_pos,
                 chunked_propio_vel=chunked_propio_vel,
                 encode_only=False,
+            )
+
+        return ForwardResult(level1=forward_result_l1)
+
+    def forward_open(
+        self,
+        input_states: torch.Tensor,          # [T+1, B, C, H, W]
+        actions: torch.Tensor,               # [T, B, A]
+        propio_pos: Optional[torch.Tensor] = None,
+        propio_vel: Optional[torch.Tensor] = None,
+    ) -> ForwardResult:
+        forward_result_l1 = None
+
+        if self.config.train_l1:
+            l1_input_states = input_states
+            l1_actions = actions
+            l1_propio_pos = propio_pos
+            l1_propio_vel = propio_vel
+
+            forward_result_l1 = self.level1.forward_open(
+                l1_input_states,
+                l1_actions,
+                propio_pos=l1_propio_pos,
+                propio_vel=l1_propio_vel,
             )
 
         return ForwardResult(level1=forward_result_l1)

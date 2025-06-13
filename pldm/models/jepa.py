@@ -314,6 +314,80 @@ class JEPA(torch.nn.Module):
             actions=actions,
         )
 
+
+    def forward_open(
+        self,
+        input_states: torch.Tensor,          # [T+1, B, C, H, W]
+        actions: torch.Tensor,               # [T, B, A]
+        propio_pos: Optional[torch.Tensor] = None,
+        propio_vel: Optional[torch.Tensor] = None,
+    ):
+        """
+        open-loop
+        z_t = h(s_t) を毎時刻で使って rollout
+        """
+        T = actions.shape[0]
+        # proprio の準備
+        prop_batch = None
+        if propio_pos is not None and propio_pos.numel():
+            prop_batch = propio_pos
+        if propio_vel is not None and propio_vel.numel():
+            prop_batch = torch.cat([prop_batch, propio_vel], dim=-1) if prop_batch is not None else propio_vel
+
+        # 毎時刻で観測から潜在状態を取得
+        if prop_batch is not None:
+            encoded_seq = self.backbone.forward_multiple(input_states[:T], propio=prop_batch[:T])
+        else:
+            encoded_seq = self.backbone.forward_multiple(input_states[:T])
+        state_encs = encoded_seq.encodings  # [T, B, D] or [T, B, C, H, W]
+
+        # rollout: 各ステップで観測をエンコードした state_encs[t] を使う
+        state_preds = [state_encs[0]]
+        for t in range(T):
+            pred = self.predictor.forward(state_encs[t], actions[t])
+            state_preds.append(pred)
+        state_preds = torch.stack(state_preds)  # [T + 1, B, C, H, W] 
+
+        # rollout 結果 state_preds の分割
+        if self.predictor.pred_propio_dim:
+            if isinstance(self.predictor.pred_propio_dim, int):
+                obs_component = state_preds[:, :, :-self.predictor.pred_propio_dim]
+                propio_component = state_preds[:, :, -self.predictor.pred_propio_dim:]
+            else:
+                pred_propio_channels = self.predictor.pred_propio_dim[0]
+                obs_component = state_preds[:, :, :-pred_propio_channels]
+                propio_component = state_preds[:, :, -pred_propio_channels:]
+        else:
+            obs_component = state_preds
+            propio_component = None
+
+        # 本物の観測列からのバックボーン出力列を得る（教師信号用）
+        if prop_batch is not None:
+            backbone_output = self.backbone.forward_multiple(input_states, propio=prop_batch)
+        else:
+            backbone_output = self.backbone.forward_multiple(input_states) #encodings: [T + 1, B, C, H, W] = [15, 64, 18, 26, 26]
+
+        pred_output = PredictorOutput(
+            predictions=state_preds,
+            obs_component=obs_component,
+            propio_component=propio_component,
+            prior_mus=None,
+            prior_vars=None,
+            prior_logits=None,
+            priors=None,
+            posterior_mus=None,
+            posterior_vars=None,
+            posterior_logits=None,
+            posteriors=None,
+        )
+
+        return ForwardResult(
+            backbone_output=backbone_output,
+            ema_backbone_output=None,
+            pred_output=pred_output,
+            actions=actions,
+        )
+
     def update_ema(self):
         if self.config.momentum > 0:
             for param, ema_param in zip(

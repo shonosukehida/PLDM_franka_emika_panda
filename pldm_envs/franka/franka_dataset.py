@@ -24,13 +24,15 @@ class FrankaDataset(Dataset):
             print("states will contain proprioceptive info")
 
         self.episode_lengths = [len(d["observations"]) for d in self.splits]
-        self.cum_obs_counts = np.cumsum(self.episode_lengths)
+        self.cum_obs_counts = np.cumsum(self.episode_lengths) #各エピソードの画像の「開始インデックス」を計算するための前準備
 
         self.flattened_indices = []
         for ep_idx, d in enumerate(self.splits):
             usable = self.episode_lengths[ep_idx] - self.sample_length - (self.stack_states - 1)
             for t in range(usable):
                 self.flattened_indices.append((ep_idx, t))
+
+
 
     def __len__(self):
         return len(self.flattened_indices)
@@ -42,17 +44,20 @@ class FrankaDataset(Dataset):
         length = self.sample_length + self.stack_states - 1
         end_idx = start_idx + length
 
+
         obs = episode["observations"][start_idx:end_idx]  # (L, D)
-        actions = episode["actions"][start_idx:end_idx - 1]  # (L-1, A)
+        actions = episode["actions"][start_idx:end_idx - 1]  # (L-1, D)
 
         obs = torch.tensor(obs, dtype=torch.float32)
         actions = torch.tensor(actions, dtype=torch.float32)
 
         qpos = obs[:, :7]
-        qvel = obs[:, 7:]
+        qvel = obs[:, 7:14]
+        ee_xyz = obs[:, 14:]
+        
         propio_pos = qpos
         propio_vel = qvel
-        locations = qpos[:, 9:11]
+        locations = ee_xyz
 
         if self.use_images:
             if ep_idx == 0:
@@ -64,8 +69,13 @@ class FrankaDataset(Dataset):
             states = images
         else:
             states = obs
+        # print('images:', images.shape)
+        # if img_start + length > self.images_tensor.shape[0]:
+        #     raise ValueError(
+        #         f"Invalid image slice: {img_start=} + {length=} > total={self.images_tensor.shape[0]}"
+        #     )
 
-        if self.stack_states > 1:
+        if self.stack_states > 1: #x
             states = torch.stack([
                 states[i:i + self.stack_states] for i in range(self.sample_length)
             ], dim=0)

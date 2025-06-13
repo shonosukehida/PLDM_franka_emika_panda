@@ -6,7 +6,7 @@ import imageio
 from tqdm import tqdm
 
 # /====CONFIG====/
-DATA_PATH = "pldm_envs/franka/presaved_datasets/pairs_5_ep_1_timestep_100"
+DATA_PATH = "pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100"
 
 def check_data(data_path):
     data_p_path = os.path.join(data_path, "data.p")
@@ -37,14 +37,7 @@ def check_data(data_path):
             print(f" - {k}: shape {v.shape}")
         else:
             print(f" - {k}: type {type(v)}")
-    # [1.2] Check for propio keys
-    expected_keys = ["propio_pos", "propio_vel"]
-    print("\n[1.2] Checking propio-related keys:")
-    for key in expected_keys:
-        if key in example:
-            print(f"✅ {key} exists, shape = {example[key].shape}")
-        else:
-            print(f"❌ {key} is missing!")
+
 
     actions = example["actions"]
     observations = example["observations"]
@@ -60,6 +53,33 @@ def check_data(data_path):
             print(f"❌ goal_obs shape mismatch: got {goal_obs.shape}, expected {observations[0].shape}")
         else:
             print("✅ goal_obs is present and shape is valid.")
+
+
+    # --- EE位置の確認 ---
+    print("\n[1.3] Checking end-effector xyz values:")
+
+    ee_xyz_all = []
+
+    for ep in data:
+        obs = ep["observations"]  # shape: (T+1, obs_dim)
+        if obs.shape[1] >= 17:  # 確保のため
+            ee_xyz = obs[:, -3:]  # 最後の3次元が xyz
+            ee_xyz_all.append(ee_xyz)
+        else:
+            print("⚠️ obs dim too small to include ee xyz:", obs.shape[1])
+
+    if ee_xyz_all:
+        ee_xyz_all = np.concatenate(ee_xyz_all, axis=0)  # 全時刻全エピソードの xyz
+
+        print(f" - Total ee_xyz samples: {ee_xyz_all.shape[0]}")
+        print(f" - x: mean={ee_xyz_all[:,0].mean():.3f}, min={ee_xyz_all[:,0].min():.3f}, max={ee_xyz_all[:,0].max():.3f}")
+        print(f" - y: mean={ee_xyz_all[:,1].mean():.3f}, min={ee_xyz_all[:,1].min():.3f}, max={ee_xyz_all[:,1].max():.3f}")
+        print(f" - z: mean={ee_xyz_all[:,2].mean():.3f}, min={ee_xyz_all[:,2].min():.3f}, max={ee_xyz_all[:,2].max():.3f}")
+    else:
+        print("❌ Could not extract any ee xyz values.")
+
+
+
 
     # --- Check images.npy ---
     print("\n[2] Checking images.npy...")
@@ -107,6 +127,8 @@ def check_data(data_path):
             print(f"❌ Failed to save goal image: {e}")
     else:
         print("⚠️ goal_images.npy not found.")
+
+
 
     print("\n✅ Dataset format check complete.")
     return data, images

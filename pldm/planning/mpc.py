@@ -106,6 +106,7 @@ class MPCEvaluator(ABC):
         Divide it up in chunks in order to prevent OOM
         """
         chunk_sizes = self._infer_chunk_sizes()
+        # print('CHUNK_SIZES:', chunk_sizes)
 
         mpc_data = PooledMPCResult()
         chunk_offset = 0
@@ -169,7 +170,7 @@ class MPCEvaluator(ABC):
         targets = [e.get_target() for e in envs]
         targets = torch.from_numpy(np.stack(targets))
 
-        #ゴール画像から得られた埋め込みベクトル
+        #ゴール画像
         targets_t = torch.stack([e.get_target_obs() for e in envs]).to(self.device)
 
         # encode target obs
@@ -189,9 +190,10 @@ class MPCEvaluator(ABC):
 
         observation_history = [torch.stack([e.get_obs() for e in envs])]
 
-        obs_t = observation_history[0]
-        if self.image_based:
-            obs_t = torch.cat([obs_t] * self.config.stack_states, dim=1)  # VERIFY
+        obs_t = observation_history[0] #[5, 3, 64, 64]
+
+        if self.image_based: ##
+            obs_t = torch.cat([obs_t] * self.config.stack_states, dim=1)  # [5, 3, 64, 64]
 
         action_history = []
         reward_history = []
@@ -217,7 +219,7 @@ class MPCEvaluator(ABC):
             if i % self.config.replan_every == 0:
 
                 if planner.model.use_propio_pos:
-                    curr_propio_pos = [e.get_propio_pos(normalized=True) for e in envs]
+                    curr_propio_pos = [e.get_propio_pos() for e in envs]
                     curr_propio_pos = torch.from_numpy(
                         np.stack(curr_propio_pos)
                     ).float()
@@ -225,7 +227,7 @@ class MPCEvaluator(ABC):
                     curr_propio_pos = None
 
                 if planner.model.use_propio_vel:
-                    curr_propio_vel = [e.get_propio_vel(normalized=True) for e in envs]
+                    curr_propio_vel = [e.get_propio_vel() for e in envs]
                     curr_propio_vel = torch.from_numpy(
                         np.stack(curr_propio_vel)
                     ).float()
@@ -253,19 +255,19 @@ class MPCEvaluator(ABC):
                 .cpu()
             )
 
-            if self.config.random_actions:
+            if self.config.random_actions: #x
                 results = [
                     envs[j].step(envs[0].action_space.sample())
                     for j in range(len(envs))
                 ]
-            else:
+            else: ##
                 results = [
                     envs[j].step(
                         planned_actions[j, 0].detach().cpu().contiguous().numpy()
                     )
                     for j in range(len(envs))
                 ]
-
+            
             assert len(results[0]) == 5
             current_obs = torch.from_numpy(np.stack([r[0] for r in results])).float()
             rewards_t = torch.from_numpy(np.stack([r[1] for r in results])).float()

@@ -23,6 +23,9 @@ from pldm_envs.utils.normalizer import Normalizer
 from pldm.models.jepa import JEPA
 from pldm.models.hjepa import HJEPA
 
+#probingtest 中でloss を確認
+from pldm.objectives import ObjectivesConfig
+from pldm.objectives.idm import IDMObjective
 
 @dataclass
 class ProbeTargetConfig(ConfigBase):
@@ -32,6 +35,7 @@ class ProbeTargetConfig(ConfigBase):
 
 @dataclass
 class ProbingConfig(ConfigBase):
+    exe_probing: bool = True
     probe_targets: str = "locations"
     l2_probe_targets: str = "locations"
     locations: ProbeTargetConfig = field(default_factory=ProbeTargetConfig)
@@ -64,6 +68,8 @@ class ProbingConfig(ConfigBase):
     val_images_path: Optional[str] = None
     val_path: Optional[str] = None
     eval_contrastive: bool = False
+    
+    use_closed_loss_func: bool = False
 
 
 class ProbeResult(NamedTuple):
@@ -95,6 +101,7 @@ class ProbingEvaluator:
         output_path: str = "",
         config: ProbingConfig = default_config,
         quick_debug: bool = False,
+        objectives_l1: Optional[ObjectivesConfig] = None,
     ):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.config = config
@@ -107,6 +114,43 @@ class ProbingEvaluator:
 
         self.load_checkpoint_path = load_checkpoint_path
         self.output_path = output_path
+
+        self.objectives_l1: ObjectivesConfig = (
+            objectives_l1 if objectives_l1 is not None else ObjectivesConfig()
+        )
+        
+        
+        self.open_objectives_l1 = self.objectives_l1.build_open_objectives_list(
+            name_prefix="l1", repr_dim=self.model.level1.spatial_repr_dim
+        )
+
+        self.closed_objectives_l1 = None
+        if self.config.use_closed_loss_func:
+            self.closed_objectives_l1 = self.objectives_l1.build_closed_objectives_list(
+                name_prefix="l1", repr_dim=self.model.level1.spatial_repr_dim
+            )
+
+        # --- IDM weights をロードする ---
+        if self.load_checkpoint_path:
+            ckpt = torch.load(self.load_checkpoint_path, map_location="cpu")
+
+            if "idm_open_state_dicts" in ckpt:
+                for obj in self.open_objectives_l1:
+                    if hasattr(obj, "action_predictor") and isinstance(obj, IDMObjective):
+                        key = obj.name_prefix  # 通常 "l1"
+                        if key in ckpt["idm_open_state_dicts"]:
+                            obj.action_predictor.load_state_dict(ckpt["idm_open_state_dicts"][key])
+                            print(f"[ProbingEvaluator] Loaded open IDM weights for {key}")
+
+            if "idm_closed_state_dicts" in ckpt:
+                if self.closed_objectives_l1 is not None:
+                    for obj in self.closed_objectives_l1:
+                        if hasattr(obj, "action_predictor") and isinstance(obj, IDMObjective):
+                            key = obj.name_prefix
+                            if key in ckpt["idm_closed_state_dicts"]:
+                                obj.action_predictor.load_state_dict(ckpt["idm_closed_state_dicts"][key])
+                                print(f"[ProbingEvaluator] Loaded closed IDM weights for {key}")
+
 
     def _context_manager(self):
         return torch.enable_grad() if self.config.full_finetune else torch.no_grad()
@@ -197,7 +241,7 @@ class ProbingEvaluator:
 
         probers = {}
         ckpt_paths = {}
-        probe_targets = self.config.probe_targets.split(",")
+        probe_targets = self.config.probe_targets.split(",") # ['locations', 'propio_vel']
 
         for probe_target in probe_targets:
             prober_output_shape = getattr(test_batch, probe_target)[0, 0].shape
@@ -275,7 +319,7 @@ class ProbingEvaluator:
                 actions = batch.actions.to(self.device).transpose(0, 1)
                 optional_fields = get_optional_fields(batch, device=states.device)
 
-                with self._context_manager():
+                with self._context_manager(): ##
                     forward_result = model.forward_posterior(
                         states, actions, **optional_fields
                     )
@@ -297,12 +341,13 @@ class ProbingEvaluator:
                         pred_encs = pred_encs.detach()
 
                     target = getattr(batch, probe_target).to(self.device)
-                    target = target[:, :: model.subsampling_ratio()]
+                    target = target[:, :: model.subsampling_ratio()] #model.subsampling_ratio() : 1
 
                     if (
                         config.sample_timesteps is not None
                         and config.sample_timesteps < n_steps
-                    ):
+                    ): #x
+                        
                         sample_shape = (config.sample_timesteps,) + pred_encs.shape[1:]
                         # we only randomly sample n timesteps to train prober.
                         # we most likely do this to avoid OOM
@@ -498,8 +543,26 @@ class ProbingEvaluator:
 
         # right now, we only visualize location predictions
         if self.config.visualize_probing and visualize:
+            
+            # from torch.utils.data import DataLoader, Subset
+            # original_dataset = val_ds.dataset 
+            # t0_indices = [
+            #     i for i, (ep_idx, t) in enumerate(original_dataset.flattened_indices) if t == 0
+            # ]
+            # t0_dataset = Subset(original_dataset, t0_indices)
+            
+            # t0_loader = DataLoader(
+            #     t0_dataset, 
+            #     batch_size=64, 
+            #     shuffle=False, 
+            #     num_workers=0,
+            #     )
+            # btc = next(iter(t0_loader))
+            
+            btc = next(iter(val_ds))
+            print('val_ds.normalizer:', val_ds.normalizer)
             self.plot_prober_predictions(
-                next(iter(val_ds)),
+                btc,
                 model,
                 probers["locations"],
                 normalizer=val_ds.normalizer,
@@ -580,7 +643,6 @@ class ProbingEvaluator:
         )
 
         step = 0
-
         for epoch in tqdm(range(config.epochs_enc), desc="Eval enc"):
             for batch in dataset:
                 states = batch.states.to(self.device).transpose(0, 1)
@@ -625,7 +687,6 @@ class ProbingEvaluator:
                 break
 
         jepa.eval()
-
         return probers
 
     @torch.no_grad()
@@ -698,23 +759,63 @@ class ProbingEvaluator:
         notebook: bool = False,
         pixel_mapper=None,
     ):
+
         # infer
         states = batch.states.to(self.device).transpose(0, 1)
-
         actions = batch.actions.to(self.device).transpose(0, 1)
 
         optional_fields = get_optional_fields(batch, device=states.device)
 
         pred_output = jepa.forward_posterior(
             states, actions, **optional_fields
-        ).pred_output
+        )
 
-        if pred_output.obs_component is not None:
+        #loss 計算(確認用)
+        #open_loss
+        # loss_infos = []
+        # loss_infos += [
+        #     objective(batch, [pred_output])
+        #     for objective in self.open_objectives_l1
+        # ]
+        # open_total_loss = sum([loss_info.total_loss for loss_info in loss_infos])
+        # print('open-test, open loss_type',[type(o) for o in self.open_objectives_l1])
+        # print('open-test, open_loss: ', open_total_loss)
+        
+        # #closed_loss
+        # loss_infos = []
+        # if self.closed_objectives_l1 is not None:
+        #     loss_infos += [
+        #         objective(batch, [pred_output])
+        #         for objective in self.closed_objectives_l1
+        #     ]
+        # else:
+        #     loss_infos += [
+        #         objective(batch, [pred_output])
+        #         for objective in self.open_objectives_l1
+        #     ]
+        # closed_total_loss = sum([loss_info.total_loss for loss_info in loss_infos])
+        # if self.closed_objectives_l1 is not None:
+        #     print('open-test, closed loss_type',[type(o) for o in self.closed_objectives_l1])
+        # else:
+        #     print('open-test, closed loss_type',[type(o) for o in self.open_objectives_l1])
+        # print('open-test, closed_loss: ', closed_total_loss)
+        
+        pred_output = pred_output.pred_output
+
+        if pred_output.obs_component is not None: ##
             pred_encs = pred_output.obs_component
-        else:
+        else: #x
             pred_encs = pred_output.predictions
 
         pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
+        # print('====bfore unnormalize====')
+        # print('PRED_LOCS:', pred_locs)
+        # print('PRED_LOCS.type:', type(pred_locs))
+        # print('PRED_LOCS.shape:', pred_locs.shape)
+        # print('PRED_LOCS.mean:', pred_locs.mean())
+        # print('PRED_LOCS.std:', pred_locs.std())
+        # print('PRED_LOCS.min:', pred_locs.min())
+        # print('PRED_LOCS.max:', pred_locs.max())
 
         # pred_locs is of shape (batch_size, time, 1, 2)
         if idxs is None:
@@ -722,24 +823,31 @@ class ProbingEvaluator:
 
         gt_locations = normalizer.unnormalize_location(batch.locations).cpu()
         pred_locs = normalizer.unnormalize_location(pred_locs).cpu()
+        # print('====after unnormalize====')
+        # print('PRED_LOCS.type:', type(pred_locs))
+        # print('PRED_LOCS.shape:', pred_locs.shape)
+        # print('PRED_LOCS.mean:', pred_locs.mean())
+        # print('PRED_LOCS.std:', pred_locs.std())
+        # print('PRED_LOCS.min:', pred_locs.min())
+        # print('PRED_LOCS.max:', pred_locs.max())
 
         if pixel_mapper is not None:
-            gt_locations = pixel_mapper(gt_locations)
+            gt_locations = pixel_mapper(gt_locations) # torch.Tensor
             pred_locs = pixel_mapper(pred_locs)
 
         # plot
         for i in tqdm(idxs, desc=f"Plotting {name_prefix}"):  # batch size
+            
             fig = plt.figure(dpi=200)
-            if hasattr(batch, "view_states") and batch.view_states.shape[-1]:
+            if hasattr(batch, "view_states") and batch.view_states.shape[-1]: #x
                 images = batch.view_states
-            else:
+            else: ##
                 images = batch.states
 
             x_max = images.shape[-2] - 1
             y_max = images.shape[-1] - 1
 
             plt.imshow(-1 * images[i, 0].sum(dim=0).cpu(), cmap="gray")
-
             plt.plot(
                 gt_locations[i, :, 0].cpu(),
                 gt_locations[i, :, 1].cpu(),
@@ -762,5 +870,6 @@ class ProbingEvaluator:
             plt.ylim(y_max, 0)
 
             if not notebook:
+                # Logger.run().log_figure(fig, f"{name_prefix}/prober_predictions_{i}")
                 Logger.run().log_figure(fig, f"{name_prefix}/prober_predictions_{i}")
                 plt.close(fig)

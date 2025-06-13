@@ -1,0 +1,17 @@
+{
+  "include": ["src", "scripts"],  
+  "exclude": [
+    "**/__pycache__",
+    ".venv",
+    "wandb",
+    "checkpoints",
+    "**/*.npy",
+    "**/*.pkl",
+    "**/.git",
+    "**/*.zarr",
+    "**/*.npz",
+    "**/outputs",
+    "**/__logs__"
+  ],
+  "typeCheckingMode": "off"
+}
