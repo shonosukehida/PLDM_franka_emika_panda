@@ -13,9 +13,11 @@ dynamic = ["description"]
 packages = ["pldm", "pldm_envs"]
 dependencies = [
     "arm-pytorch-utilities>=0.4.3",
+    "collimator>=0.1.2",
     "cython==0.29.36",
     "d4rl>=1.1",
     "defusedxml>=0.7.1",
+    "dm-control>=1.0.28",
     "editdistance>=0.8.1",
     "gdown>=5.2.0",
     "gym<0.25.0",
@@ -24,8 +26,10 @@ dependencies = [
     "imageio>=2.37.0",
     "imageio-ffmpeg>=0.6.0",
     "ipython>=8.12.3",
+    "jax>=0.6.2",
     "joblib>=1.4.2",
-    "mujoco==3.3.0",
+    "mediapy>=1.2.4",
+    "mujoco==3.3.3",
     "mujoco-py>=2.1.2.14",
     "mujoco-python-viewer>=0.1.4",
     "numpy>=1.24.4",
@@ -47,4 +51,7 @@ dependencies = [
 [tool.ruff]
 target-version = "py310"
 line-length = 88
+
+[tool.uv.sources]
+dm-control = { git = "https://github.com/google-deepmind/dm_control.git" }
 

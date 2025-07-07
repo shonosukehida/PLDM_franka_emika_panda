@@ -12,13 +12,15 @@ from pldm.models.misc import Prober
 from pldm.configs import ConfigBase
 from pldm.logger import Logger
 import torch.nn.functional as F
+import matplotlib
+matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 from pldm.data.enums import ProbingDatasets, DatasetType
 from pldm.data.utils import get_optional_fields
 from pldm.optimizers.schedulers import Scheduler, LRSchedule
 import glob
 
-from matplotlib import pyplot as plt
+
 from pldm_envs.utils.normalizer import Normalizer
 from pldm.models.jepa import JEPA
 from pldm.models.hjepa import HJEPA
