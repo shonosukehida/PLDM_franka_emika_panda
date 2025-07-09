@@ -141,7 +141,8 @@ class FrankaDatasetGenerator:
         out_of_bound_count = 0
         for pair_idx, (start_xyz, goal_xyz) in enumerate(tqdm(self.pair_list)):
             ep_idx = 0
-            # for ep_idx in range(self.EPISODES_PER_PAIR + 1):
+            
+            pbar = tqdm(total=self.EPISODES_PER_PAIR + 1, desc="Episode Progress")
             while ep_idx < self.EPISODES_PER_PAIR + 1:
                 # print('ep_idx:', ep_idx)
                 valid_episode = True
@@ -332,9 +333,12 @@ class FrankaDatasetGenerator:
                         d_idx += 1
                 if ep_idx == 0: ep_idx += 1
                 else:
-                    if valid_episode: ep_idx += 1
+                    if valid_episode: 
+                        ep_idx += 1
+                        pbar.update(1)
                     else: 
                         valid_episode = True
+            pbar.close()
 
 
 
