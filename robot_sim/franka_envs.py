@@ -114,6 +114,23 @@ class FrankaSimEnv:
         site_pos = ee_pos.copy()
         return joint_angles, site_pos, dist_steps, objective_reached
 
+    def set_xyz(self, target_pos, target_rotmat=None, rot_weight=0.1):
+        result = self.calc_inverse_kinematic(
+            target_pos, 
+            target_rotmat=target_rotmat, 
+            rot_weight=rot_weight,
+        )
+        if not result.success:
+            raise ValueError("IK failed!")
+
+        # --- 計算結果をそのまま反映 ---
+        self.physics.data.qpos[:7] = result.qpos[:7]
+        self.physics.data.qvel[:7] = 0
+        self.physics.forward()
+
+        ee_pos = self.get_ee_position()
+        return result.qpos[:7], ee_pos
+
 
     
     def render_image(self, size = (64, 64)):

@@ -12,7 +12,7 @@ from robot_sim.franka_envs import FrankaSimEnv
 from PIL import Image 
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
-
+import glob
 
 
 class FrankaDatasetGenerator:
@@ -165,7 +165,7 @@ class FrankaDatasetGenerator:
                 for _ in range(10):
                     self.env.physics.forward()
 
-
+                episode_images = []
                 episode_obs = []
                 episode_actions = []
                 ik_log = []
@@ -185,7 +185,8 @@ class FrankaDatasetGenerator:
                         )
                     episode_obs.append(obs.copy())
                     img = self.env.render_image(size = self.IMAGE_SIZE)
-                    self.all_images.append(img)
+                    # self.all_images.append(img)
+                    episode_images.append(img)
                     
                     episode_target_xyz.append(self.env.get_ee_position())
                 
@@ -294,19 +295,21 @@ class FrankaDatasetGenerator:
                         episode_obs.append(obs.copy())
                         episode_actions.append(action.copy())
                         img = self.env.physics.render(height=self.IMAGE_SIZE[0], width=self.IMAGE_SIZE[1], camera_id=self.camera_id)
-                        self.all_images.append(img)
+                        # self.all_images.append(img)
+                        episode_images.append(img)
                         
                         episode_target_xyz.append(target_xyz.copy())
                         
                 if ep_idx != 0 and valid_episode:
                     self.data_list.append(
-                        {
-                        "observations": np.array(episode_obs),
-                        "actions": np.array(episode_actions),
-                        "goal_obs": self.goal_obs_list[pair_idx][0].copy(),
-                        "map_idx": pair_idx,
-                    }
+                                {
+                                "observations": np.array(episode_obs),
+                                "actions": np.array(episode_actions),
+                                "goal_obs": self.goal_obs_list[pair_idx][0].copy(),
+                                "map_idx": pair_idx,
+                            }
                         )
+                    self.all_images.extend(episode_images)
                     self.data_enums['target_pos'].append(np.array(episode_target_xyz))
                     self.data_enums['contact_count'].append(bluebox_contact_count)
                 
@@ -477,13 +480,59 @@ class FrankaDatasetGenerator:
         df = pd.DataFrame(dist_xyz_log)
         df.to_csv(f'robot_sim/data_value/dist_xyz_value/dist_xyz_log{d_idx}.csv', index=False)
         
-    def data_save(self):
+    # def data_save(self):
+    #     torch.save(self.data_list, os.path.join(self.SAVE_PATH, "data.p"))
+    #     np.save(os.path.join(self.SAVE_PATH, "images.npy"), np.array(self.all_images, dtype=np.uint8))
+    #     goal_imgs = np.stack([g[1] for g in self.goal_obs_list])
+    #     np.save(os.path.join(self.SAVE_PATH, "goal_images.npy"), goal_imgs)
+    #     torch.save({"pair_list": self.pair_list}, os.path.join(self.SAVE_PATH, "pair_info.p"))
+    #     print("✅ Done generating dataset!")
+
+    def data_save(self, chunk_size=1000):
         torch.save(self.data_list, os.path.join(self.SAVE_PATH, "data.p"))
-        np.save(os.path.join(self.SAVE_PATH, "images.npy"), np.array(self.all_images, dtype=np.uint8))
+
+        # --- chunk 保存 ---
+        chunk_dir = os.path.join(self.SAVE_PATH, "image_chunks")
+        os.makedirs(chunk_dir, exist_ok=True)
+        
+        num_images = len(self.all_images)
+        print(f"Saving {num_images} images in chunks...")
+
+        for i in range(0, num_images, chunk_size):
+            file_path = os.path.join(chunk_dir, f"images_chunk_{i//chunk_size}.npy")
+            chunk = self.all_images[i:i+chunk_size]
+            chunk_arr = np.array(chunk, dtype=np.uint8)
+            np.save(file_path, chunk_arr)
+        
+        print("✅ Image chunks saved.")
+
+        # goal images
         goal_imgs = np.stack([g[1] for g in self.goal_obs_list])
         np.save(os.path.join(self.SAVE_PATH, "goal_images.npy"), goal_imgs)
+
         torch.save({"pair_list": self.pair_list}, os.path.join(self.SAVE_PATH, "pair_info.p"))
+
         print("✅ Done generating dataset!")
+
+    def merge_chunks(self):
+        
+        chunk_dir = os.path.join(self.SAVE_PATH, "image_chunks")
+        chunk_files = sorted(glob.glob(os.path.join(chunk_dir, "images_chunk_*.npy")))
+
+        print(f"Found {len(chunk_files)} chunk files.")
+
+        arrays = []
+        for f in chunk_files:
+            arr = np.load(f)
+            arrays.append(arr)
+            print(f"Loaded {f} with shape {arr.shape}")
+
+        images = np.concatenate(arrays, axis=0)
+        np.save(os.path.join(self.SAVE_PATH, "images.npy"), images)
+
+        print("✅ Merged all chunks into images.npy")
+
+
     
     def confirm_data(self):
         FILE = 'data.p'
@@ -838,26 +887,19 @@ if __name__ == "__main__":
     
     with open("robot_sim/config.yaml", "r") as f:
         config = yaml.safe_load(f)
-        
-    if config['make_video'] or config['confirm_ee_trajectory'] or config['confirm_data'] or config['confirm_ik_result'] or config['confirm_dist']:
-        print('You have chosen to save a file that may take up a lot of data space.')
-        
-        flag = True
-        # flag = input('Can I continue?[y/n]:')
-        # if flag == 'Y' or flag == 'y': flag = True
-        # else: flag = False
 
 
     dataset_generator = FrankaDatasetGenerator(config)
     dataset_generator.generate()
-    dataset_generator.data_save()
+    dataset_generator.data_save(chunk_size = config['chunk_size'])
+    dataset_generator.merge_chunks()
     
     dataset_generator.confirm_data_architecture()
     
-    if flag:
-        dataset_generator.confirm_data()
-        if config['make_video']: 
-            dataset_generator.make_video()
-        if config['confirm_ee_trajectory']:
-            dataset_generator.confirm_endeffector_trajectory('xy', config['visualize_target_trajectory'])
-            dataset_generator.confirm_endeffector_trajectory('xz', config['visualize_target_trajectory'])
+
+    dataset_generator.confirm_data()
+    if config['make_video']: 
+        dataset_generator.make_video()
+    if config['confirm_ee_trajectory']:
+        dataset_generator.confirm_endeffector_trajectory('xy', config['visualize_target_trajectory'])
+        dataset_generator.confirm_endeffector_trajectory('xz', config['visualize_target_trajectory'])
