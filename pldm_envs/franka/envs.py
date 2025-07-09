@@ -1,3 +1,5 @@
+#データセット生成用に作った,最新環境
+
 import os
 os.environ["MUJOCO_GL"] = "egl"
 import numpy as np

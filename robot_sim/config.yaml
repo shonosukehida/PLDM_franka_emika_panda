@@ -1,4 +1,4 @@
-is_val: false
+is_val: true
 pairs: 3 #3
 min_dist: 0.2
 episodes_per_pair: 1 #2000
