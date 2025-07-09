@@ -8,7 +8,7 @@ model_path: mujoco_menagerie/franka_emika_panda/scene.xml
 camera_name: top_view #top_view, default
 save_dir: pldm_envs/franka/presaved_datasets
 specify_init_position: true #初期姿勢を指定するか
-goal_offset: [0.1, -0.1, 0.2]
+goal_offset: [0.2, -0.2, 0.2]
 
 #データ確認するか
 confirm_ik_result: false
