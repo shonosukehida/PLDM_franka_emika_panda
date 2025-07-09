@@ -692,7 +692,7 @@ class FrankaDatasetGenerator:
 
         #GENERATE VIDEOS
         start_idx = 0
-        for i, episode in enumerate(tqdm(data, desc="🎬 Saving episodes as videos", miniters=100)):
+        for i, episode in enumerate(tqdm(data, desc="🎬 Saving episodes as videos")):
             end_idx = start_idx + frames_per_episode
             episode_frames = images[start_idx:end_idx]
             save_path = os.path.join(SAVE_DIR, f"episode_{i:03d}.mp4")
