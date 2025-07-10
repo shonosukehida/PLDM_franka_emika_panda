@@ -34,19 +34,17 @@ def franka_pixel_mapper(coords, image_size=64):
 
     coords = coords.clone()
     x_range, y_range = get_xy_range_from_model()
+
+
+    y_pixel = (coords[:, :, 0] - x_range[0]) / (x_range[1] - x_range[0]) * (image_size - 1)
+    y_pixel = image_size - 1 - y_pixel
     
-    # x_range = (-0.201, 0.701)
-    # y_range = (-0.401, 0.401)
-
-
-    x = (coords[:, :, 0] - x_range[0]) / (x_range[1] - x_range[0]) * (image_size - 1)
-    y = (coords[:, :, 1] - y_range[0]) / (y_range[1] - y_range[0]) * (image_size - 1)
-
-    # matplotlib 用に上下反転
-    pixel = torch.stack([x, y], dim=-1)
-    pixel[:, :, 1] = image_size - 1 - pixel[:, :, 1]
+    x_pixel = (coords[:, :, 1] - y_range[0]) / (y_range[1] - y_range[0]) * (image_size - 1)
+    x_pixel = image_size - 1 - x_pixel
     
-    pixel[:, :, 0] = image_size - 1 - pixel[:, :, 0]
+    # pixel = torch.stack([x_pixel, y_pixel], dim = -1)
+    pixel = torch.stack([y_pixel, x_pixel], dim = -1)
+
 
     return pixel
 

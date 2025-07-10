@@ -13,7 +13,7 @@ goal_offset: [0.2, -0.2, 0.2]
 #データ確認するか
 confirm_ik_result: false
 confirm_dist: false
-make_video: false
+make_video: true
 confirm_ee_trajectory: false
 confirm_data: false
 count_contact: false

@@ -868,6 +868,33 @@ class ProbingEvaluator:
                 c="#D62828",
                 alpha=0.8,
             )
+            
+            plt.text(
+                gt_locations[i, 0, 0].cpu().item(),
+                gt_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+                # bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7)
+            )
+            
+            plt.text(
+                pred_locs[i, 0, 0].cpu().item(),
+                pred_locs[i, 0, 1].cpu().item(),
+                "S",
+                color="#D62828",
+                fontsize=12,
+                ha="center",
+                va="center",
+                # bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7)
+            )
+
+            
+            
+            
+            
             plt.xlim(0, x_max)
             plt.ylim(y_max, 0)
 
