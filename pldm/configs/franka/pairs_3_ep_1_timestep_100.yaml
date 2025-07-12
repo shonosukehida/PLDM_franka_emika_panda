@@ -1,4 +1,4 @@
-n_steps: &n_steps 15
+n_steps: &n_steps 50
 val_n_steps: *n_steps
 env_name: &env_name franka
 
@@ -12,7 +12,7 @@ data:
     random_actions: false
     img_size: 64
     alpha: 0.6
-    batch_size: 64 #128
+    batch_size: 16 #128
     beta: 0.4
     crop_length: null
     images_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/images.npy
@@ -109,10 +109,10 @@ eval_cfg:
   probing:
     exe_probing: true
     l1_depth: *n_steps
-    train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy
-    train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
-    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy
-    val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
+    train_images_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/images.npy #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy
+    train_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/data.p #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
+    val_images_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/images.npy #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy
+    val_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/data.p #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
     probe_targets: 'locations,propio_vel'
     locations:
       arch: 'conv'

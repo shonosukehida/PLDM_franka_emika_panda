@@ -124,7 +124,6 @@ def make_dataloader(ds, loader_config, normalizer=None, suffix="", train=True):
     )
     loader.config = config
     
-
     if loader_config.normalize:
         if normalizer is None: #probe_ds を作成する際にこのif 文を通っていない --> OK? 先にtrain-dataset作成時にnormalizerを作っている
             normalizer = Normalizer.build_normalizer(

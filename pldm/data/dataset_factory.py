@@ -246,6 +246,7 @@ class DatasetFactory:
         )
         
         print('MAKE_PROBE_DATASET')
+        # print('DS.NORMALIZER:', ds.normalizer)
         probe_ds = make_dataloader(
             ds=probe_ds,
             loader_config=self.config,
@@ -266,7 +267,7 @@ class DatasetFactory:
             ),
         )
         
-        print('MAKE_PROBE_VAL_DATASET')
+        # print('MAKE_PROBE_VAL_DATASET')
         probe_val_ds = make_dataloader(
             ds=probe_val_ds,
             loader_config=self.config,
@@ -281,68 +282,3 @@ class DatasetFactory:
 
 
 
-    # def _create_franka_datasets(self):
-    #     ds = FrankaDataset(self.config.franka_config)
-
-    #     #正規化ありDataLoader
-    #     ds_loader = make_dataloader(
-    #         ds=ds,
-    #         loader_config=self.config,
-    #     )
-
-    #     normalizer = ds_loader.normalizer
-
-    #     # val/probe データも同じnormalizerを利用
-    #     val_ds = FrankaDataset(
-    #         dataclasses.replace(
-    #             self.config.franka_config,
-    #             path=self.probing_cfg.train_path,
-    #             images_path=self.probing_cfg.train_images_path,
-    #             sample_length=self.probing_cfg.l1_depth,
-    #         ),
-    #     )
-    #     val_ds = make_dataloader(
-    #         ds=val_ds,
-    #         loader_config=self.config,
-    #         normalizer=normalizer,
-    #         suffix="val",
-    #     )
-
-    #     probe_ds = FrankaDataset(
-    #         dataclasses.replace(
-    #             self.config.franka_config,
-    #             path=self.probing_cfg.train_path,
-    #             images_path=self.probing_cfg.train_images_path,
-    #             sample_length=self.probing_cfg.l1_depth,
-    #         ),
-    #     )
-    #     probe_ds = make_dataloader(
-    #         ds=probe_ds,
-    #         loader_config=self.config,
-    #         normalizer=normalizer,
-    #         suffix="probe_train",
-    #     )
-
-    #     probe_val_ds = FrankaDataset(
-    #         dataclasses.replace(
-    #             self.config.franka_config,
-    #             path=self.probing_cfg.val_path,
-    #             images_path=self.probing_cfg.val_images_path,
-    #             sample_length=self.probing_cfg.l1_depth,
-    #             train=False,
-    #             crop_length=50000,
-    #             batch_size=64,
-    #         ),
-    #     )
-    #     probe_val_ds = make_dataloader(
-    #         ds=probe_val_ds,
-    #         loader_config=self.config,
-    #         normalizer=normalizer,
-    #         suffix="probe_val",
-    #     )
-
-    #     return Datasets(
-    #         ds=ds_loader,
-    #         val_ds=val_ds,
-    #         probing_datasets=ProbingDatasets(ds=probe_ds, val_ds=probe_val_ds),
-    #     )

@@ -749,8 +749,9 @@ class ProbingEvaluator:
 
         return unnormalized_avg_loss
 
+    #ピクセルに変換してプロットしている. 今は使っていない
     @torch.no_grad()
-    def plot_prober_predictions(
+    def _plot_prober_predictions(
         self,
         batch,
         jepa: JEPA,
@@ -808,6 +809,7 @@ class ProbingEvaluator:
             pred_encs = pred_output.obs_component
         else: #x
             pred_encs = pred_output.predictions
+        # print('PRED_ENCS:', pred_encs.shape) #torch.Size([15, 64, 16, 26, 26])
 
         pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
         # print('====bfore unnormalize====')
@@ -819,12 +821,44 @@ class ProbingEvaluator:
         # print('PRED_LOCS.min:', pred_locs.min())
         # print('PRED_LOCS.max:', pred_locs.max())
 
+
         # pred_locs is of shape (batch_size, time, 1, 2)
-        if idxs is None:
+        if idxs is None: ##
             idxs = list(range(min(pred_locs.shape[0], 64)))
+
+        # print('====before unnormalize====')
+        # print('batch.locations.type:', type(batch.locations))
+        # print('batch.locations.shape:', batch.locations.shape)
+        # batch_location_flat = batch.locations.view(-1, 3)
+        
+        # mean = batch_location_flat.mean(dim=0)
+        # std = batch_location_flat.std(dim=0)
+        # min_val = batch_location_flat.min(dim=0).values
+        # max_val = batch_location_flat.max(dim=0).values
+        # print("mean:", mean)
+        # print("std :", std)
+        # print("min :", min_val)
+        # print("max :", max_val)
+        
 
         gt_locations = normalizer.unnormalize_location(batch.locations).cpu()
         pred_locs = normalizer.unnormalize_location(pred_locs).cpu()
+        
+        # print('====after unnormalize====')
+        # print('gt_locations.type:', type(gt_locations))
+        # print('gt_locations.shape:', gt_locations.shape)
+        # gt_locations_flat = gt_locations.view(-1, 3)
+        
+        # mean = gt_locations_flat.mean(dim=0)
+        # std = gt_locations_flat.std(dim=0)
+        # min_val = gt_locations_flat.min(dim=0).values
+        # max_val = gt_locations_flat.max(dim=0).values
+        
+        # print("mean:", mean)
+        # print("std :", std)
+        # print("min :", min_val)
+        # print("max :", max_val)
+        
         # print('====after unnormalize====')
         # print('PRED_LOCS.type:', type(pred_locs))
         # print('PRED_LOCS.shape:', pred_locs.shape)
@@ -902,3 +936,185 @@ class ProbingEvaluator:
                 # Logger.run().log_figure(fig, f"{name_prefix}/prober_predictions_{i}")
                 Logger.run().log_figure(fig, f"{name_prefix}/prober_predictions_{i}")
                 plt.close(fig)
+
+
+    @torch.no_grad()
+    def plot_prober_predictions(
+        self,
+        batch,
+        jepa: JEPA,
+        prober: torch.nn.Module,
+        normalizer: Normalizer,
+        name_prefix: str = "",
+        idxs: Optional[List[int]] = None,
+        notebook: bool = False,
+        pixel_mapper=None,
+    ):
+
+        # infer
+        states = batch.states.to(self.device).transpose(0, 1)
+        actions = batch.actions.to(self.device).transpose(0, 1)
+
+        optional_fields = get_optional_fields(batch, device=states.device)
+
+        pred_output = jepa.forward_posterior(
+            states, actions, **optional_fields
+        )
+
+        #loss 計算(確認用)
+        #open_loss
+        # loss_infos = []
+        # loss_infos += [
+        #     objective(batch, [pred_output])
+        #     for objective in self.open_objectives_l1
+        # ]
+        # open_total_loss = sum([loss_info.total_loss for loss_info in loss_infos])
+        # print('open-test, open loss_type',[type(o) for o in self.open_objectives_l1])
+        # print('open-test, open_loss: ', open_total_loss)
+        
+        # #closed_loss
+        # loss_infos = []
+        # if self.closed_objectives_l1 is not None:
+        #     loss_infos += [
+        #         objective(batch, [pred_output])
+        #         for objective in self.closed_objectives_l1
+        #     ]
+        # else:
+        #     loss_infos += [
+        #         objective(batch, [pred_output])
+        #         for objective in self.open_objectives_l1
+        #     ]
+        # closed_total_loss = sum([loss_info.total_loss for loss_info in loss_infos])
+        # if self.closed_objectives_l1 is not None:
+        #     print('open-test, closed loss_type',[type(o) for o in self.closed_objectives_l1])
+        # else:
+        #     print('open-test, closed loss_type',[type(o) for o in self.open_objectives_l1])
+        # print('open-test, closed_loss: ', closed_total_loss)
+        
+        pred_output = pred_output.pred_output
+
+        if pred_output.obs_component is not None: ##
+            pred_encs = pred_output.obs_component
+        else: #x
+            pred_encs = pred_output.predictions
+        # print('PRED_ENCS:', pred_encs.shape) #torch.Size([15, 64, 16, 26, 26])
+
+        pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
+        # print('====bfore unnormalize====')
+        # print('PRED_LOCS:', pred_locs)
+        # print('PRED_LOCS.type:', type(pred_locs))
+        # print('PRED_LOCS.shape:', pred_locs.shape)
+        # print('PRED_LOCS.mean:', pred_locs.mean())
+        # print('PRED_LOCS.std:', pred_locs.std())
+        # print('PRED_LOCS.min:', pred_locs.min())
+        # print('PRED_LOCS.max:', pred_locs.max())
+
+
+        # pred_locs is of shape (batch_size, time, 1, 2)
+        if idxs is None: ##
+            idxs = list(range(min(pred_locs.shape[0], 64)))
+
+        # print('====before unnormalize====')
+        # print('batch.locations.type:', type(batch.locations))
+        # print('batch.locations.shape:', batch.locations.shape)
+        # batch_location_flat = batch.locations.view(-1, 3)
+        
+        # mean = batch_location_flat.mean(dim=0)
+        # std = batch_location_flat.std(dim=0)
+        # min_val = batch_location_flat.min(dim=0).values
+        # max_val = batch_location_flat.max(dim=0).values
+        # print("mean:", mean)
+        # print("std :", std)
+        # print("min :", min_val)
+        # print("max :", max_val)
+        
+
+        gt_locations = normalizer.unnormalize_location(batch.locations).cpu()
+        pred_locs = normalizer.unnormalize_location(pred_locs).cpu()
+        
+        # print('====after unnormalize====')
+        # print('gt_locations.type:', type(gt_locations))
+        # print('gt_locations.shape:', gt_locations.shape)
+        # gt_locations_flat = gt_locations.view(-1, 3)
+        
+        # mean = gt_locations_flat.mean(dim=0)
+        # std = gt_locations_flat.std(dim=0)
+        # min_val = gt_locations_flat.min(dim=0).values
+        # max_val = gt_locations_flat.max(dim=0).values
+        
+        # print("mean:", mean)
+        # print("std :", std)
+        # print("min :", min_val)
+        # print("max :", max_val)
+        
+        # print('====after unnormalize====')
+        # print('PRED_LOCS.type:', type(pred_locs))
+        # print('PRED_LOCS.shape:', pred_locs.shape)
+        # print('PRED_LOCS.mean:', pred_locs.mean())
+        # print('PRED_LOCS.std:', pred_locs.std())
+        # print('PRED_LOCS.min:', pred_locs.min())
+        # print('PRED_LOCS.max:', pred_locs.max())
+
+        for i in tqdm(idxs, desc=f"Plotting {name_prefix}"):
+            fig = plt.figure(dpi=200)
+
+            plt.plot(
+                gt_locations[i, :, 0].cpu(),
+                gt_locations[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#3777FF",
+                alpha=0.8,
+                label="endeffector-ground-truth"
+            )
+            
+
+            plt.plot(
+                pred_locs[i, :, 0].cpu(),
+                pred_locs[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#D62828",
+                alpha=0.8,
+                label="endeffector_pred"
+            )
+            
+            # ラベル
+            plt.text(
+                gt_locations[i, 0, 0].cpu().item(),
+                gt_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            plt.text(
+                pred_locs[i, 0, 0].cpu().item(),
+                pred_locs[i, 0, 1].cpu().item(),
+                "S",
+                color="#D62828",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
+
+            plt.xlabel("X (meters)")
+            plt.ylabel("Y (meters)")
+            plt.legend()
+            
+            plt.gca().set_aspect("equal", adjustable="box")
+
+            # 軸範囲
+            plt.xlim(0.315, 0.715)
+            plt.ylim(-0.2, 0.2)
+
+            if not notebook:
+                Logger.run().log_figure(fig, f"{name_prefix}/prober_predictions_{i}")
+                plt.close(fig)
+            else:
+                plt.show()

@@ -5,7 +5,7 @@ env_name: &env_name franka
 base_lr: 0.041037
 data:
   dataset_type: DatasetType.Franka
-  min_max_normalize_state: false
+  min_max_normalize_state: true
   normalize: true
   franka_config:
     env_name: *env_name
@@ -221,4 +221,4 @@ run_name: pldm_franka
 run_project: Franka
 save_every_n_epochs: 1
 seed: 246
-wandb: false
+wandb: true

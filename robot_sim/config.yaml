@@ -1,4 +1,4 @@
-is_val: true
+is_val: false
 pairs: 3 #3
 min_dist: 0.2
 episodes_per_pair: 1 #2000
@@ -11,14 +11,14 @@ specify_init_position: true #初期姿勢を指定するか
 goal_offset: [0.2, -0.2, 0.2]
 
 #データ確認するか
-confirm_ik_result: false
-confirm_dist: false
+confirm_ik_result: true
+confirm_dist: true
 make_video: true
-confirm_ee_trajectory: false
-confirm_data: false
-count_contact: false
+confirm_ee_trajectory: true
+confirm_data: true
+count_contact: true
 
-visualize_target_trajectory: true #target_xyz軌跡の可視化
+visualize_target_trajectory: false #target_xyz軌跡の可視化
 
 
 start_goal_x_range: [0.365, 0.665]

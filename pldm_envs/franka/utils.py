@@ -25,7 +25,8 @@ def get_xy_range_from_model():
 
     return (x_min, x_max), (y_min, y_max)
 
-
+#保留
+#関数内のx_range, y_range は, 現在のtop_view が捉える環境の範囲を目測で計算したもの
 def franka_pixel_mapper(coords, image_size=64):
     
     """
@@ -33,7 +34,7 @@ def franka_pixel_mapper(coords, image_size=64):
     """
 
     coords = coords.clone()
-    x_range, y_range = get_xy_range_from_model()
+    x_range, y_range = [-0.018333, 1.048333], [-0.533333,0.533333]
 
 
     y_pixel = (coords[:, :, 0] - x_range[0]) / (x_range[1] - x_range[0]) * (image_size - 1)

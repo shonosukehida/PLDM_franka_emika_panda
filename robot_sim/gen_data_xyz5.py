@@ -50,6 +50,29 @@ class FrankaDatasetGenerator:
         os.environ["MUJOCO_GL"] = "egl"
         self.env = FrankaSimEnv(config)
 
+        self.bluebox_geom_id = self.env.physics.model.name2id("blue_box", mujoco.mjtObj.mjOBJ_GEOM)
+        
+        self.franka_geom_ids = [
+            self.env.physics.model.name2id("link0_c", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("link1_c", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("link2_c", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("link3_c", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("link4_c", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("link5_c0", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("link5_c1", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("link5_c2", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("link6_c", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("link7_c", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("hand_c", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("left_finger_0", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("right_finger_0", mujoco.mjtObj.mjOBJ_GEOM),
+            # fingertip pads も入れる
+            self.env.physics.model.name2id("fingertip_pad_collision_1", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("fingertip_pad_collision_2", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("fingertip_pad_collision_3", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("fingertip_pad_collision_4", mujoco.mjtObj.mjOBJ_GEOM),
+            self.env.physics.model.name2id("fingertip_pad_collision_5", mujoco.mjtObj.mjOBJ_GEOM),
+        ]
 
         if self.CAMERA_NAME == 'default':
             self.camera_id = -1
@@ -99,29 +122,7 @@ class FrankaDatasetGenerator:
         success_rate = success_cnt / loop * 100 
         print(f'ik-calculation success rate: {success_rate:2f}')
         
-        self.bluebox_geom_id = self.env.physics.model.name2id("blue_box", mujoco.mjtObj.mjOBJ_GEOM)
-        
-        self.franka_geom_ids = [
-            self.env.physics.model.name2id("link0_c", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("link1_c", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("link2_c", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("link3_c", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("link4_c", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("link5_c0", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("link5_c1", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("link5_c2", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("link6_c", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("link7_c", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("hand_c", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("left_finger_0", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("right_finger_0", mujoco.mjtObj.mjOBJ_GEOM),
-            # fingertip pads も入れる
-            self.env.physics.model.name2id("fingertip_pad_collision_1", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("fingertip_pad_collision_2", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("fingertip_pad_collision_3", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("fingertip_pad_collision_4", mujoco.mjtObj.mjOBJ_GEOM),
-            self.env.physics.model.name2id("fingertip_pad_collision_5", mujoco.mjtObj.mjOBJ_GEOM),
-        ]
+
         
         self.episode_chunk_size = config['episode_chunk_size']
         self.chunk_idx = 0
@@ -179,11 +180,16 @@ class FrankaDatasetGenerator:
                 bluebox_contact_count = 0 #blue-box との衝突回数
                 
                 if ep_idx != 0:
+                    self.env.physics.forward()
+                    bluebox_geom_id = self.bluebox_geom_id
+                    bluebox_pos = self.env.physics.data.geom_xpos[bluebox_geom_id]
+                    
                     obs = np.concatenate(
                             [
                                 self.env.physics.data.qpos[:7], 
                                 self.env.physics.data.qvel[:7], 
-                                self.env.get_ee_position()
+                                self.env.get_ee_position(),
+                                bluebox_pos,
                                 ]
                         )
                     episode_obs.append(obs.copy())
@@ -230,9 +236,7 @@ class FrankaDatasetGenerator:
                             tol=mjc_tol,
                             rot_weight=self.rot_weight
                             )
-                        # if not self.is_within_bounds(ee_pos, self.X_RANGE, self.Y_RANGE):
-                        #     print('OOOOOO')
-                        #     valid_episode = False
+
                     except Exception as e:
                         print(f'IK失敗: {e}')
                         valid_episode = False
@@ -285,16 +289,24 @@ class FrankaDatasetGenerator:
                         out_of_bound_count += int(not self.is_within_bounds(self.env.get_ee_position(), self.X_RANGE, self.Y_RANGE))
                         count_all_timestep += 1
                         
+                        #bluebox の位置を取得
+                        self.env.physics.forward()
+                        bluebox_geom_id = self.bluebox_geom_id
+                        bluebox_pos = self.env.physics.data.geom_xpos[bluebox_geom_id]
+                        
+                        
+                        
                         
                         action = joint_angles.copy()
                         obs = np.concatenate(
                                 [
                                     self.env.physics.data.qpos[:7], 
                                     self.env.physics.data.qvel[:7], 
-                                    self.env.get_ee_position()
+                                    self.env.get_ee_position(),
+                                    bluebox_pos,
                                 ]
                             )
-                        
+
                         episode_obs.append(obs.copy())
                         episode_actions.append(action.copy())
                         img = self.env.physics.render(height=self.IMAGE_SIZE[0], width=self.IMAGE_SIZE[1], camera_id=self.camera_id)
@@ -373,11 +385,22 @@ class FrankaDatasetGenerator:
         goal_obs_list = []
         for start_pos, goal_pos in self.pair_list:
             self.env.reset_and_place_all(box_pos=goal_pos, start_marker_pos=start_pos, goal_marker_pos=goal_pos)
+            bluebox_geom_id = self.bluebox_geom_id
+            bluebox_pos = self.env.physics.data.geom_xpos[bluebox_geom_id]
+            
             
             offset = np.array(self.config['goal_offset'])
             self.env.set_xyz(goal_pos + offset)
+            self.env.physics.forward() 
             img = self.env.render_image(size=self.IMAGE_SIZE)
-            goal_obs = np.concatenate([self.env.physics.data.qpos[:7], self.env.physics.data.qvel[:7], self.env.get_ee_position()])
+            goal_obs = np.concatenate(
+                [
+                    self.env.physics.data.qpos[:7], 
+                    self.env.physics.data.qvel[:7], 
+                    self.env.get_ee_position(),
+                    bluebox_pos,
+                    ]
+                )
             goal_obs_list.append((goal_obs.copy(), img.copy()))
 
         return goal_obs_list
@@ -591,10 +614,10 @@ class FrankaDatasetGenerator:
 
         # --- data を読み込み ---
         data_files = sorted(glob.glob(os.path.join(data_chunk_dir, "data_chunk_*.pt")))
-        merged_data_list = []
+        self.data_list = []
         for f in data_files:
             chunk_data = torch.load(f, weights_only=False)
-            merged_data_list.extend(chunk_data)
+            self.data_list.extend(chunk_data)
             print(f"Loaded {f} with {len(chunk_data)} episodes")
 
         # --- image を読み込み ---
@@ -611,7 +634,7 @@ class FrankaDatasetGenerator:
             merged_images = np.array([], dtype=np.uint8)
 
         # --- 保存 ---
-        torch.save(merged_data_list, os.path.join(self.SAVE_PATH, "data.p"))
+        torch.save(self.data_list, os.path.join(self.SAVE_PATH, "data.p"))
         np.save(os.path.join(self.SAVE_PATH, "images.npy"), merged_images)
 
         # goal_images はそのまま
@@ -645,7 +668,13 @@ class FrankaDatasetGenerator:
         df = pd.DataFrame(joint_vel, columns=[f"joint_{i}" for i in range(1, 8)])
         df.to_csv(os.path.join(output_dir, "franka_joint_vel.csv"), index=False)
 
-        df = pd.DataFrame(xyz_pos, columns=[f"pos_{i}" for i in range(1, 4)])
+        df = pd.DataFrame(
+            xyz_pos, 
+            columns=[
+                "ee_pos_x", "ee_pos_y", "ee_pos_z",
+                "bluebox_pos_x", "bluebox_pos_y", "bluebox_pos_z"
+            ],
+            )
         df.to_csv(os.path.join(output_dir, "franka_xyz_pos.csv"), index=False)
 
         images = np.load(os.path.join(self.SAVE_PATH, "images.npy"))
@@ -887,18 +916,22 @@ class FrankaDatasetGenerator:
             
             
             obs = episode["observations"]
-            ee_xyz = obs[:, -3:]
-
-
-            x = ee_xyz[:, axis_num[0]]
-            y = ee_xyz[:, axis_num[1]]
+            ee_xyz = obs[:, -6:-3]
+            bluebox_xyz = obs[:, -3:]
             
 
-            N = len(x)
+            x_ee = ee_xyz[:, axis_num[0]]
+            y_ee = ee_xyz[:, axis_num[1]]
+            
+            x_box = bluebox_xyz[:, axis_num[0]]
+            y_box = bluebox_xyz[:, axis_num[1]]
+            
+
+            N = len(x_ee)
             t_norm = np.linspace(0, 1, N)
 
             scatter = ax.scatter(
-                x, y,
+                x_ee, y_ee,
                 c=t_norm,
                 cmap='viridis',
                 s=10,
@@ -907,13 +940,33 @@ class FrankaDatasetGenerator:
             )
 
             ax.plot(
-                x, y,
+                x_ee, y_ee,
                 color='gray',
                 linewidth=1,
                 alpha=0.5,
                 zorder=1
             )
-            
+
+
+
+            # Blue box trajectory
+            scatter_box = ax.scatter(
+                x_box, y_box,
+                c=t_norm,
+                cmap='plasma',
+                s=10,
+                alpha=0.8,
+                zorder=4,
+                label='Blue Box Trajectory'
+            )
+
+            ax.plot(
+                x_box, y_box,
+                color='orange',
+                linewidth=1,
+                alpha=0.5,
+                zorder=3
+            )
 
             
             
