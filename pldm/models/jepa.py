@@ -177,9 +177,9 @@ class JEPA(torch.nn.Module):
         actions:
             (T-1)xBxA
         """
-        if input_states.shape[-1] != self.repr_dim:
-            if self.config.backbone.propio_dim is not None:
-                if propio_pos.numel() == 0:
+        if input_states.shape[-1] != self.repr_dim: ##
+            if self.config.backbone.propio_dim is not None: ##
+                if propio_pos.numel() == 0: ##(diverse_mazeでは)
                     propio_states = propio_vel
                 elif propio_vel.numel() == 0:
                     propio_states = propio_pos
@@ -212,7 +212,7 @@ class JEPA(torch.nn.Module):
                 )
             else:
                 ema_backbone_output = self.backbone_ema.forward_multiple(input_states)
-        else:
+        else: ##
             ema_backbone_output = None
 
         if self.config.encode_only or encode_only:
@@ -292,7 +292,6 @@ class JEPA(torch.nn.Module):
         else:
             backbone_output = self.backbone.forward_multiple(input_states)
 
-        # === 結果まとめ ===
         pred_output = PredictorOutput(
             predictions=state_preds,
             obs_component=obs_component,

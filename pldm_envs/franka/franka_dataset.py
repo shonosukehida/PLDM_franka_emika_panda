@@ -53,7 +53,7 @@ class FrankaDataset(Dataset):
 
         qpos = obs[:, :7]
         qvel = obs[:, 7:14]
-        ee_xyz = obs[:, 14:]
+        ee_xyz = obs[:, 14:17]
         
         propio_pos = qpos
         propio_vel = qvel

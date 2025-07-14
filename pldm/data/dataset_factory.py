@@ -250,7 +250,7 @@ class DatasetFactory:
         probe_ds = make_dataloader(
             ds=probe_ds,
             loader_config=self.config,
-            normalizer=ds.normalizer,
+            # normalizer=ds.normalizer,
             suffix="probe_train",
         )
         
@@ -271,7 +271,7 @@ class DatasetFactory:
         probe_val_ds = make_dataloader(
             ds=probe_val_ds,
             loader_config=self.config,
-            normalizer=ds.normalizer,
+            # normalizer=ds.normalizer,
             suffix="probe_val",
         )
         return Datasets(

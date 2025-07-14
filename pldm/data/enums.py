@@ -48,7 +48,7 @@ class DataConfig(ConfigBase):
     franka_config: FrankaConfig = field(default_factory=FrankaConfig)
 
     normalize: bool = False
-    min_max_normalize_state: bool = False
+    min_max_normalize: bool = False
     normalizer_hardset: bool = False
     quick_debug: bool = False
     num_workers: int = 0

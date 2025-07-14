@@ -5,7 +5,7 @@ env_name: &env_name franka
 base_lr: 0.041037
 data:
   dataset_type: DatasetType.Franka
-  min_max_normalize_state: false
+  min_max_normalize: true
   normalize: true
   franka_config:
     env_name: *env_name

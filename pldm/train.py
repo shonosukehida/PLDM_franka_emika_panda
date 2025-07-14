@@ -186,10 +186,10 @@ class Trainer:
         ).create_datasets()
 
         self.datasets = datasets
+        self.test_normalizer(check_only_first_batch=True)
 
         self.ds = datasets.ds
-        print('self.ds.normalizer:', self.ds.normalizer)
-        print('self.ds.normalizer.state_dict():', self.ds.normalizer.state_dict())
+
         self.val_ds = datasets.val_ds
 
         # infer obs shape
@@ -760,6 +760,80 @@ class Trainer:
         Logger.run().commit()
 
 
+    def test_normalizer(self, check_only_first_batch=True, log_filename="normalizer_test_log.txt"):
+        log_path = os.path.join(self.config.output_path, log_filename)
+        os.makedirs(self.config.output_path, exist_ok=True)
+
+        with open(log_path, "w", encoding="utf-8") as f:
+            now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"=== 正規化テスト {now}===\n")
+            train_loader = self.datasets.ds
+            normalizer = train_loader.normalizer
+
+            for batch in train_loader:
+                # Helper function for writing block logs
+                def log_block(title, orig, unnorm, renorm, diff):
+                    f.write(f"\n--- {title} ---\n")
+                    f.write(f"Original (normalized):\n")
+                    f.write(f"  shape: {orig.shape}\n")
+                    f.write(f"  min: {orig.min().item()}  max: {orig.max().item()}\n")
+
+                    f.write(f"Recovered (unnormalized):\n")
+                    f.write(f"  shape: {unnorm.shape}\n")
+                    f.write(f"  min: {unnorm.min().item()}  max: {unnorm.max().item()}\n")
+
+                    f.write(f"Re-normalized:\n")
+                    f.write(f"  shape: {renorm.shape}\n")
+                    f.write(f"  min: {renorm.min().item()}  max: {renorm.max().item()}\n")
+
+                    f.write(f"Max diff: {diff.max().item()}\n")
+                    f.write(f"Mean diff: {diff.mean().item()}\n")
+                    f.write(f"Is close? {torch.allclose(orig, renorm, atol=1e-5)}\n")
+
+                # state の確認
+                if hasattr(batch, "states"):
+                    x = batch.states
+                    x_unnorm = normalizer.unnormalize_state(x)
+                    x_renorm = normalizer.normalize_state(x_unnorm)
+                    diff = (x - x_renorm).abs()
+                    log_block("states", x, x_unnorm, x_renorm, diff)
+
+                # location の確認
+                if hasattr(batch, "locations"):
+                    y = batch.locations
+                    y_unnorm = normalizer.unnormalize_location(y)
+                    y_renorm = normalizer.normalize_location(y_unnorm)
+                    diff = (y - y_renorm).abs()
+                    log_block("locations", y, y_unnorm, y_renorm, diff)
+
+                # action の確認
+                if hasattr(batch, "actions"):
+                    a = batch.actions
+                    a_unnorm = normalizer.unnormalize_action(a)
+                    a_renorm = normalizer.normalize_action(a_unnorm)
+                    diff = (a - a_renorm).abs()
+                    log_block("actions", a, a_unnorm, a_renorm, diff)
+
+                # propio_pos の確認
+                if hasattr(batch, "propio_pos"):
+                    p = batch.propio_pos
+                    p_unnorm = normalizer.unnormalize_propio_pos(p)
+                    p_renorm = normalizer.normalize_propio_pos(p_unnorm)
+                    diff = (p - p_renorm).abs()
+                    log_block("propio_pos", p, p_unnorm, p_renorm, diff)
+
+                # propio_vel の確認
+                if hasattr(batch, "propio_vel"):
+                    v = batch.propio_vel
+                    v_unnorm = normalizer.unnormalize_propio_vel(v)
+                    v_renorm = normalizer.normalize_propio_vel(v_unnorm)
+                    diff = (v - v_renorm).abs()
+                    log_block("propio_vel", v, v_unnorm, v_renorm, diff)
+
+                if check_only_first_batch:
+                    break
+
+        print(f"Normalizer test results saved to: {log_path}")
 def main(config: TrainConfig):
     torch.set_num_threads(1)
     trainer = Trainer(config)

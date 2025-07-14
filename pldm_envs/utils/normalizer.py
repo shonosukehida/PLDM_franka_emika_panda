@@ -3,23 +3,23 @@ from typing import NamedTuple
 import torch
 from tqdm import tqdm
 
-STATS = {
-    "WallDataset": {
-        # NOTE: these values are in fact not correct but they work cuz random search
-        # was performed using these. When using correct values performance got worse.
-        # but should just perform random search over again on correct values
-        "state_mean": torch.tensor([0.0002, 0.0014]),
-        "state_std": torch.tensor([0.0034, 0.0112]),
-        "action_mean": torch.tensor([0.0120, -0.0074]),
-        "action_std": torch.tensor([0.7543, 0.7424]),
-        "location_mean": torch.tensor([31.1224, 31.3396]),
-        "location_std": torch.tensor([16.3134, 16.6708]),
-        "propio_pos_mean": torch.tensor([0, 1]),
-        "propio_pos_std": torch.tensor([0, 1]),
-        "propio_vel_mean": torch.tensor([0, 1]),
-        "propio_vel_std": torch.tensor([0, 1]),
-    }
-}
+# STATS = {
+#     "WallDataset": {
+#         # NOTE: these values are in fact not correct but they work cuz random search
+#         # was performed using these. When using correct values performance got worse.
+#         # but should just perform random search over again on correct values
+#         "state_mean": torch.tensor([0.0002, 0.0014]),
+#         "state_std": torch.tensor([0.0034, 0.0112]),
+#         "action_mean": torch.tensor([0.0120, -0.0074]),
+#         "action_std": torch.tensor([0.7543, 0.7424]),
+#         "location_mean": torch.tensor([31.1224, 31.3396]),
+#         "location_std": torch.tensor([16.3134, 16.6708]),
+#         "propio_pos_mean": torch.tensor([0, 1]),
+#         "propio_pos_std": torch.tensor([0, 1]),
+#         "propio_vel_mean": torch.tensor([0, 1]),
+#         "propio_vel_std": torch.tensor([0, 1]),
+#     }
+# }
 
 
 def get_nth_percentile(tensor, percentile):
@@ -48,7 +48,17 @@ class Normalizer:
         propio_pos_std: torch.Tensor,
         propio_vel_mean: torch.Tensor,
         propio_vel_std: torch.Tensor,
-        min_max_state: bool = False,
+        state_min: torch.Tensor,
+        state_max: torch.Tensor,
+        action_min: torch.Tensor,
+        action_max: torch.Tensor,
+        location_min: torch.Tensor,
+        location_max: torch.Tensor,
+        propio_pos_min: torch.Tensor,
+        propio_pos_max: torch.Tensor,
+        propio_vel_min: torch.Tensor,
+        propio_vel_max: torch.Tensor,
+        min_max_normalize: bool = True,
     ):
         self.state_mean = state_mean
         self.state_std = state_std
@@ -60,7 +70,20 @@ class Normalizer:
         self.propio_pos_std = propio_pos_std
         self.propio_vel_mean = propio_vel_mean
         self.propio_vel_std = propio_vel_std
-        self.min_max_state = min_max_state
+        
+        
+        
+        self.state_min = state_min
+        self.state_max = state_max
+        self.action_min = action_min
+        self.action_max = action_max
+        self.location_min = location_min
+        self.location_max = location_max
+        self.propio_pos_min = propio_pos_min
+        self.propio_pos_max = propio_pos_max
+        self.propio_vel_min = propio_vel_min
+        self.propio_vel_max = propio_vel_max
+        self.min_max_normalize = min_max_normalize
 
     @staticmethod
     def _has_attr(sample, attr):
@@ -70,12 +93,13 @@ class Normalizer:
             and bool(getattr(sample, attr).shape[-1])
         )
 
+
     @classmethod
     def build_normalizer(
         cls,
         dataset,
         n_samples: int = 100,
-        min_max_state: bool = False,
+        min_max_normalize: bool = False,
         normalizer_hardset: bool = False,
     ):
         all_actions = []
@@ -84,66 +108,100 @@ class Normalizer:
         all_propio_pos = []
         all_propio_vel = []
 
+        all_states_min = []
+        all_states_max = []
+        all_actions_min = []
+        all_actions_max = []
+        all_locations_min = []
+        all_locations_max = []
+        all_propio_pos_min = []
+        all_propio_pos_max = []
+        all_propio_vel_min = []
+        all_propio_vel_max = []
+
         config = (
             dataset.dataset.config if hasattr(dataset, "dataset") else dataset.config
         )
 
         it = iter(dataset)
-        for _i in tqdm(range(n_samples), desc="estimating mean stds"):
+        for _i in tqdm(range(n_samples), desc="Estimating normalizer stats"):
             try:
                 sample = next(it)
             except StopIteration:
                 it = iter(dataset)
                 sample = next(it)
 
+            # --- STATES ---
             if cls._has_attr(sample, "states"):
-                if len(sample.states.shape) == 5:  # image BxTxCxHxW
-                    states = sample.states.float()  # convert to float in case of byte
+                if len(sample.states.shape) == 5:
+                    states = sample.states.float()
 
-                    if min_max_state:
-                        states -= states.amin(dim=(3, 4), keepdim=True)
-                        states /= states.amax(dim=(3, 4), keepdim=True)
+                    # flatten state to (B*T, C*H*W)
+                    states_flat = states.flatten(start_dim=2)   # (B, T, C*H*W)
+                    states_flat = states_flat.view(-1, states_flat.shape[-1])  # (B*T, C*H*W)
 
-                    states = states.flatten(start_dim=-2).flatten(end_dim=-3)
-                    # make states CxBTHW
-                    states = states.permute(1, 0, 2).flatten(start_dim=1)
-                else:  # proprio BxTxD
-                    if min_max_state:
-                        raise NotImplementedError(
-                            "min_max_state not implemented for propio"
-                        )
-                    states = sample.states.permute(2, 1, 0).flatten(start_dim=1)
+                    all_states.append(states_flat)  # (N, D)
+
+                    if min_max_normalize:
+                        all_states_min.append(states_flat.min(dim=0).values)
+                        all_states_max.append(states_flat.max(dim=0).values)
+
+                else:
+                    raise NotImplementedError(
+                        "min_max_state not implemented for propio"
+                    )
+                    # proprio
+                    states = sample.states
+                    states_flat = states.view(-1, states.shape[-1])
+                    all_states.append(states_flat)
+                    if min_max_normalize:
+                        all_states_min.append(states_flat.min(dim=0).values)
+                        all_states_max.append(states_flat.max(dim=0).values)
             else:
-                states = torch.zeros([1, 1])
+                # dummy zeros
+                all_states.append(torch.zeros((1, 1)))
 
+            # --- ACTIONS ---
             actions = sample.actions
-
             if config.chunked_actions and not config.substitute_action == "direction":
                 bs, T, chunk_size, action_dim = actions.shape
             else:
                 bs, T, action_dim = actions.shape
+            actions_flat = actions.view(-1, action_dim)
+            all_actions.append(actions_flat)
 
-            actions = sample.actions.view(-1, action_dim)
+            if min_max_normalize:
+                all_actions_min.append(actions_flat.min(dim=0).values)
+                all_actions_max.append(actions_flat.max(dim=0).values)
 
+            # --- LOCATIONS ---
             locations = sample.locations.view(-1, sample.locations.shape[-1])
-
-            all_actions.append(actions)
             all_locations.append(locations)
-            all_states.append(states)
+            if min_max_normalize:
+                all_locations_min.append(locations.min(dim=0).values)
+                all_locations_max.append(locations.max(dim=0).values)
 
+            # --- PROPIO_POS ---
             if cls._has_attr(sample, "propio_pos"):
                 propio_pos = sample.propio_pos.view(-1, sample.propio_pos.shape[-1])
             else:
                 propio_pos = torch.zeros([1, 2])
             all_propio_pos.append(propio_pos)
+            if min_max_normalize:
+                all_propio_pos_min.append(propio_pos.min(dim=0).values)
+                all_propio_pos_max.append(propio_pos.max(dim=0).values)
 
+            # --- PROPIO_VEL ---
             if cls._has_attr(sample, "propio_vel"):
                 propio_vel = sample.propio_vel.view(-1, sample.propio_vel.shape[-1])
             else:
                 propio_vel = torch.zeros([1, 2])
             all_propio_vel.append(propio_vel)
+            if min_max_normalize:
+                all_propio_vel_min.append(propio_vel.min(dim=0).values)
+                all_propio_vel_max.append(propio_vel.max(dim=0).values)
 
-        if hasattr(dataset, "config") and normalizer_hardset:
+        if hasattr(dataset, "config") and normalizer_hardset: #False
             ds_stats = STATS[dataset.__class__.__name__]
             total_state_mean = ds_stats["state_mean"].to(locations.device)
             total_state_std = ds_stats["state_std"].to(locations.device)
@@ -155,6 +213,17 @@ class Normalizer:
             total_propio_pos_std = ds_stats["propio_pos_std"].to(locations.device)
             total_propio_vel_mean = ds_stats["propio_vel_mean"].to(locations.device)
             total_propio_vel_std = ds_stats["propio_vel_std"].to(locations.device)
+
+            total_state_min = torch.zeros_like(total_state_mean)
+            total_state_max = torch.ones_like(total_state_mean)
+            total_action_min = torch.zeros_like(total_action_mean)
+            total_action_max = torch.ones_like(total_action_mean)
+            total_location_min = torch.zeros_like(total_location_mean)
+            total_location_max = torch.ones_like(total_location_mean)
+            total_propio_pos_min = torch.zeros_like(total_propio_pos_mean)
+            total_propio_pos_max = torch.ones_like(total_propio_pos_mean)
+            total_propio_vel_min = torch.zeros_like(total_propio_vel_mean)
+            total_propio_vel_max = torch.ones_like(total_propio_vel_mean)
         else:
             total_state = torch.cat(all_states, dim=-1)
             total_state_mean = total_state.mean(dim=-1)
@@ -176,6 +245,33 @@ class Normalizer:
             total_propio_vel_mean = total_propio_vel.mean(dim=0)
             total_propio_vel_std = total_propio_vel.std(dim=0)
 
+            if min_max_normalize:
+                total_state_min = torch.stack(all_states_min).min(dim=0).values
+                total_state_max = torch.stack(all_states_max).max(dim=0).values
+
+                total_action_min = torch.stack(all_actions_min).min(dim=0).values
+                total_action_max = torch.stack(all_actions_max).max(dim=0).values
+
+                total_location_min = torch.stack(all_locations_min).min(dim=0).values
+                total_location_max = torch.stack(all_locations_max).max(dim=0).values
+
+                total_propio_pos_min = torch.stack(all_propio_pos_min).min(dim=0).values
+                total_propio_pos_max = torch.stack(all_propio_pos_max).max(dim=0).values
+
+                total_propio_vel_min = torch.stack(all_propio_vel_min).min(dim=0).values
+                total_propio_vel_max = torch.stack(all_propio_vel_max).max(dim=0).values
+            else:
+                total_state_min = torch.zeros_like(total_state_mean)
+                total_state_max = torch.ones_like(total_state_mean)
+                total_action_min = torch.zeros_like(total_action_mean)
+                total_action_max = torch.ones_like(total_action_mean)
+                total_location_min = torch.zeros_like(total_location_mean)
+                total_location_max = torch.ones_like(total_location_mean)
+                total_propio_pos_min = torch.zeros_like(total_propio_pos_mean)
+                total_propio_pos_max = torch.ones_like(total_propio_pos_mean)
+                total_propio_vel_min = torch.zeros_like(total_propio_vel_mean)
+                total_propio_vel_max = torch.ones_like(total_propio_vel_mean)
+
         return cls(
             total_state_mean,
             total_state_std,
@@ -187,7 +283,17 @@ class Normalizer:
             total_propio_pos_std,
             total_propio_vel_mean,
             total_propio_vel_std,
-            min_max_state=min_max_state,
+            total_state_min,
+            total_state_max,
+            total_action_min,
+            total_action_max,
+            total_location_min,
+            total_location_max,
+            total_propio_pos_min,
+            total_propio_pos_max,
+            total_propio_vel_min,
+            total_propio_vel_max,
+            min_max_normalize=min_max_normalize,
         )
 
     @classmethod
@@ -203,100 +309,89 @@ class Normalizer:
             propio_pos_std=torch.ones(1),
             propio_vel_mean=torch.zeros(1),
             propio_vel_std=torch.ones(1),
-            min_max_state=False,
+            min_max_normalize=False,
         )
 
-    def min_max_normalize_state(self, state: torch.Tensor) -> torch.Tensor:
-        if len(state.shape) >= 3:
-            state = state - state.amin(dim=(-2, -1), keepdim=True)
-            state = state / (state.amax(dim=(-2, -1), keepdim=True) + 1e-6)
-        else:
-            state = state - state.amin(dim=-1, keepdim=True)
-            state = state / (state.amax(dim=-1, keepdim=True) + 1e-6)
-        return state
+
 
     def normalize_state(self, state: torch.Tensor) -> torch.Tensor:
-        if self.min_max_state:
-            state = self.min_max_normalize_state(state)
-        if len(state.shape) >= 3:  # if its image
-            adapted_mean = self.state_mean.view(-1, 1, 1).to(state.device)
-            adapted_std = self.state_std.view(-1, 1, 1).to(state.device) + 1e-6
+        """
+        Min-max normalize state to [0,1] range
+        """
+        orig_shape = state.shape
+        state_flat = state.flatten(start_dim=2)   # (B, T, C*H*W)
+        state_flat = state_flat.view(-1, state_flat.shape[-1])   # (B*T, C*H*W)
 
-            state_channels = state.shape[-3]  # [..., ch, w, h]
+        denom = (self.state_max - self.state_min).to(state.device)
+        denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
 
-            # in case the stats are calculated over stacked obs, but state is unstacked:
-            if state_channels < adapted_mean.shape[0] and not (
-                adapted_mean.shape[0] % state_channels
-            ):
-                adapted_mean = adapted_mean[:state_channels]
-                adapted_std = adapted_std[:state_channels]
+        state_norm_flat = (state_flat - self.state_min.to(state.device)) / denom
+        state_norm_flat = state_norm_flat.clamp(0.0, 1.0)
 
-            normalized_state = (state - adapted_mean) / adapted_std
-            return normalized_state
-        else:
-            return (state - self.state_mean.to(state.device)) / self.state_std.to(
-                state.device
-            )
+        state_norm = state_norm_flat.view(orig_shape)
+        return state_norm
+
+    def unnormalize_state(self, state_norm: torch.Tensor) -> torch.Tensor:
+        """
+        Undo min-max normalization for state
+        """
+        orig_shape = state_norm.shape
+        state_norm_flat = state_norm.flatten(start_dim=2)   # (B, T, C*H*W)
+        state_norm_flat = state_norm_flat.view(-1, state_norm_flat.shape[-1])   # (B*T, C*H*W)
+
+        denom = (self.state_max - self.state_min).to(state_norm.device)
+        denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
+
+        state_unnorm_flat = state_norm_flat * denom + self.state_min.to(state_norm.device)
+        state_unnorm = state_unnorm_flat.view(orig_shape)
+
+        return state_unnorm
+
+
 
     def normalize_action(self, action: torch.Tensor) -> torch.Tensor:
-        return (action - self.action_mean.to(action.device)) / (
-            self.action_std.to(action.device) + 1e-6
-        )
+        denom = (self.action_max - self.action_min).to(action.device)
+        denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
+        return ((action - self.action_min.to(action.device)) / denom).clamp(0.0, 1.0)
+    
+    def unnormalize_action(self, action_norm: torch.Tensor) -> torch.Tensor:
+        denom = (self.action_max - self.action_min).to(action_norm.device)
+        denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
+        return action_norm * denom + self.action_min.to(action_norm.device)
+
+
 
     def normalize_location(self, location: torch.Tensor) -> torch.Tensor:
-        return (location - self.location_mean.to(location.device)) / (
-            self.location_std.to(location.device) + 1e-6
-        )
+        denom = (self.location_max - self.location_min).to(location.device)
+        denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
+        return ((location - self.location_min.to(location.device)) / denom).clamp(0.0, 1.0)
+
+    def unnormalize_location(self, location_norm: torch.Tensor) -> torch.Tensor:
+        denom = (self.location_max - self.location_min).to(location_norm.device)
+        denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
+        return location_norm * denom + self.location_min.to(location_norm.device)
 
     def normalize_propio_pos(self, propio_pos: torch.Tensor) -> torch.Tensor:
-        return (propio_pos - self.propio_pos_mean.to(propio_pos.device)) / (
-            self.propio_pos_std.to(propio_pos.device) + 1e-6
-        )
+        denom = (self.propio_pos_max - self.propio_pos_min).to(propio_pos.device)
+        denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
+        return ((propio_pos - self.propio_pos_min.to(propio_pos.device)) / denom).clamp(0.0, 1.0)
+
+    def unnormalize_propio_pos(self, propio_pos_norm: torch.Tensor) -> torch.Tensor:
+        denom = (self.propio_pos_max - self.propio_pos_min).to(propio_pos_norm.device)
+        denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
+        return propio_pos_norm * denom + self.propio_pos_min.to(propio_pos_norm.device)
 
     def normalize_propio_vel(self, propio_vel: torch.Tensor) -> torch.Tensor:
-        return (propio_vel - self.propio_vel_mean.to(propio_vel.device)) / (
-            self.propio_vel_std.to(propio_vel.device) + 1e-6
-        )
+        denom = (self.propio_vel_max - self.propio_vel_min).to(propio_vel.device)
+        denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
+        return ((propio_vel - self.propio_vel_min.to(propio_vel.device)) / denom).clamp(0.0, 1.0)
 
-    def unnormalize_state(self, state: torch.Tensor) -> torch.Tensor:
-        if len(state.shape) >= 3:  # if it's image
-            adapted_mean = self.state_mean.view(-1, 1, 1).to(state.device)
-            adapted_std = self.state_std.view(-1, 1, 1).to(state.device)
+    def unnormalize_propio_vel(self, propio_vel_norm: torch.Tensor) -> torch.Tensor:
+        denom = (self.propio_vel_max - self.propio_vel_min).to(propio_vel_norm.device)
+        denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
+        return propio_vel_norm * denom + self.propio_vel_min.to(propio_vel_norm.device)
 
-            state_channels = state.shape[-3]  # [..., ch, w, h]
 
-            # in case the stats are calculated over stacked obs, but state is unstacked:
-            if state_channels < adapted_mean.shape[0] and not (
-                adapted_mean.shape[0] % state_channels
-            ):
-                adapted_mean = adapted_mean[:state_channels]
-                adapted_std = adapted_std[:state_channels]
-
-            return state * adapted_std + adapted_mean
-        else:
-            return state * self.state_std.to(state.device) + self.state_mean.to(
-                state.device
-            )
-
-    def unnormalize_action(self, action: torch.Tensor) -> torch.Tensor:
-        return action * self.action_std.to(action.device) + self.action_mean.to(
-            action.device
-        )
-
-    def unnormalize_location(self, location: torch.Tensor) -> torch.Tensor:
-        return location * self.location_std.to(location.device) + self.location_mean.to(
-            location.device
-        )
-
-    def unnormalize_propio_pos(self, propio_pos: torch.Tensor) -> torch.Tensor:
-        return propio_pos * self.propio_pos_std.to(
-            propio_pos.device
-        ) + self.propio_pos_mean.to(propio_pos.device)
-
-    def unnormalize_propio_vel(self, propio_vel: torch.Tensor) -> torch.Tensor:
-        return propio_vel * self.propio_vel_std.to(
-            propio_vel.device
-        ) + self.propio_vel_mean.to(propio_vel.device)
 
     def normalize_sample(self, sample):
         replaced = {}
@@ -332,17 +427,17 @@ class Normalizer:
         
 
         if self._has_attr(sample, "goal"):
-            print('=== before normalize locations sample ====')
-            print('shape:', sample.goal.shape)
-            print('mean:', sample.goal.mean().item())
-            print('std:', sample.goal.std().item())
+            # print('=== before normalize locations sample ====')
+            # print('shape:', sample.goal.shape)
+            # print('mean:', sample.goal.mean().item())
+            # print('std:', sample.goal.std().item())
             
             replaced["goal"] = self.normalize_location(sample.goal)
             
-            print("=== goal sample ===")
-            print(replaced['goal'][:10].shape)  # 先頭10要素のチャンネル表示
-            print("mean:", replaced['goal'].mean().item())
-            print("std :", replaced['goal'].std().item())
+            # print("=== goal sample ===")
+            # print(replaced['goal'][:10].shape)  # 先頭10要素のチャンネル表示
+            # print("mean:", replaced['goal'].mean().item())
+            # print("std :", replaced['goal'].std().item())
             
         if self._has_attr(sample, "propio_pos"):
             replaced["propio_pos"] = self.normalize_propio_pos(sample.propio_pos)
@@ -397,6 +492,19 @@ class Normalizer:
         self.propio_pos_std = self.propio_pos_std.to(device)
         self.propio_vel_mean = self.propio_vel_mean.to(device)
         self.propio_vel_std = self.propio_vel_std.to(device)
+        
+        
+        self.state_min = self.state_min.to(device)
+        self.state_max = self.state_max.to(device)
+        self.action_min = self.action_min.to(device)
+        self.action_max = self.action_max.to(device)
+        self.location_min = self.location_min.to(device)
+        self.location_max = self.location_max.to(device)
+        self.propio_pos_min = self.propio_pos_min.to(device)
+        self.propio_pos_max = self.propio_pos_max.to(device)
+        self.propio_vel_min = self.propio_vel_min.to(device)
+        self.propio_vel_max = self.propio_vel_max.to(device)
+
 
     def save(self, path):
         torch.save(
@@ -411,6 +519,19 @@ class Normalizer:
                 "propio_pos_std": self.propio_pos_std,
                 "propio_vel_mean": self.propio_vel_mean,
                 "propio_vel_std": self.propio_vel_std,
+                
+                # add min/max
+                "state_min": self.state_min,
+                "state_max": self.state_max,
+                "action_min": self.action_min,
+                "action_max": self.action_max,
+                "location_min": self.location_min,
+                "location_max": self.location_max,
+                "propio_pos_min": self.propio_pos_min,
+                "propio_pos_max": self.propio_pos_max,
+                "propio_vel_min": self.propio_vel_min,
+                "propio_vel_max": self.propio_vel_max,
+                "min_max_normalize": self.min_max_normalize,
             },
             path,
         )
@@ -429,6 +550,19 @@ class Normalizer:
             state["propio_pos_std"],
             state["propio_vel_mean"],
             state["propio_vel_std"],
+            
+            
+            state["state_min"],
+            state["state_max"],
+            state["action_min"],
+            state["action_max"],
+            state["location_min"],
+            state["location_max"],
+            state["propio_pos_min"],
+            state["propio_pos_max"],
+            state["propio_vel_min"],
+            state["propio_vel_max"],
+            state.get("min_max_normalize", False),
         )
 
     def state_dict(self):
@@ -443,6 +577,18 @@ class Normalizer:
             "propio_pos_std": self.propio_pos_std,
             "propio_vel_mean": self.propio_vel_mean,
             "propio_vel_std": self.propio_vel_std,
+
+            "state_min": self.state_min,
+            "state_max": self.state_max,
+            "action_min": self.action_min,
+            "action_max": self.action_max,
+            "location_min": self.location_min,
+            "location_max": self.location_max,
+            "propio_pos_min": self.propio_pos_min,
+            "propio_pos_max": self.propio_pos_max,
+            "propio_vel_min": self.propio_vel_min,
+            "propio_vel_max": self.propio_vel_max,
+            "min_max_normalize": self.min_max_normalize,
         }
 
     def load_state_dict(self, state):
@@ -457,3 +603,14 @@ class Normalizer:
         self.propio_vel_mean = torch.tensor(state["propio_vel_mean"], dtype=torch.float32)
         self.propio_vel_std = torch.tensor(state["propio_vel_std"], dtype=torch.float32)
 
+        self.state_min = torch.tensor(state["state_min"], dtype=torch.float32)
+        self.state_max = torch.tensor(state["state_max"], dtype=torch.float32)
+        self.action_min = torch.tensor(state["action_min"], dtype=torch.float32)
+        self.action_max = torch.tensor(state["action_max"], dtype=torch.float32)
+        self.location_min = torch.tensor(state["location_min"], dtype=torch.float32)
+        self.location_max = torch.tensor(state["location_max"], dtype=torch.float32)
+        self.propio_pos_min = torch.tensor(state["propio_pos_min"], dtype=torch.float32)
+        self.propio_pos_max = torch.tensor(state["propio_pos_max"], dtype=torch.float32)
+        self.propio_vel_min = torch.tensor(state["propio_vel_min"], dtype=torch.float32)
+        self.propio_vel_max = torch.tensor(state["propio_vel_max"], dtype=torch.float32)
+        self.min_max_normalize = state.get("min_max_normalize", False)

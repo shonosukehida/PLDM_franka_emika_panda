@@ -129,7 +129,7 @@ def make_dataloader(ds, loader_config, normalizer=None, suffix="", train=True):
             normalizer = Normalizer.build_normalizer(
                 loader,
                 n_samples=1 if loader_config.quick_debug else 100,
-                min_max_state=loader_config.min_max_normalize_state,
+                min_max_normalize=loader_config.min_max_normalize,
                 normalizer_hardset=loader_config.normalizer_hardset,
             )
     else:
