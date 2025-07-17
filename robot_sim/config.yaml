@@ -1,4 +1,4 @@
-is_val: false
+is_val: true
 pairs: 3 #3
 min_dist: 0.2
 episodes_per_pair: 1 #2000
@@ -9,6 +9,9 @@ camera_name: top_view #top_view, default
 save_dir: pldm_envs/franka/presaved_datasets
 specify_init_position: true #初期姿勢を指定するか
 goal_offset: [0.2, -0.2, 0.2]
+
+eval_only: true
+data_dir: pldm_envs/franka/presaved_datasets/pairs_5_ep_2000_timestep_100
 
 #データ確認するか
 confirm_ik_result: true

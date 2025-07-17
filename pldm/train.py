@@ -92,6 +92,7 @@ class TrainConfig(ConfigBase):
     eval_cfg: EvalConfig = field(default_factory=EvalConfig)
     
     use_closed_loss_func: bool = False
+    confirm_normalize: bool = True
 
     def __post_init__(self):
         if self.quick_debug:
@@ -186,7 +187,10 @@ class Trainer:
         ).create_datasets()
 
         self.datasets = datasets
-        self.test_normalizer(check_only_first_batch=True)
+        
+        print('SELF.CONFIG.CONFIRM_NORMALIZE:', self.config.confirm_normalize)
+        if self.config.confirm_normalize:
+            self.test_normalizer(check_only_first_batch=True)
 
         self.ds = datasets.ds
 

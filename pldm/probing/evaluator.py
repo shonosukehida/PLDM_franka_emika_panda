@@ -376,7 +376,7 @@ class ProbingEvaluator:
                     losses = location_losses(pred_locs, target)
                     per_probe_loss = losses.mean()
 
-                    if self.quick_debug or step % 100 == 0:
+                    if self.quick_debug:
                         log_dict = {
                             f"finetune_pred_{plot_prefix}_{probe_target}/loss": per_probe_loss.item(),
                         }
@@ -961,36 +961,6 @@ class ProbingEvaluator:
             states, actions, **optional_fields
         )
 
-        #loss 計算(確認用)
-        #open_loss
-        # loss_infos = []
-        # loss_infos += [
-        #     objective(batch, [pred_output])
-        #     for objective in self.open_objectives_l1
-        # ]
-        # open_total_loss = sum([loss_info.total_loss for loss_info in loss_infos])
-        # print('open-test, open loss_type',[type(o) for o in self.open_objectives_l1])
-        # print('open-test, open_loss: ', open_total_loss)
-        
-        # #closed_loss
-        # loss_infos = []
-        # if self.closed_objectives_l1 is not None:
-        #     loss_infos += [
-        #         objective(batch, [pred_output])
-        #         for objective in self.closed_objectives_l1
-        #     ]
-        # else:
-        #     loss_infos += [
-        #         objective(batch, [pred_output])
-        #         for objective in self.open_objectives_l1
-        #     ]
-        # closed_total_loss = sum([loss_info.total_loss for loss_info in loss_infos])
-        # if self.closed_objectives_l1 is not None:
-        #     print('open-test, closed loss_type',[type(o) for o in self.closed_objectives_l1])
-        # else:
-        #     print('open-test, closed loss_type',[type(o) for o in self.open_objectives_l1])
-        # print('open-test, closed_loss: ', closed_total_loss)
-        
         pred_output = pred_output.pred_output
 
         if pred_output.obs_component is not None: ##
@@ -1000,65 +970,33 @@ class ProbingEvaluator:
         # print('PRED_ENCS:', pred_encs.shape) #torch.Size([15, 64, 16, 26, 26])
 
         pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
-        # print('====bfore unnormalize====')
-        # print('PRED_LOCS:', pred_locs)
-        # print('PRED_LOCS.type:', type(pred_locs))
-        # print('PRED_LOCS.shape:', pred_locs.shape)
-        # print('PRED_LOCS.mean:', pred_locs.mean())
-        # print('PRED_LOCS.std:', pred_locs.std())
-        # print('PRED_LOCS.min:', pred_locs.min())
-        # print('PRED_LOCS.max:', pred_locs.max())
 
 
         # pred_locs is of shape (batch_size, time, 1, 2)
         if idxs is None: ##
             idxs = list(range(min(pred_locs.shape[0], 64)))
 
-        # print('====before unnormalize====')
-        # print('batch.locations.type:', type(batch.locations))
-        # print('batch.locations.shape:', batch.locations.shape)
-        # batch_location_flat = batch.locations.view(-1, 3)
-        
-        # mean = batch_location_flat.mean(dim=0)
-        # std = batch_location_flat.std(dim=0)
-        # min_val = batch_location_flat.min(dim=0).values
-        # max_val = batch_location_flat.max(dim=0).values
-        # print("mean:", mean)
-        # print("std :", std)
-        # print("min :", min_val)
-        # print("max :", max_val)
-        
 
         gt_locations = normalizer.unnormalize_location(batch.locations).cpu()
         pred_locs = normalizer.unnormalize_location(pred_locs).cpu()
-        
-        # print('====after unnormalize====')
-        # print('gt_locations.type:', type(gt_locations))
-        # print('gt_locations.shape:', gt_locations.shape)
-        # gt_locations_flat = gt_locations.view(-1, 3)
-        
-        # mean = gt_locations_flat.mean(dim=0)
-        # std = gt_locations_flat.std(dim=0)
-        # min_val = gt_locations_flat.min(dim=0).values
-        # max_val = gt_locations_flat.max(dim=0).values
-        
-        # print("mean:", mean)
-        # print("std :", std)
-        # print("min :", min_val)
-        # print("max :", max_val)
-        
-        # print('====after unnormalize====')
-        # print('PRED_LOCS.type:', type(pred_locs))
-        # print('PRED_LOCS.shape:', pred_locs.shape)
-        # print('PRED_LOCS.mean:', pred_locs.mean())
-        # print('PRED_LOCS.std:', pred_locs.std())
-        # print('PRED_LOCS.min:', pred_locs.min())
-        # print('PRED_LOCS.max:', pred_locs.max())
+
 
         for i in tqdm(idxs, desc=f"Plotting {name_prefix}"):
-            fig = plt.figure(dpi=200)
+            fig, axes = plt.subplots(1, 2, figsize=(10, 6), dpi=200)
 
-            plt.plot(
+            #画像表示
+            ax_img = axes[1]
+            img = normalizer.unnormalize_state(batch.states)
+            img = img[i, 0].cpu().numpy().transpose(1, 2, 0)
+            img = img.clip(0, 255).astype(np.uint8)
+            
+            ax_img.imshow(img)
+            ax_img.set_title("init obs")
+            ax_img.axis("off")
+
+            #予測軌跡表示
+            ax_traj = axes[0]
+            ax_traj.plot(
                 gt_locations[i, :, 0].cpu(),
                 gt_locations[i, :, 1].cpu(),
                 marker="o",
@@ -1068,9 +1006,8 @@ class ProbingEvaluator:
                 alpha=0.8,
                 label="endeffector-ground-truth"
             )
-            
 
-            plt.plot(
+            ax_traj.plot(
                 pred_locs[i, :, 0].cpu(),
                 pred_locs[i, :, 1].cpu(),
                 marker="o",
@@ -1082,7 +1019,7 @@ class ProbingEvaluator:
             )
             
             # ラベル
-            plt.text(
+            ax_traj.text(
                 gt_locations[i, 0, 0].cpu().item(),
                 gt_locations[i, 0, 1].cpu().item(),
                 "S",
@@ -1091,8 +1028,8 @@ class ProbingEvaluator:
                 ha="center",
                 va="center",
             )
-            
-            plt.text(
+
+            ax_traj.text(
                 pred_locs[i, 0, 0].cpu().item(),
                 pred_locs[i, 0, 1].cpu().item(),
                 "S",
@@ -1102,16 +1039,13 @@ class ProbingEvaluator:
                 va="center",
             )
 
-
-            plt.xlabel("X (meters)")
-            plt.ylabel("Y (meters)")
-            plt.legend()
-            
-            plt.gca().set_aspect("equal", adjustable="box")
-
-            # 軸範囲
-            plt.xlim(0.315, 0.715)
-            plt.ylim(-0.2, 0.2)
+            ax_traj.set_aspect("equal", adjustable="box")
+            ax_traj.set_xlim(0.315, 0.715)
+            ax_traj.set_ylim(-0.2, 0.2)
+            ax_traj.set_xlabel("X (meters)")
+            ax_traj.set_ylabel("Y (meters)")
+            ax_traj.legend()
+            ax_traj.set_title("Predicted vs. Ground Truth Trajectories (world domain)")
 
             if not notebook:
                 Logger.run().log_figure(fig, f"{name_prefix}/prober_predictions_{i}")

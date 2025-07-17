@@ -39,12 +39,20 @@ class FrankaDatasetGenerator:
         self.SAMPLE_METHOD = config['sample_method']
         self.specify_init_position = config['specify_init_position']
         
+        self.eval_only = self.config['eval_only']
 
         self.SAVE_PATH = (
             f"pldm_envs/franka/presaved_datasets/val_pairs_{self.PAIRS}_ep_{self.EPISODES_PER_PAIR}_timestep_{self.STEPS_PER_EPISODE}"
             if self.IS_VAL else
             f"pldm_envs/franka/presaved_datasets/pairs_{self.PAIRS}_ep_{self.EPISODES_PER_PAIR}_timestep_{self.STEPS_PER_EPISODE}"
         )
+        
+        #データ確認のみの場合, 確認パスを指定
+        if self.eval_only:
+            self.SAVE_PATH = self.config['data_dir']
+            
+        
+        
         os.makedirs(self.SAVE_PATH, exist_ok=True)
 
         os.environ["MUJOCO_GL"] = "egl"
@@ -865,6 +873,12 @@ class FrankaDatasetGenerator:
 
 
     def confirm_endeffector_trajectory(self, axes: str, visualize_target_trj=True):
+        data_path = os.path.join(self.SAVE_PATH, "data.p")
+        print(f"Loading saved data from: {data_path}")
+        data_list = torch.load(data_path, map_location="cpu", weights_only=False)
+        
+        
+        
         axes_to_num = {'x':0, 'y':1, 'z':2}
         axis_num = [axes_to_num[axes[0]], axes_to_num[axes[1]]]
 
@@ -885,7 +899,7 @@ class FrankaDatasetGenerator:
 
 
 
-        for ep_idx, episode in enumerate(self.data_list):
+        for ep_idx, episode in enumerate(data_list):
             fig, ax = plt.subplots(figsize=(6, 6))
             
             if visualize_target_trj:
@@ -1034,17 +1048,14 @@ if __name__ == "__main__":
 
 
     dataset_generator = FrankaDatasetGenerator(config)
-    dataset_generator.generate()
-    # dataset_generator.data_save(chunk_size = config['chunk_size'])
-    if len(dataset_generator.data_list) > 0:
-        dataset_generator._save_chunk()
-        
-        
-    dataset_generator.merge_chunks()
-    
-    dataset_generator.confirm_data_architecture()
-    
+    if not config['eval_only']:
+        dataset_generator.generate()
 
+        if len(dataset_generator.data_list) > 0:
+            dataset_generator._save_chunk()
+        dataset_generator.merge_chunks()
+        
+    dataset_generator.confirm_data_architecture()
     dataset_generator.confirm_data()
     if config['make_video']: 
         dataset_generator.make_video()

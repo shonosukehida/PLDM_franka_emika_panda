@@ -221,3 +221,4 @@ run_project: Franka
 save_every_n_epochs: 1
 seed: 246
 wandb: false
+confirm_normalize: false
