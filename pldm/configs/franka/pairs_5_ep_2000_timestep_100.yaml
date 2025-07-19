@@ -33,7 +33,7 @@ eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
 eval_mpcs: 20
-eval_only: true
+eval_only: false
 hjepa:
   l1_n_steps: *n_steps
   train_l1: true
@@ -64,7 +64,7 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20250712_164254/epoch=10_sample_step=5610000.ckpt
+load_checkpoint_path: null #pldm/checkpoints/franka_20250712_164254/epoch=10_sample_step=5610000.ckpt
 load_l1_only: false
 
 use_closed_loss_func: &use_closed_loss_func false
@@ -110,10 +110,10 @@ eval_cfg:
   probing:
     exe_probing: true
     l1_depth: *n_steps
-    train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_10_timestep_1000/images.npy 
-    train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_10_timestep_1000/data.p
-    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_10_timestep_1000/images.npy 
-    val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_10_timestep_1000/data.p
+    train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy 
+    train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
+    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy 
+    val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
     probe_targets: 'locations,propio_vel'
     locations:
       arch: 'conv'
@@ -121,6 +121,9 @@ eval_cfg:
     propio_vel:
       arch: 'conv'
       subclass: 'e'
+    bluebox_locs:
+      arch: 'conv'
+      subclass: 'd'
     l2_probe_targets: 'locations'
     probe_mpc: false
     probe_wall: false
@@ -161,7 +164,7 @@ eval_cfg:
     replan_every: 4
     image_obs: true
     stack_states: 1
-    data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_10_timestep_1000/'
+    data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/'
     level1:
       planner_type: PlannerType.MPPI
       min_step: 0
@@ -222,4 +225,4 @@ run_project: Franka
 save_every_n_epochs: 1
 seed: 246
 wandb: true
-confirm_normalize: false
+confirm_normalize: true

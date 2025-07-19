@@ -41,6 +41,7 @@ class ProbingConfig(ConfigBase):
     probe_targets: str = "locations"
     l2_probe_targets: str = "locations"
     locations: ProbeTargetConfig = field(default_factory=ProbeTargetConfig)
+    bluebox_locs: ProbeTargetConfig = field(default_factory=ProbeTargetConfig)
     propio_pos: ProbeTargetConfig = field(default_factory=ProbeTargetConfig)
     propio_vel: ProbeTargetConfig = field(default_factory=ProbeTargetConfig)
     full_finetune: bool = False
@@ -157,21 +158,39 @@ class ProbingEvaluator:
     def _context_manager(self):
         return torch.enable_grad() if self.config.full_finetune else torch.no_grad()
 
-    def _infer_prober_path(self, probe_target, epoch, level):
-        if self.load_checkpoint_path is not None and self.config.load_prober:
-            root_path = "/".join(self.load_checkpoint_path.split("/")[:-1])
-            prober_ckpt_paths = glob.glob(f"{root_path}/*{probe_target}*")
-            assert len(prober_ckpt_paths) > 0
-            # we get the most recent path (corresponding to latest epoch prober)
-            prober_ckpt_path = max(prober_ckpt_paths, key=os.path.getctime)
-            return prober_ckpt_path
-        else:
-            root_path = self.output_path
+    def _infer_prober_path(self, probe_target, epoch, level, is_open_prober=False):
+        if not is_open_prober:
+            if self.load_checkpoint_path is not None and self.config.load_prober:
+                root_path = "/".join(self.load_checkpoint_path.split("/")[:-1])
+                prober_ckpt_paths = glob.glob(f"{root_path}/*{probe_target}*")
+                assert len(prober_ckpt_paths) > 0
+                # we get the most recent path (corresponding to latest epoch prober)
+                prober_ckpt_path = max(prober_ckpt_paths, key=os.path.getctime)
+                return prober_ckpt_path
+            else:
+                root_path = self.output_path
 
-            prober_ckpt_path = (
-                f"{self.output_path}/{level}_prober-{probe_target}_epoch={epoch}.pt"
-            )
-            return prober_ckpt_path
+                prober_ckpt_path = (
+                    f"{self.output_path}/{level}_prober-{probe_target}_epoch={epoch}.pt"
+                )
+                return prober_ckpt_path
+        else:
+            open_text = "open"
+            if self.load_checkpoint_path is not None and self.config.load_prober:
+                root_path = "/".join(self.load_checkpoint_path.split("/")[:-1])
+                prober_ckpt_paths = glob.glob(f"{root_path}/*{open_text}*{probe_target}*")
+                assert len(prober_ckpt_paths) > 0
+                # we get the most recent path (corresponding to latest epoch prober)
+                prober_ckpt_path = max(prober_ckpt_paths, key=os.path.getctime)
+                return prober_ckpt_path
+            else:
+                root_path = self.output_path
+
+                prober_ckpt_path = (
+                    f"{self.output_path}/{level}_prober_open-{probe_target}_epoch={epoch}.pt"
+                )
+                return prober_ckpt_path
+            
 
     def _infer_prober_input_dim_for_attr(
         self, probe_target, predictor, conv_input=False
@@ -180,8 +199,11 @@ class ProbingEvaluator:
             repr_dim = predictor.repr_dim
         elif probe_target == "locations":
             repr_dim = predictor.pred_obs_dim
+            print('PREDICTOR.PRED_OBS_DIM:', predictor.pred_obs_dim)
         elif probe_target == "propio_pos" or probe_target == "propio_vel":
             repr_dim = predictor.pred_propio_dim
+        elif probe_target == "bluebox_locs": #とりあえず"locations"と同じ処理
+            repr_dim = predictor.pred_obs_dim
         else:
             raise ValueError(f"Invalid probe target {probe_target}")
 
@@ -201,6 +223,12 @@ class ProbingEvaluator:
                 return pred_output.propio_component
             else:
                 return pred_output.predictions
+        elif probe_target == "bluebox_locs": #とりあえず"locations"と同じ処理
+            if pred_output.obs_component is not None:
+                return pred_output.obs_component
+            else:
+                return pred_output.predictions
+            
         else:
             raise ValueError(f"Invalid probe target {probe_target}")
 
@@ -215,6 +243,12 @@ class ProbingEvaluator:
                 return enc_output.propio_component
             else:
                 return enc_output.encodings
+        elif probe_target == "bluebox_locs": #とりあえず"locations"と同じ処理
+            
+            if enc_output.obs_component is not None:
+                return enc_output.obs_component
+            else:
+                return enc_output.encodings
         else:
             raise ValueError(f"Invalid probe target {probe_target}")
 
@@ -222,6 +256,7 @@ class ProbingEvaluator:
         self,
         epoch: int,
         extra: Optional[Dict[str, Any]] = None,
+        is_open_prober: bool = False,
     ):
         """
         Probes whether the predicted embeddings capture the future locations
@@ -269,7 +304,7 @@ class ProbingEvaluator:
 
             # load prober logic
             ckpt_path = self._infer_prober_path(
-                probe_target=probe_target, epoch=epoch, level=level
+                probe_target=probe_target, epoch=epoch, level=level, is_open_prober=is_open_prober
             )
             if config.load_prober:
                 prober_ckpt = torch.load(ckpt_path)
@@ -314,17 +349,22 @@ class ProbingEvaluator:
             batch_size=batch_size,
         )
 
-        for epoch in tqdm(range(epochs), desc=f"Probe {level} prediction epochs"):
-            for batch in tqdm(dataset, desc="Probe prediction step"):
+        for epoch in tqdm(range(epochs), desc=f"Probe {level} prediction OPEN epochs"):
+            for batch in tqdm(dataset, desc="Probe prediction OPEN step"):
                 # put time first
                 states = batch.states.to(self.device).transpose(0, 1)
                 actions = batch.actions.to(self.device).transpose(0, 1)
                 optional_fields = get_optional_fields(batch, device=states.device)
 
                 with self._context_manager(): ##
-                    forward_result = model.forward_posterior(
-                        states, actions, **optional_fields
-                    )
+                    if not is_open_prober:
+                        forward_result = model.forward_posterior(
+                            states, actions, **optional_fields
+                        )
+                    else:
+                        forward_result = model.forward_open(
+                            states, actions, **optional_fields
+                        )
 
                 pred_output = forward_result.pred_output
 
@@ -376,10 +416,15 @@ class ProbingEvaluator:
                     losses = location_losses(pred_locs, target)
                     per_probe_loss = losses.mean()
 
-                    if self.quick_debug:
-                        log_dict = {
-                            f"finetune_pred_{plot_prefix}_{probe_target}/loss": per_probe_loss.item(),
-                        }
+                    if self.quick_debug or True:
+                        if not is_open_prober:
+                            log_dict = {
+                                f"finetune_pred_{plot_prefix}_{probe_target}/loss": per_probe_loss.item(),
+                            }
+                        else:
+                            log_dict = {
+                                f"finetune_pred_{plot_prefix}_{probe_target}/open_loss": per_probe_loss.item(),
+                            }
                         Logger.run().log(log_dict)
 
                     losses_list.append(per_probe_loss)
@@ -416,6 +461,7 @@ class ProbingEvaluator:
         epoch,
         pixel_mapper=None,
         visualize=True,
+        probers_open=None,
     ):
         """
         Evaluates on all the different validation datasets
@@ -431,6 +477,7 @@ class ProbingEvaluator:
                 val_ds=val_ds,
                 pixel_mapper=pixel_mapper,
                 visualize=visualize,
+                probers_open=probers_open
             )
 
     @torch.no_grad()
@@ -441,6 +488,7 @@ class ProbingEvaluator:
         val_ds: DatasetType,
         pixel_mapper=None,
         visualize=True,
+        probers_open=None,
     ):
         level = "l1"
 
@@ -567,6 +615,7 @@ class ProbingEvaluator:
                 btc,
                 model,
                 probers["locations"],
+                probers_open["locations"],
                 normalizer=val_ds.normalizer,
                 name_prefix=plot_prefix,
                 idxs=None if not quick_debug else list(range(10)),
@@ -944,6 +993,7 @@ class ProbingEvaluator:
         batch,
         jepa: JEPA,
         prober: torch.nn.Module,
+        prober_open,
         normalizer: Normalizer,
         name_prefix: str = "",
         idxs: Optional[List[int]] = None,
@@ -970,6 +1020,8 @@ class ProbingEvaluator:
         # print('PRED_ENCS:', pred_encs.shape) #torch.Size([15, 64, 16, 26, 26])
 
         pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
+        if prober_open is not None:
+            pred_open_locs = torch.stack([prober_open(x) for x in pred_encs], dim=1)
 
 
         # pred_locs is of shape (batch_size, time, 1, 2)
@@ -979,6 +1031,8 @@ class ProbingEvaluator:
 
         gt_locations = normalizer.unnormalize_location(batch.locations).cpu()
         pred_locs = normalizer.unnormalize_location(pred_locs).cpu()
+        if prober_open is not None:
+            pred_open_locs = normalizer.unnormalize_location(pred_open_locs).cpu()
 
 
         for i in tqdm(idxs, desc=f"Plotting {name_prefix}"):
@@ -1015,8 +1069,20 @@ class ProbingEvaluator:
                 linewidth=1,
                 c="#D62828",
                 alpha=0.8,
-                label="endeffector_pred"
+                label="endeffector_closed_pred"
             )
+            
+            if prober_open is not None:
+                ax_traj.plot(
+                    pred_open_locs[i, :, 0].cpu(),
+                    pred_open_locs[i, :, 1].cpu(),
+                    marker="o",
+                    markersize=2.5,
+                    linewidth=1,
+                    c="#ffff00",
+                    alpha=0.8,
+                    label="endeffector_open_pred"
+                )
             
             # ラベル
             ax_traj.text(
@@ -1038,6 +1104,17 @@ class ProbingEvaluator:
                 ha="center",
                 va="center",
             )
+
+            ax_traj.text(
+                pred_open_locs[i, 0, 0].cpu().item(),
+                pred_open_locs[i, 0, 1].cpu().item(),
+                "S",
+                color="#ffff00",  # or a different label
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
 
             ax_traj.set_aspect("equal", adjustable="box")
             ax_traj.set_xlim(0.315, 0.715)

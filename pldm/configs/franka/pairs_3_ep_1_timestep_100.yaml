@@ -64,7 +64,7 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: null #pldm/checkpoints/franka_20250606_111237/epoch=10_sample_step=2816.ckpt 
+load_checkpoint_path: null #pldm/checkpoints/franka_20250712_164254/epoch=10_sample_step=5610000.ckpt 
 
 use_closed_loss_func: &use_closed_loss_func false
 objectives_l1:
@@ -113,13 +113,16 @@ eval_cfg:
     train_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/data.p #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
     val_images_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/images.npy #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy
     val_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/data.p #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
-    probe_targets: 'locations,propio_vel'
+    probe_targets: 'locations,propio_vel,bluebox_locs'
     locations:
       arch: 'conv'
       subclass: 'd'
     propio_vel:
       arch: 'conv'
       subclass: 'e'
+    bluebox_locs:
+      arch: 'conv'
+      subclass: 'd'
     l2_probe_targets: 'locations'
     probe_mpc: false
     probe_wall: false
@@ -127,9 +130,9 @@ eval_cfg:
     probe_encoder: false
     probe_preds: true
     use_closed_loss_func: *use_closed_loss_func
-    epochs: 5 #5
-    epochs_enc: 5 #5
-    epochs_latent: 5 #5
+    epochs: 1 #5
+    epochs_enc: 1 #5
+    epochs_latent: 1 #5
     full_finetune: false
     lr: 0.0032
     max_samples: 10 #2000000

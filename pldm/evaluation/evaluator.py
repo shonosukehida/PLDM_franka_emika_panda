@@ -94,15 +94,23 @@ class Evaluator:
         probers = {}
 
         if self.config.eval_l1:
+            probers_open = self.probing_evaluator.train_pred_prober(
+                epoch=self.epoch,
+                is_open_prober=True,
+                
+            )
             probers = self.probing_evaluator.train_pred_prober(
                 epoch=self.epoch,
+                is_open_prober=False,
             )
+            
 
             if self.config.probing.probe_preds:
                 self.probing_evaluator.evaluate_all(
                     probers=probers,
                     epoch=self.epoch,
                     pixel_mapper=self.pixel_mapper,
+                    probers_open=probers_open
                 )
 
             if self.config.probing.probe_encoder:

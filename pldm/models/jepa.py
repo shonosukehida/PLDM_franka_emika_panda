@@ -320,6 +320,10 @@ class JEPA(torch.nn.Module):
         actions: torch.Tensor,               # [T, B, A]
         propio_pos: Optional[torch.Tensor] = None,
         propio_vel: Optional[torch.Tensor] = None,
+        chunked_locations: Optional[torch.Tensor] = None,
+        chunked_propio_pos: Optional[torch.Tensor] = None,
+        chunked_propio_vel: Optional[torch.Tensor] = None,
+        goal: Optional[torch.Tensor] = None,
     ):
         """
         open-loop

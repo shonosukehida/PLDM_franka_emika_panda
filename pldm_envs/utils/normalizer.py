@@ -48,6 +48,8 @@ class Normalizer:
         propio_pos_std: torch.Tensor,
         propio_vel_mean: torch.Tensor,
         propio_vel_std: torch.Tensor,
+        bluebox_locs_mean: torch.Tensor,
+        bluebox_locs_std: torch.Tensor,
         state_min: torch.Tensor,
         state_max: torch.Tensor,
         action_min: torch.Tensor,
@@ -58,6 +60,8 @@ class Normalizer:
         propio_pos_max: torch.Tensor,
         propio_vel_min: torch.Tensor,
         propio_vel_max: torch.Tensor,
+        bluebox_locs_min: torch.Tensor,
+        bluebox_locs_max: torch.Tensor,
         min_max_normalize: bool = True,
     ):
         self.state_mean = state_mean
@@ -70,6 +74,8 @@ class Normalizer:
         self.propio_pos_std = propio_pos_std
         self.propio_vel_mean = propio_vel_mean
         self.propio_vel_std = propio_vel_std
+        self.bluebox_locs_mean = bluebox_locs_mean
+        self.bluebox_locs_std = bluebox_locs_std
         
         
         
@@ -83,6 +89,9 @@ class Normalizer:
         self.propio_pos_max = propio_pos_max
         self.propio_vel_min = propio_vel_min
         self.propio_vel_max = propio_vel_max
+        self.bluebox_locs_min = bluebox_locs_min
+        self.bluebox_locs_max = bluebox_locs_max
+        
         self.min_max_normalize = min_max_normalize
 
     @staticmethod
@@ -107,6 +116,7 @@ class Normalizer:
         all_states = []
         all_propio_pos = []
         all_propio_vel = []
+        all_bluebox_locs = []
 
         all_states_min = []
         all_states_max = []
@@ -118,6 +128,9 @@ class Normalizer:
         all_propio_pos_max = []
         all_propio_vel_min = []
         all_propio_vel_max = []
+        
+        all_bluebox_locs_min = []
+        all_bluebox_locs_max = []
 
         config = (
             dataset.dataset.config if hasattr(dataset, "dataset") else dataset.config
@@ -201,6 +214,16 @@ class Normalizer:
                 all_propio_vel_min.append(propio_vel.min(dim=0).values)
                 all_propio_vel_max.append(propio_vel.max(dim=0).values)
 
+            # --- BLUEBOX_LOCS ---
+            if cls._has_attr(sample, "bluebox_locs"):
+                bluebox_locs = sample.bluebox_locs.view(-1, sample.bluebox_locs.shape[-1])
+            else:
+                bluebox_locs = torch.zeros([1, 3])
+            all_bluebox_locs.append(bluebox_locs)
+            if min_max_normalize:
+                all_bluebox_locs_min.append(bluebox_locs.min(dim=0).values)
+                all_bluebox_locs_max.append(bluebox_locs.max(dim=0).values)
+
         if hasattr(dataset, "config") and normalizer_hardset: #False
             ds_stats = STATS[dataset.__class__.__name__]
             total_state_mean = ds_stats["state_mean"].to(locations.device)
@@ -213,6 +236,8 @@ class Normalizer:
             total_propio_pos_std = ds_stats["propio_pos_std"].to(locations.device)
             total_propio_vel_mean = ds_stats["propio_vel_mean"].to(locations.device)
             total_propio_vel_std = ds_stats["propio_vel_std"].to(locations.device)
+            total_bluebox_locs_mean = ds_stats["bluebox_locs_mean"].to(locations.device)
+            total_bluebox_locs_std = ds_stats["bluebox_locs_std"].to(locations.device)
 
             total_state_min = torch.zeros_like(total_state_mean)
             total_state_max = torch.ones_like(total_state_mean)
@@ -224,6 +249,8 @@ class Normalizer:
             total_propio_pos_max = torch.ones_like(total_propio_pos_mean)
             total_propio_vel_min = torch.zeros_like(total_propio_vel_mean)
             total_propio_vel_max = torch.ones_like(total_propio_vel_mean)
+            total_bluebox_locs_min = torch.zeros_like(total_bluebox_locs_mean)
+            total_bluebox_locs_max = torch.ones_like(total_bluebox_locs_mean)
         else:
             total_state = torch.cat(all_states, dim=-1)
             total_state_mean = total_state.mean(dim=-1)
@@ -245,6 +272,11 @@ class Normalizer:
             total_propio_vel_mean = total_propio_vel.mean(dim=0)
             total_propio_vel_std = total_propio_vel.std(dim=0)
 
+            total_bluebox_locs = torch.cat(all_bluebox_locs)
+            total_bluebox_locs_mean = total_bluebox_locs.mean(dim=0)
+            total_bluebox_locs_std = total_bluebox_locs.std(dim=0)
+            
+            
             if min_max_normalize:
                 total_state_min = torch.stack(all_states_min).min(dim=0).values
                 total_state_max = torch.stack(all_states_max).max(dim=0).values
@@ -260,6 +292,9 @@ class Normalizer:
 
                 total_propio_vel_min = torch.stack(all_propio_vel_min).min(dim=0).values
                 total_propio_vel_max = torch.stack(all_propio_vel_max).max(dim=0).values
+                
+                total_bluebox_locs_min = torch.stack(all_bluebox_locs_min).min(dim=0).values
+                total_bluebox_locs_max = torch.stack(all_bluebox_locs_max).max(dim=0).values
             else:
                 total_state_min = torch.zeros_like(total_state_mean)
                 total_state_max = torch.ones_like(total_state_mean)
@@ -271,6 +306,8 @@ class Normalizer:
                 total_propio_pos_max = torch.ones_like(total_propio_pos_mean)
                 total_propio_vel_min = torch.zeros_like(total_propio_vel_mean)
                 total_propio_vel_max = torch.ones_like(total_propio_vel_mean)
+                total_bluebox_locs_min = torch.zeros_like(total_bluebox_locs_mean)
+                total_bluebox_locs_max = torch.ones_like(total_bluebox_locs_mean)
 
         return cls(
             total_state_mean,
@@ -283,6 +320,8 @@ class Normalizer:
             total_propio_pos_std,
             total_propio_vel_mean,
             total_propio_vel_std,
+            total_bluebox_locs_mean,
+            total_bluebox_locs_std,
             total_state_min,
             total_state_max,
             total_action_min,
@@ -293,6 +332,8 @@ class Normalizer:
             total_propio_pos_max,
             total_propio_vel_min,
             total_propio_vel_max,
+            total_bluebox_locs_min,
+            total_bluebox_locs_max,
             min_max_normalize=min_max_normalize,
         )
 
@@ -309,6 +350,8 @@ class Normalizer:
             propio_pos_std=torch.ones(1),
             propio_vel_mean=torch.zeros(1),
             propio_vel_std=torch.ones(1),
+            bluebox_locs_mean=torch.zeros(1),
+            bluebox_locs_std=torch.ones(1),
             min_max_normalize=False,
         )
 
@@ -391,6 +434,16 @@ class Normalizer:
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
         return propio_vel_norm * denom + self.propio_vel_min.to(propio_vel_norm.device)
 
+    def normalize_bluebox_locs(self, bluebox_locs: torch.Tensor) -> torch.Tensor:
+        denom = (self.bluebox_locs_max - self.bluebox_locs_min).to(bluebox_locs.device)
+        denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
+        return ((bluebox_locs - self.bluebox_locs_min.to(bluebox_locs.device)) / denom).clamp(0.0, 1.0)
+
+    def unnormalize_bluebox_locs(self, bluebox_locs_norm: torch.Tensor) -> torch.Tensor:
+        denom = (self.bluebox_locs_max - self.bluebox_locs_min).to(bluebox_locs_norm.device)
+        denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
+        return bluebox_locs_norm * denom + self.bluebox_locs_min.to(bluebox_locs_norm.device)
+
 
 
     def normalize_sample(self, sample):
@@ -454,6 +507,9 @@ class Normalizer:
             # print(replaced['propio_vel'][:10].shape)
             # print("mean:", replaced['propio_vel'].mean().item())
             # print("std :", replaced['propio_vel'].std().item())
+
+        if self._has_attr(sample, "bluebox_locs"):
+            replaced["bluebox_locs"] = self.normalize_bluebox_locs(sample.bluebox_locs)
             
         if self._has_attr(sample, "chunked_locations"):
             replaced["chunked_locations"] = self.normalize_location(
@@ -477,6 +533,7 @@ class Normalizer:
             "locations": self.location_std,
             "propio_pos": self.propio_pos_std,
             "propio_vel": self.propio_vel_std,
+            "bluebox_locs": self.bluebox_locs_std,
         }
 
         return mse * std_mapper[attribute].to(mse.device) ** 2
@@ -492,6 +549,8 @@ class Normalizer:
         self.propio_pos_std = self.propio_pos_std.to(device)
         self.propio_vel_mean = self.propio_vel_mean.to(device)
         self.propio_vel_std = self.propio_vel_std.to(device)
+        self.bluebox_locs_mean = self.bluebox_locs_mean.to(device)
+        self.bluebox_locs_std = self.bluebox_locs_std.to(device)
         
         
         self.state_min = self.state_min.to(device)
@@ -504,6 +563,8 @@ class Normalizer:
         self.propio_pos_max = self.propio_pos_max.to(device)
         self.propio_vel_min = self.propio_vel_min.to(device)
         self.propio_vel_max = self.propio_vel_max.to(device)
+        self.bluebox_locs_min = self.bluebox_locs_min.to(device)
+        self.bluebox_locs_max = self.bluebox_locs_max.to(device)
 
 
     def save(self, path):
@@ -519,6 +580,8 @@ class Normalizer:
                 "propio_pos_std": self.propio_pos_std,
                 "propio_vel_mean": self.propio_vel_mean,
                 "propio_vel_std": self.propio_vel_std,
+                "bluebox_locs_mean": self.bluebox_locs_mean,
+                "bluebox_locs_std": self.bluebox_locs_std,
                 
                 # add min/max
                 "state_min": self.state_min,
@@ -531,6 +594,8 @@ class Normalizer:
                 "propio_pos_max": self.propio_pos_max,
                 "propio_vel_min": self.propio_vel_min,
                 "propio_vel_max": self.propio_vel_max,
+                "bluebox_locs_min": self.bluebox_locs_min,
+                "bluebox_locs_max": self.bluebox_locs_max,
                 "min_max_normalize": self.min_max_normalize,
             },
             path,
@@ -550,7 +615,8 @@ class Normalizer:
             state["propio_pos_std"],
             state["propio_vel_mean"],
             state["propio_vel_std"],
-            
+            state["bluebox_locs_mean"],
+            state["bluebox_locs_std"],
             
             state["state_min"],
             state["state_max"],
@@ -562,6 +628,8 @@ class Normalizer:
             state["propio_pos_max"],
             state["propio_vel_min"],
             state["propio_vel_max"],
+            state["bluebox_locs_min"],
+            state["bluebox_locs_max"],
             state.get("min_max_normalize", False),
         )
 
@@ -577,6 +645,8 @@ class Normalizer:
             "propio_pos_std": self.propio_pos_std,
             "propio_vel_mean": self.propio_vel_mean,
             "propio_vel_std": self.propio_vel_std,
+            "bluebox_locs_mean": self.bluebox_locs_mean,
+            "bluebox_locs_std": self.bluebox_locs_std,
 
             "state_min": self.state_min,
             "state_max": self.state_max,
@@ -588,6 +658,8 @@ class Normalizer:
             "propio_pos_max": self.propio_pos_max,
             "propio_vel_min": self.propio_vel_min,
             "propio_vel_max": self.propio_vel_max,
+            "bluebox_locs_min": self.bluebox_locs_min,
+            "bluebox_locs_max": self.bluebox_locs_max,
             "min_max_normalize": self.min_max_normalize,
         }
 
@@ -602,6 +674,8 @@ class Normalizer:
         self.propio_pos_std = torch.tensor(state["propio_pos_std"], dtype=torch.float32)
         self.propio_vel_mean = torch.tensor(state["propio_vel_mean"], dtype=torch.float32)
         self.propio_vel_std = torch.tensor(state["propio_vel_std"], dtype=torch.float32)
+        self.bluebox_locs_mean = torch.tensor(state["bluebox_locs_mean"], dtype=torch.float32)
+        self.bluebox_locs_std = torch.tensor(state["bluebox_locs_std"], dtype=torch.float32)
 
         self.state_min = torch.tensor(state["state_min"], dtype=torch.float32)
         self.state_max = torch.tensor(state["state_max"], dtype=torch.float32)
@@ -613,4 +687,6 @@ class Normalizer:
         self.propio_pos_max = torch.tensor(state["propio_pos_max"], dtype=torch.float32)
         self.propio_vel_min = torch.tensor(state["propio_vel_min"], dtype=torch.float32)
         self.propio_vel_max = torch.tensor(state["propio_vel_max"], dtype=torch.float32)
+        self.blubox_locs_min = torch.tensor(state["blubox_locs_min"], dtype=torch.float32)
+        self.blubox_locs_max = torch.tensor(state["blubox_locs_max"], dtype=torch.float32)
         self.min_max_normalize = state.get("min_max_normalize", False)

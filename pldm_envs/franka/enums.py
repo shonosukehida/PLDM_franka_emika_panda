@@ -9,6 +9,7 @@ class FrankaSample(NamedTuple):
     states: torch.Tensor
     actions: torch.Tensor
     locations: torch.Tensor
+    bluebox_locs: torch.Tensor
     indices: int
     propio_vel: Optional[torch.Tensor] = None
     propio_pos: Optional[torch.Tensor] = None

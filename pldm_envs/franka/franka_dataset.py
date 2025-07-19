@@ -54,10 +54,12 @@ class FrankaDataset(Dataset):
         qpos = obs[:, :7]
         qvel = obs[:, 7:14]
         ee_xyz = obs[:, 14:17]
+        bluebox_xyz = obs[:, 17:20]
         
         propio_pos = qpos
         propio_vel = qvel
         locations = ee_xyz
+        bluebox_locs = bluebox_xyz
 
         if self.use_images:
             if ep_idx == 0:
@@ -89,6 +91,7 @@ class FrankaDataset(Dataset):
             states=states,
             actions=actions,
             locations=locations,
+            bluebox_locs=bluebox_locs,
             indices=idx,
             propio_pos=propio_pos,
             propio_vel=propio_vel,
