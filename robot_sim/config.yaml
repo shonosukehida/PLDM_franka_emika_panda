@@ -1,7 +1,7 @@
-is_val: false
-pairs: 3 #3
+is_val: true
+pairs: 5 #3
 min_dist: 0.2
-episodes_per_pair: 1 #2000
+episodes_per_pair: 5 #2000
 steps_per_episode: 100
 image_size: [64, 64]
 model_path: mujoco_menagerie/franka_emika_panda/scene.xml

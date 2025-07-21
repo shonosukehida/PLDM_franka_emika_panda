@@ -162,7 +162,7 @@ class ProbingEvaluator:
         if not is_open_prober:
             if self.load_checkpoint_path is not None and self.config.load_prober:
                 root_path = "/".join(self.load_checkpoint_path.split("/")[:-1])
-                prober_ckpt_paths = glob.glob(f"{root_path}/*{probe_target}*")
+                prober_ckpt_paths = glob.glob(f"{root_path}/*{level}*{probe_target}*")
                 assert len(prober_ckpt_paths) > 0
                 # we get the most recent path (corresponding to latest epoch prober)
                 prober_ckpt_path = max(prober_ckpt_paths, key=os.path.getctime)
@@ -178,7 +178,7 @@ class ProbingEvaluator:
             open_text = "open"
             if self.load_checkpoint_path is not None and self.config.load_prober:
                 root_path = "/".join(self.load_checkpoint_path.split("/")[:-1])
-                prober_ckpt_paths = glob.glob(f"{root_path}/*{open_text}*{probe_target}*")
+                prober_ckpt_paths = glob.glob(f"{root_path}/*{level}*{open_text}*{probe_target}*")
                 assert len(prober_ckpt_paths) > 0
                 # we get the most recent path (corresponding to latest epoch prober)
                 prober_ckpt_path = max(prober_ckpt_paths, key=os.path.getctime)
@@ -613,7 +613,6 @@ class ProbingEvaluator:
             # btc = next(iter(t0_loader))
             
             btc = next(iter(val_ds))
-            print('val_ds.normalizer:', val_ds.normalizer)
             self.plot_prober_predictions(
                 btc,
                 model,
@@ -679,7 +678,24 @@ class ProbingEvaluator:
                 input_dim=prober_input_dim,
                 arch_subclass=probe_target_cfg.subclass,
             )
+            #load_prober 用
+            ckpt_path = self._infer_prober_path(
+                probe_target=probe_target,
+                epoch=epoch,
+                level="enc",  # encoder prober用
+                is_open_prober=False,
+            )
+            if config.load_prober:
+                prober_ckpt = torch.load(ckpt_path)
+                prober.load_state_dict(prober_ckpt["state_dict"])
+                print(f"loaded encoder prober from {ckpt_path}")
+            #;
+            
             probers[probe_target] = prober.to(self.device)
+        
+        if config.load_prober:
+            return probers
+            
 
         all_parameters = []
         for probe_target, prober in probers.items():
@@ -760,6 +776,15 @@ class ProbingEvaluator:
 
             if quick_debug:
                 break
+        
+        for probe_target, prober in probers.items():
+            ckpt_path = self._infer_prober_path(
+                probe_target=probe_target,
+                epoch=epoch,
+                level="enc",  
+                is_open_prober=False,
+            )
+            torch.save({"state_dict": prober.state_dict()}, ckpt_path)
 
         jepa.eval()
         return probers
