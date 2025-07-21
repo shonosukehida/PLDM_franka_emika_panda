@@ -105,24 +105,27 @@ class Evaluator:
             )
             
 
+            enc_probers = None
+            if self.config.probing.probe_encoder:
+                enc_probers = self.probing_evaluator.train_encoder_prober(
+                    epoch=self.epoch,
+                    only_obs_component = True,
+                )
+
+                # enc_probe_loss = self.probing_evaluator.eval_probe_enc_position(
+                #     probers=enc_probers,
+                #     epoch=self.epoch,
+                # )
+
+
             if self.config.probing.probe_preds:
                 self.probing_evaluator.evaluate_all(
                     probers=probers,
                     epoch=self.epoch,
                     pixel_mapper=self.pixel_mapper,
-                    probers_open=probers_open
+                    probers_open=probers_open,
+                    enc_probers=enc_probers,
                 )
-
-            if self.config.probing.probe_encoder:
-                enc_probers = self.probing_evaluator.train_encoder_prober(
-                    epoch=self.epoch,
-                )
-
-                enc_probe_loss = self.probing_evaluator.eval_probe_enc_position(
-                    probers=enc_probers,
-                    epoch=self.epoch,
-                )
-
         return probers, None
 
     def _create_pixel_mapper(self):

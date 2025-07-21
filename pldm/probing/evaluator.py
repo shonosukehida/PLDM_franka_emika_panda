@@ -462,6 +462,7 @@ class ProbingEvaluator:
         pixel_mapper=None,
         visualize=True,
         probers_open=None,
+        enc_probers=None,
     ):
         """
         Evaluates on all the different validation datasets
@@ -477,7 +478,8 @@ class ProbingEvaluator:
                 val_ds=val_ds,
                 pixel_mapper=pixel_mapper,
                 visualize=visualize,
-                probers_open=probers_open
+                probers_open=probers_open,
+                enc_probers=enc_probers,
             )
 
     @torch.no_grad()
@@ -489,6 +491,7 @@ class ProbingEvaluator:
         pixel_mapper=None,
         visualize=True,
         probers_open=None,
+        enc_probers=None,
     ):
         level = "l1"
 
@@ -616,6 +619,9 @@ class ProbingEvaluator:
                 model,
                 probers["locations"],
                 probers_open["locations"],
+                probers["bluebox_locs"],
+                probers_open["bluebox_locs"],
+                enc_probers["locations"] if isinstance(enc_probers, dict) else None,
                 normalizer=val_ds.normalizer,
                 name_prefix=plot_prefix,
                 idxs=None if not quick_debug else list(range(10)),
@@ -624,7 +630,7 @@ class ProbingEvaluator:
 
         return
 
-    def train_encoder_prober(self, epoch: int):
+    def train_encoder_prober(self, epoch: int, only_obs_component: bool = True):
         """
         Train a prober to probe whether the encoded embeddings captures the true location
         """
@@ -646,17 +652,31 @@ class ProbingEvaluator:
 
             probe_target_cfg = getattr(config, probe_target)
 
-            prober_input_dim = self._infer_prober_input_dim_for_attr(
-                probe_target=probe_target,
-                predictor=jepa.predictor,
-                conv_input=probe_target_cfg.arch == "conv",
-            )
+            # (1) テストバッチで forward を一度回す
+            with torch.no_grad():
+                states = test_batch.states.to(self.device).transpose(0, 1)
+                actions = test_batch.actions.to(self.device).transpose(0, 1)
+                optional_fields = get_optional_fields(test_batch, device=states.device)
+
+                forward_result = jepa.forward_posterior(
+                    states, actions, encode_only=True, **optional_fields
+                )
+
+                obs_component_shape = forward_result.backbone_output.obs_component[0].shape  # (B, C, H, W)
+                obs_channels = obs_component_shape[1:]
+
+            if only_obs_component:
+                prober_input_dim = obs_channels
+                embedding = obs_channels
+            else:
+                prober_input_dim = jepa.spatial_repr_dim
+                embedding = repr_dim
 
             prober = Prober(
-                repr_dim,
+                embedding,
                 arch=probe_target_cfg.arch,
                 output_shape=prober_output_shape,
-                input_dim=jepa.spatial_repr_dim,
+                input_dim=prober_input_dim,
                 arch_subclass=probe_target_cfg.subclass,
             )
             probers[probe_target] = prober.to(self.device)
@@ -706,22 +726,26 @@ class ProbingEvaluator:
                         states, actions, encode_only=True, **optional_fields
                     )
 
-                e = forward_result.backbone_output.encodings[0]
-
                 losses_list = []
-                for probe_target, prober in probers.items():
-                    target = getattr(batch, probe_target)[:, 0].to(self.device).float()
+                for t in range(states.shape[0]):
+                    if only_obs_component:
+                        e = forward_result.backbone_output.obs_component[t]  
+                    else:
+                        e = forward_result.backbone_output.encodings[t] 
 
-                    pred = prober(e)
+                    for probe_target, prober in probers.items():
+                        target = getattr(batch, probe_target)[:, t].to(self.device).float()
 
-                    loss = location_losses(pred, target)
-                    losses_list.append(loss.mean())
+                        pred = prober(e)
 
-                    if quick_debug or step % 100 == 0:
-                        log_dict = {
-                            f"finetune_enc_{plot_prefix}_{probe_target}/loss": loss.mean().item(),
-                        }
-                        Logger.run().log(log_dict)
+                        loss = location_losses(pred, target)
+                        losses_list.append(loss.mean())
+
+                        if quick_debug or step % 100 == 0:
+                            log_dict = {
+                                f"finetune_enc_{plot_prefix}_{probe_target}/loss": loss.mean().item(),
+                            }
+                            Logger.run().log(log_dict)
 
                 optimizer.zero_grad()
                 total_loss = sum(losses_list)
@@ -993,16 +1017,20 @@ class ProbingEvaluator:
         batch,
         jepa: JEPA,
         prober: torch.nn.Module,
-        prober_open,
-        normalizer: Normalizer,
+        prober_open: torch.nn.Module,
+        prober_bluebox_locs: torch.nn.Module = None,
+        prober_bluebox_locs_open: torch.nn.Module = None,
+        enc_probers: torch.nn.Module = None,
+        normalizer: Normalizer = None,
         name_prefix: str = "",
         idxs: Optional[List[int]] = None,
         notebook: bool = False,
         pixel_mapper=None,
+        
     ):
 
         # infer
-        states = batch.states.to(self.device).transpose(0, 1)
+        states = batch.states.to(self.device).transpose(0, 1) #torch.Size([64, 50, 3, 64, 64])
         actions = batch.actions.to(self.device).transpose(0, 1)
 
         optional_fields = get_optional_fields(batch, device=states.device)
@@ -1010,19 +1038,35 @@ class ProbingEvaluator:
         pred_output = jepa.forward_posterior(
             states, actions, **optional_fields
         )
-
         pred_output = pred_output.pred_output
+        
+        
+        #encoderの出力
+        enc_output = jepa.forward_posterior(
+                states, actions, encode_only=True, **optional_fields
+            )
+        enc_output = enc_output.backbone_output
+        
+
 
         if pred_output.obs_component is not None: ##
             pred_encs = pred_output.obs_component
         else: #x
             pred_encs = pred_output.predictions
-        # print('PRED_ENCS:', pred_encs.shape) #torch.Size([15, 64, 16, 26, 26])
+        
+        encoder_encs = enc_output.obs_component
+
 
         pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
         if prober_open is not None:
             pred_open_locs = torch.stack([prober_open(x) for x in pred_encs], dim=1)
 
+        #bluebox_locs
+        if prober_bluebox_locs is not None:
+            pred_bluebox_locs = torch.stack([prober_bluebox_locs(x) for x in pred_encs], dim=1)
+        if prober_bluebox_locs_open is not None:
+            pred_bluebox_locs_open = torch.stack([prober_bluebox_locs_open(x) for x in pred_encs], dim=1)
+        
 
         # pred_locs is of shape (batch_size, time, 1, 2)
         if idxs is None: ##
@@ -1033,13 +1077,18 @@ class ProbingEvaluator:
         pred_locs = normalizer.unnormalize_location(pred_locs).cpu()
         if prober_open is not None:
             pred_open_locs = normalizer.unnormalize_location(pred_open_locs).cpu()
+        
+        gt_bluebox_locations = normalizer.unnormalize_bluebox_locs(batch.bluebox_locs).cpu()
+        pred_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs).cpu()
+        if prober_bluebox_locs_open is not None:
+            pred_bluebox_locs_open = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_open).cpu()
 
 
         for i in tqdm(idxs, desc=f"Plotting {name_prefix}"):
-            fig, axes = plt.subplots(1, 2, figsize=(10, 6), dpi=200)
+            fig, axes = plt.subplots(1, 3, figsize=(15, 6), dpi=200)
 
             #画像表示
-            ax_img = axes[1]
+            ax_img = axes[2]
             img = normalizer.unnormalize_state(batch.states)
             img = img[i, 0].cpu().numpy().transpose(1, 2, 0)
             img = img.clip(0, 255).astype(np.uint8)
@@ -1049,7 +1098,7 @@ class ProbingEvaluator:
             ax_img.axis("off")
 
             #予測軌跡表示
-            ax_traj = axes[0]
+            ax_traj = axes[1]
             ax_traj.plot(
                 gt_locations[i, :, 0].cpu(),
                 gt_locations[i, :, 1].cpu(),
@@ -1079,7 +1128,7 @@ class ProbingEvaluator:
                     marker="o",
                     markersize=2.5,
                     linewidth=1,
-                    c="#ffff00",
+                    c="#ff8c00",
                     alpha=0.8,
                     label="endeffector_open_pred"
                 )
@@ -1109,7 +1158,7 @@ class ProbingEvaluator:
                 pred_open_locs[i, 0, 0].cpu().item(),
                 pred_open_locs[i, 0, 1].cpu().item(),
                 "S",
-                color="#ffff00",  # or a different label
+                color="#ff8c00",  # or a different label
                 fontsize=12,
                 ha="center",
                 va="center",
@@ -1123,6 +1172,86 @@ class ProbingEvaluator:
             ax_traj.set_ylabel("Y (meters)")
             ax_traj.legend()
             ax_traj.set_title("Predicted vs. Ground Truth Trajectories (world domain)")
+
+
+            #bluebox 予測軌跡
+            ax_box = axes[0]
+
+            ax_box.plot(
+                gt_bluebox_locations[i, :, 0].cpu(),
+                gt_bluebox_locations[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#3777FF",
+                alpha=0.8,
+                label="bluebox-ground-truth"
+            )
+            ax_box.plot(
+                pred_bluebox_locs[i, :, 0].cpu(),
+                pred_bluebox_locs[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#D62828",
+                alpha=0.8,
+                label="bluebox-pred"
+            )
+
+            if prober_bluebox_locs_open is not None:
+                ax_box.plot(
+                    pred_bluebox_locs_open[i, :, 0].cpu(),
+                    pred_bluebox_locs_open[i, :, 1].cpu(),
+                    marker="o",
+                    markersize=2.5,
+                    linewidth=1,
+                    c="#ff8c00",
+                    alpha=0.8,
+                    label="bluebox_open_pred"
+                )
+
+
+
+            ax_box.set_title("Bluebox Trajectory")
+            ax_box.set_xlim(0.315, 0.715)
+            ax_box.set_ylim(-0.2, 0.2)
+            ax_box.set_aspect("equal")
+            ax_box.legend()
+
+
+            # ラベル
+            ax_box.text(
+                gt_bluebox_locations[i, 0, 0].cpu().item(),
+                gt_bluebox_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
+            ax_box.text(
+                pred_bluebox_locs[i, 0, 0].cpu().item(),
+                pred_bluebox_locs[i, 0, 1].cpu().item(),
+                "S",
+                color="#D62828",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            if prober_bluebox_locs_open is not None:
+                ax_box.text(
+                    pred_bluebox_locs_open[i, 0, 0].cpu().item(),
+                    pred_bluebox_locs_open[i, 0, 1].cpu().item(),
+                    "S",
+                    color="#ff8c00",  # or a different label
+                    fontsize=12,
+                    ha="center",
+                    va="center",
+                )
+
+
 
             if not notebook:
                 Logger.run().log_figure(fig, f"{name_prefix}/prober_predictions_{i}")

@@ -687,6 +687,6 @@ class Normalizer:
         self.propio_pos_max = torch.tensor(state["propio_pos_max"], dtype=torch.float32)
         self.propio_vel_min = torch.tensor(state["propio_vel_min"], dtype=torch.float32)
         self.propio_vel_max = torch.tensor(state["propio_vel_max"], dtype=torch.float32)
-        self.blubox_locs_min = torch.tensor(state["blubox_locs_min"], dtype=torch.float32)
-        self.blubox_locs_max = torch.tensor(state["blubox_locs_max"], dtype=torch.float32)
+        self.blubox_locs_min = torch.tensor(state["bluebox_locs_min"], dtype=torch.float32)
+        self.blubox_locs_max = torch.tensor(state["bluebox_locs_max"], dtype=torch.float32)
         self.min_max_normalize = state.get("min_max_normalize", False)
