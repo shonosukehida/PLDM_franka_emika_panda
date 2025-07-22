@@ -1078,13 +1078,17 @@ class ProbingEvaluator:
             pred_encs = pred_output.obs_component
         else: #x
             pred_encs = pred_output.predictions
-        
+            
         encoder_encs = enc_output.obs_component
 
 
         pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
         if prober_open is not None:
             pred_open_locs = torch.stack([prober_open(x) for x in pred_encs], dim=1)
+
+        if enc_probers is not None:
+            pred_enc_locs = torch.stack([enc_probers(x) for x in encoder_encs], dim=1)
+            pred_enc_locs = normalizer.unnormalize_location(pred_enc_locs).cpu()
 
         #bluebox_locs
         if prober_bluebox_locs is not None:
@@ -1134,7 +1138,18 @@ class ProbingEvaluator:
                 alpha=0.8,
                 label="endeffector-ground-truth"
             )
-
+            
+            ax_traj.text(
+                gt_locations[i, 0, 0].cpu().item(),
+                gt_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            
             ax_traj.plot(
                 pred_locs[i, :, 0].cpu(),
                 pred_locs[i, :, 1].cpu(),
@@ -1144,29 +1159,6 @@ class ProbingEvaluator:
                 c="#D62828",
                 alpha=0.8,
                 label="endeffector_closed_pred"
-            )
-            
-            if prober_open is not None:
-                ax_traj.plot(
-                    pred_open_locs[i, :, 0].cpu(),
-                    pred_open_locs[i, :, 1].cpu(),
-                    marker="o",
-                    markersize=2.5,
-                    linewidth=1,
-                    c="#ff8c00",
-                    alpha=0.8,
-                    label="endeffector_open_pred"
-                )
-            
-            # ラベル
-            ax_traj.text(
-                gt_locations[i, 0, 0].cpu().item(),
-                gt_locations[i, 0, 1].cpu().item(),
-                "S",
-                color="#3777FF",
-                fontsize=12,
-                ha="center",
-                va="center",
             )
 
             ax_traj.text(
@@ -1178,16 +1170,52 @@ class ProbingEvaluator:
                 ha="center",
                 va="center",
             )
+            
+                        
+            if prober_open is not None:
+                ax_traj.plot(
+                    pred_open_locs[i, :, 0].cpu(),
+                    pred_open_locs[i, :, 1].cpu(),
+                    marker="o",
+                    markersize=2.5,
+                    linewidth=1,
+                    c="#ff8c00",
+                    alpha=0.8,
+                    label="endeffector_open_pred"
+                )
 
-            ax_traj.text(
-                pred_open_locs[i, 0, 0].cpu().item(),
-                pred_open_locs[i, 0, 1].cpu().item(),
-                "S",
-                color="#ff8c00",  # or a different label
-                fontsize=12,
-                ha="center",
-                va="center",
-            )
+                ax_traj.text(
+                    pred_open_locs[i, 0, 0].cpu().item(),
+                    pred_open_locs[i, 0, 1].cpu().item(),
+                    "S",
+                    color="#ff8c00",  # or a different label
+                    fontsize=12,
+                    ha="center",
+                    va="center",
+                )
+        
+            if enc_probers is not None:
+                ax_traj.plot(
+                    pred_enc_locs[i, :, 0].cpu(),
+                    pred_enc_locs[i, :, 1].cpu(),
+                    marker="o",
+                    markersize=2.5,
+                    linewidth=1,
+                    c="#6A5ACD",  # 紫っぽい色など
+                    alpha=0.8,
+                    label="endeffector_encoder_pred"
+                )
+
+                ax_traj.text(
+                    pred_enc_locs[i, 0, 0].cpu().item(),
+                    pred_enc_locs[i, 0, 1].cpu().item(),
+                    "S",
+                    color="#6A5ACD",
+                    fontsize=12,
+                    ha="center",
+                    va="center",
+                )
+
 
 
             ax_traj.set_aspect("equal", adjustable="box")
@@ -1196,7 +1224,7 @@ class ProbingEvaluator:
             ax_traj.set_xlabel("X (meters)")
             ax_traj.set_ylabel("Y (meters)")
             ax_traj.legend()
-            ax_traj.set_title("Predicted vs. Ground Truth Trajectories (world domain)")
+            ax_traj.set_title("Predicted vs. Ground Truth Trajectories")
 
 
             #bluebox 予測軌跡
@@ -1212,6 +1240,16 @@ class ProbingEvaluator:
                 alpha=0.8,
                 label="bluebox-ground-truth"
             )
+            ax_box.text(
+                gt_bluebox_locations[i, 0, 0].cpu().item(),
+                gt_bluebox_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
             ax_box.plot(
                 pred_bluebox_locs[i, :, 0].cpu(),
                 pred_bluebox_locs[i, :, 1].cpu(),
@@ -1222,6 +1260,17 @@ class ProbingEvaluator:
                 alpha=0.8,
                 label="bluebox-pred"
             )
+
+            ax_box.text(
+                pred_bluebox_locs[i, 0, 0].cpu().item(),
+                pred_bluebox_locs[i, 0, 1].cpu().item(),
+                "S",
+                color="#D62828",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
 
             if prober_bluebox_locs_open is not None:
                 ax_box.plot(
@@ -1235,37 +1284,6 @@ class ProbingEvaluator:
                     label="bluebox_open_pred"
                 )
 
-
-
-            ax_box.set_title("Bluebox Trajectory")
-            ax_box.set_xlim(0.315, 0.715)
-            ax_box.set_ylim(-0.2, 0.2)
-            ax_box.set_aspect("equal")
-            ax_box.legend()
-
-
-            # ラベル
-            ax_box.text(
-                gt_bluebox_locations[i, 0, 0].cpu().item(),
-                gt_bluebox_locations[i, 0, 1].cpu().item(),
-                "S",
-                color="#3777FF",
-                fontsize=12,
-                ha="center",
-                va="center",
-            )
-
-            ax_box.text(
-                pred_bluebox_locs[i, 0, 0].cpu().item(),
-                pred_bluebox_locs[i, 0, 1].cpu().item(),
-                "S",
-                color="#D62828",
-                fontsize=12,
-                ha="center",
-                va="center",
-            )
-            
-            if prober_bluebox_locs_open is not None:
                 ax_box.text(
                     pred_bluebox_locs_open[i, 0, 0].cpu().item(),
                     pred_bluebox_locs_open[i, 0, 1].cpu().item(),
@@ -1275,6 +1293,14 @@ class ProbingEvaluator:
                     ha="center",
                     va="center",
                 )
+
+
+            ax_box.set_title("Bluebox Trajectory")
+            ax_box.set_xlim(0.315, 0.715)
+            ax_box.set_ylim(-0.2, 0.2)
+            ax_box.set_aspect("equal")
+            ax_box.legend()
+
 
 
 

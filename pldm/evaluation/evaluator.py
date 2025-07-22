@@ -20,7 +20,7 @@ from pldm_envs.diverse_maze.utils import PixelMapper as D4RLPixelMapper
 from pldm.objectives import ObjectivesConfig
 
 from pldm_envs.franka.utils import franka_pixel_mapper
-
+from pldm.logger import Logger
 
 @dataclass
 class EvalConfig(ConfigBase):
@@ -94,23 +94,27 @@ class Evaluator:
         probers = {}
 
         if self.config.eval_l1:
+            Logger.run().log_step = 0  
             probers_open = self.probing_evaluator.train_pred_prober(
                 epoch=self.epoch,
                 is_open_prober=True,
                 
             )
+            Logger.run().log_step = 0
             probers = self.probing_evaluator.train_pred_prober(
                 epoch=self.epoch,
                 is_open_prober=False,
             )
-            
+            Logger.run().log_step = 0
 
             enc_probers = None
             if self.config.probing.probe_encoder:
+                Logger.run().log_step = 0
                 enc_probers = self.probing_evaluator.train_encoder_prober(
                     epoch=self.epoch,
                     only_obs_component = True,
                 )
+                Logger.run().log_step = 0
 
                 # enc_probe_loss = self.probing_evaluator.eval_probe_enc_position(
                 #     probers=enc_probers,
