@@ -15,10 +15,12 @@ import torch.nn.functional as F
 import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
+import matplotlib.animation as animation
 from pldm.data.enums import ProbingDatasets, DatasetType
 from pldm.data.utils import get_optional_fields
 from pldm.optimizers.schedulers import Scheduler, LRSchedule
 import glob
+import tempfile
 
 
 from pldm_envs.utils.normalizer import Normalizer
@@ -28,6 +30,8 @@ from pldm.models.hjepa import HJEPA
 #probingtest 中でloss を確認
 from pldm.objectives import ObjectivesConfig
 from pldm.objectives.idm import IDMObjective
+
+from PIL import Image, ImageSequence
 
 @dataclass
 class ProbeTargetConfig(ConfigBase):
@@ -616,11 +620,12 @@ class ProbingEvaluator:
             self.plot_prober_predictions(
                 btc,
                 model,
-                probers["locations"],
-                probers_open["locations"],
-                probers["bluebox_locs"],
-                probers_open["bluebox_locs"],
-                enc_probers["locations"] if isinstance(enc_probers, dict) else None,
+                prober = probers["locations"],
+                prober_open = probers_open["locations"],
+                prober_bluebox_locs = probers["bluebox_locs"],
+                prober_bluebox_locs_open = probers_open["bluebox_locs"],
+                enc_prober = enc_probers["locations"] if isinstance(enc_probers, dict) else None,
+                enc_prober_bluebox = enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
                 normalizer=val_ds.normalizer,
                 name_prefix=plot_prefix,
                 idxs=None if not quick_debug else list(range(10)),
@@ -847,194 +852,6 @@ class ProbingEvaluator:
 
         return unnormalized_avg_loss
 
-    #ピクセルに変換してプロットしている. 今は使っていない
-    @torch.no_grad()
-    def _plot_prober_predictions(
-        self,
-        batch,
-        jepa: JEPA,
-        prober: torch.nn.Module,
-        normalizer: Normalizer,
-        name_prefix: str = "",
-        idxs: Optional[List[int]] = None,
-        notebook: bool = False,
-        pixel_mapper=None,
-    ):
-
-        # infer
-        states = batch.states.to(self.device).transpose(0, 1)
-        actions = batch.actions.to(self.device).transpose(0, 1)
-
-        optional_fields = get_optional_fields(batch, device=states.device)
-
-        pred_output = jepa.forward_posterior(
-            states, actions, **optional_fields
-        )
-
-        #loss 計算(確認用)
-        #open_loss
-        # loss_infos = []
-        # loss_infos += [
-        #     objective(batch, [pred_output])
-        #     for objective in self.open_objectives_l1
-        # ]
-        # open_total_loss = sum([loss_info.total_loss for loss_info in loss_infos])
-        # print('open-test, open loss_type',[type(o) for o in self.open_objectives_l1])
-        # print('open-test, open_loss: ', open_total_loss)
-        
-        # #closed_loss
-        # loss_infos = []
-        # if self.closed_objectives_l1 is not None:
-        #     loss_infos += [
-        #         objective(batch, [pred_output])
-        #         for objective in self.closed_objectives_l1
-        #     ]
-        # else:
-        #     loss_infos += [
-        #         objective(batch, [pred_output])
-        #         for objective in self.open_objectives_l1
-        #     ]
-        # closed_total_loss = sum([loss_info.total_loss for loss_info in loss_infos])
-        # if self.closed_objectives_l1 is not None:
-        #     print('open-test, closed loss_type',[type(o) for o in self.closed_objectives_l1])
-        # else:
-        #     print('open-test, closed loss_type',[type(o) for o in self.open_objectives_l1])
-        # print('open-test, closed_loss: ', closed_total_loss)
-        
-        pred_output = pred_output.pred_output
-
-        if pred_output.obs_component is not None: ##
-            pred_encs = pred_output.obs_component
-        else: #x
-            pred_encs = pred_output.predictions
-        # print('PRED_ENCS:', pred_encs.shape) #torch.Size([15, 64, 16, 26, 26])
-
-        pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
-        # print('====bfore unnormalize====')
-        # print('PRED_LOCS:', pred_locs)
-        # print('PRED_LOCS.type:', type(pred_locs))
-        # print('PRED_LOCS.shape:', pred_locs.shape)
-        # print('PRED_LOCS.mean:', pred_locs.mean())
-        # print('PRED_LOCS.std:', pred_locs.std())
-        # print('PRED_LOCS.min:', pred_locs.min())
-        # print('PRED_LOCS.max:', pred_locs.max())
-
-
-        # pred_locs is of shape (batch_size, time, 1, 2)
-        if idxs is None: ##
-            idxs = list(range(min(pred_locs.shape[0], 64)))
-
-        # print('====before unnormalize====')
-        # print('batch.locations.type:', type(batch.locations))
-        # print('batch.locations.shape:', batch.locations.shape)
-        # batch_location_flat = batch.locations.view(-1, 3)
-        
-        # mean = batch_location_flat.mean(dim=0)
-        # std = batch_location_flat.std(dim=0)
-        # min_val = batch_location_flat.min(dim=0).values
-        # max_val = batch_location_flat.max(dim=0).values
-        # print("mean:", mean)
-        # print("std :", std)
-        # print("min :", min_val)
-        # print("max :", max_val)
-        
-
-        gt_locations = normalizer.unnormalize_location(batch.locations).cpu()
-        pred_locs = normalizer.unnormalize_location(pred_locs).cpu()
-        
-        # print('====after unnormalize====')
-        # print('gt_locations.type:', type(gt_locations))
-        # print('gt_locations.shape:', gt_locations.shape)
-        # gt_locations_flat = gt_locations.view(-1, 3)
-        
-        # mean = gt_locations_flat.mean(dim=0)
-        # std = gt_locations_flat.std(dim=0)
-        # min_val = gt_locations_flat.min(dim=0).values
-        # max_val = gt_locations_flat.max(dim=0).values
-        
-        # print("mean:", mean)
-        # print("std :", std)
-        # print("min :", min_val)
-        # print("max :", max_val)
-        
-        # print('====after unnormalize====')
-        # print('PRED_LOCS.type:', type(pred_locs))
-        # print('PRED_LOCS.shape:', pred_locs.shape)
-        # print('PRED_LOCS.mean:', pred_locs.mean())
-        # print('PRED_LOCS.std:', pred_locs.std())
-        # print('PRED_LOCS.min:', pred_locs.min())
-        # print('PRED_LOCS.max:', pred_locs.max())
-
-        if pixel_mapper is not None:
-            gt_locations = pixel_mapper(gt_locations) # torch.Tensor
-            pred_locs = pixel_mapper(pred_locs)
-
-        # plot
-        for i in tqdm(idxs, desc=f"Plotting {name_prefix}"):  # batch size
-            
-            fig = plt.figure(dpi=200)
-            if hasattr(batch, "view_states") and batch.view_states.shape[-1]: #x
-                images = batch.view_states
-            else: ##
-                images = batch.states
-
-            x_max = images.shape[-2] - 1
-            y_max = images.shape[-1] - 1
-
-            plt.imshow(-1 * images[i, 0].sum(dim=0).cpu(), cmap="gray")
-            plt.plot(
-                gt_locations[i, :, 0].cpu(),
-                gt_locations[i, :, 1].cpu(),
-                marker="o",
-                markersize=2.5,
-                linewidth=1,
-                c="#3777FF",
-                alpha=0.8,
-            )
-            plt.plot(
-                pred_locs[i, :, 0].cpu(),
-                pred_locs[i, :, 1].cpu(),
-                marker="o",
-                markersize=2.5,
-                linewidth=1,
-                c="#D62828",
-                alpha=0.8,
-            )
-            
-            plt.text(
-                gt_locations[i, 0, 0].cpu().item(),
-                gt_locations[i, 0, 1].cpu().item(),
-                "S",
-                color="#3777FF",
-                fontsize=12,
-                ha="center",
-                va="center",
-                # bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7)
-            )
-            
-            plt.text(
-                pred_locs[i, 0, 0].cpu().item(),
-                pred_locs[i, 0, 1].cpu().item(),
-                "S",
-                color="#D62828",
-                fontsize=12,
-                ha="center",
-                va="center",
-                # bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7)
-            )
-
-            
-            
-            
-            
-            plt.xlim(0, x_max)
-            plt.ylim(y_max, 0)
-
-            if not notebook:
-                # Logger.run().log_figure(fig, f"{name_prefix}/prober_predictions_{i}")
-                Logger.run().log_figure(fig, f"{name_prefix}/prober_predictions_{i}")
-                plt.close(fig)
-
 
     @torch.no_grad()
     def plot_prober_predictions(
@@ -1045,7 +862,8 @@ class ProbingEvaluator:
         prober_open: torch.nn.Module,
         prober_bluebox_locs: torch.nn.Module = None,
         prober_bluebox_locs_open: torch.nn.Module = None,
-        enc_probers: torch.nn.Module = None,
+        enc_prober: torch.nn.Module = None,
+        enc_prober_bluebox: torch.nn.Module = None,
         normalizer: Normalizer = None,
         name_prefix: str = "",
         idxs: Optional[List[int]] = None,
@@ -1054,81 +872,128 @@ class ProbingEvaluator:
         
     ):
 
-        # infer
+        # データバッチ
         states = batch.states.to(self.device).transpose(0, 1) #torch.Size([64, 50, 3, 64, 64])
         actions = batch.actions.to(self.device).transpose(0, 1)
 
         optional_fields = get_optional_fields(batch, device=states.device)
 
+        # closed-forward 出力列
         pred_output = jepa.forward_posterior(
             states, actions, **optional_fields
         )
         pred_output = pred_output.pred_output
+
+        # open-forward 出力列
+        pred_output_open = jepa.forward_open(
+            states, actions, **optional_fields
+        )
+        pred_output_open = pred_output_open.pred_output
         
         
-        #encoderの出力
+        #encoderの出力列
         enc_output = jepa.forward_posterior(
                 states, actions, encode_only=True, **optional_fields
             )
         enc_output = enc_output.backbone_output
         
 
-
+        #closed-forward 出力列から画像ベースに分離
         if pred_output.obs_component is not None: ##
             pred_encs = pred_output.obs_component
         else: #x
             pred_encs = pred_output.predictions
-            
+
+        #open-forward 出力列から画像ベースに分離
+        if pred_output_open.obs_component is not None: ##
+            pred_encs_open = pred_output_open.obs_component
+        else: #x
+            pred_encs_open = pred_output_open.predictions
+        encoder_encs_open = enc_output.obs_component 
+
+        #encoder 出力列から画像ベースに分離
         encoder_encs = enc_output.obs_component
 
-
-        pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
-        if prober_open is not None:
-            pred_open_locs = torch.stack([prober_open(x) for x in pred_encs], dim=1)
-
-        if enc_probers is not None:
-            pred_enc_locs = torch.stack([enc_probers(x) for x in encoder_encs], dim=1)
+        #endeffector
+        #closed-forward出力列 --> prober
+        pred_locs_clsfwd_clsprb = torch.stack([prober(x) for x in pred_encs], dim=1)
+        pred_locs_clsfwd_clsprb = normalizer.unnormalize_location(pred_locs_clsfwd_clsprb).cpu()
+        
+        #open-forward出力列 --> prober
+        pred_locs_opnfwd_clsprb = torch.stack([prober(x) for x in pred_encs_open], dim=1)
+        pred_locs_opnfwd_clsprb = normalizer.unnormalize_location(pred_locs_opnfwd_clsprb).cpu()
+        
+        #closed-forward出力列 --> prober_open
+        pred_locs_clsfwd_opnprb = torch.stack([prober_open(x) for x in pred_encs], dim=1)
+        pred_locs_clsfwd_opnprb = normalizer.unnormalize_location(pred_locs_clsfwd_opnprb).cpu()
+        
+        #open-forward出力列 --> prober_open
+        pred_locs_opnfwd_opnprb = torch.stack([prober_open(x) for x in pred_encs_open], dim=1)
+        pred_locs_opnfwd_opnprb = normalizer.unnormalize_location(pred_locs_opnfwd_opnprb).cpu()
+        
+        #encoder出力列
+        if enc_prober is not None:
+            pred_enc_locs = torch.stack([enc_prober(x) for x in encoder_encs], dim=1)
             pred_enc_locs = normalizer.unnormalize_location(pred_enc_locs).cpu()
 
+
         #bluebox_locs
-        if prober_bluebox_locs is not None:
-            pred_bluebox_locs = torch.stack([prober_bluebox_locs(x) for x in pred_encs], dim=1)
-        if prober_bluebox_locs_open is not None:
-            pred_bluebox_locs_open = torch.stack([prober_bluebox_locs_open(x) for x in pred_encs], dim=1)
+        #closed-forward出力列 --> prober
+        pred_bluebox_locs_clsfwd_clsprb = torch.stack([prober_bluebox_locs(x) for x in pred_encs], dim=1)
+        pred_bluebox_locs_clsfwd_clsprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_clsfwd_clsprb).cpu()
         
+        #open-forward出力列 --> prober
+        pred_bluebox_locs_opnfwd_clsprb = torch.stack([prober_bluebox_locs(x) for x in pred_encs_open], dim=1)
+        pred_bluebox_locs_opnfwd_clsprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_opnfwd_clsprb).cpu()
+        
+        #closed-forward出力列 --> prober_open
+        pred_bluebox_locs_clsfwd_opnprb = torch.stack([prober_bluebox_locs_open(x) for x in pred_encs], dim=1)
+        pred_bluebox_locs_clsfwd_opnprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_clsfwd_opnprb).cpu()
+        
+        #open-forward出力列 --> prober_open
+        pred_bluebox_locs_opnfwd_opnprb = torch.stack([prober_bluebox_locs_open(x) for x in pred_encs_open], dim=1)
+        pred_bluebox_locs_opnfwd_opnprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_opnfwd_opnprb).cpu()
+        
+        #encoder出力列
+        pred_enc_bluebox_locs = torch.stack([enc_prober_bluebox(x) for x in encoder_encs], dim=1)
+        pred_enc_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_enc_bluebox_locs).cpu()
 
         # pred_locs is of shape (batch_size, time, 1, 2)
         if idxs is None: ##
-            idxs = list(range(min(pred_locs.shape[0], 64)))
+            idxs = list(range(min(pred_locs_clsfwd_clsprb.shape[0], 64)))
 
 
         gt_locations = normalizer.unnormalize_location(batch.locations).cpu()
-        pred_locs = normalizer.unnormalize_location(pred_locs).cpu()
-        if prober_open is not None:
-            pred_open_locs = normalizer.unnormalize_location(pred_open_locs).cpu()
+        # pred_locs = normalizer.unnormalize_location(pred_locs).cpu()
+        # if prober_open is not None:
+        #     pred_open_locs = normalizer.unnormalize_location(pred_open_locs).cpu()
         
         gt_bluebox_locations = normalizer.unnormalize_bluebox_locs(batch.bluebox_locs).cpu()
-        pred_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs).cpu()
-        if prober_bluebox_locs_open is not None:
-            pred_bluebox_locs_open = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_open).cpu()
+        # pred_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs).cpu()
+        # if prober_bluebox_locs_open is not None:
+        #     pred_bluebox_locs_open = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_open).cpu()
+        # if enc_prober_bluebox is not None:
+        #     pred_enc_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_enc_bluebox_locs).cpu()
 
 
         for i in tqdm(idxs, desc=f"Plotting {name_prefix}"):
-            fig, axes = plt.subplots(1, 3, figsize=(15, 6), dpi=200)
+            fig, axes = plt.subplots(2, 3, figsize=(15, 12), dpi=200)
 
             #画像表示
-            ax_img = axes[2]
+            ax_img = axes[0][0]
             img = normalizer.unnormalize_state(batch.states)
-            img = img[i, 0].cpu().numpy().transpose(1, 2, 0)
-            img = img.clip(0, 255).astype(np.uint8)
+            init_img = img[i, 0].cpu().numpy().transpose(1, 2, 0)
+            init_img = init_img.clip(0, 255).astype(np.uint8)
             
-            ax_img.imshow(img)
+            ax_img.imshow(init_img)
             ax_img.set_title("init obs")
             ax_img.axis("off")
 
-            #予測軌跡表示
-            ax_traj = axes[1]
-            ax_traj.plot(
+            #予測軌跡表示, prober, ee
+            ###########################################################################################
+            ax_clsprb_ee = axes[0][1]
+            #gt
+            ax_clsprb_ee.plot(
                 gt_locations[i, :, 0].cpu(),
                 gt_locations[i, :, 1].cpu(),
                 marker="o",
@@ -1138,8 +1003,7 @@ class ProbingEvaluator:
                 alpha=0.8,
                 label="endeffector-ground-truth"
             )
-            
-            ax_traj.text(
+            ax_clsprb_ee.text(
                 gt_locations[i, 0, 0].cpu().item(),
                 gt_locations[i, 0, 1].cpu().item(),
                 "S",
@@ -1149,10 +1013,10 @@ class ProbingEvaluator:
                 va="center",
             )
             
-            
-            ax_traj.plot(
-                pred_locs[i, :, 0].cpu(),
-                pred_locs[i, :, 1].cpu(),
+            #ee, closed_forward, prober
+            ax_clsprb_ee.plot(
+                pred_locs_clsfwd_clsprb[i, :, 0].cpu(),
+                pred_locs_clsfwd_clsprb[i, :, 1].cpu(),
                 marker="o",
                 markersize=2.5,
                 linewidth=1,
@@ -1160,10 +1024,9 @@ class ProbingEvaluator:
                 alpha=0.8,
                 label="endeffector_closed_pred"
             )
-
-            ax_traj.text(
-                pred_locs[i, 0, 0].cpu().item(),
-                pred_locs[i, 0, 1].cpu().item(),
+            ax_clsprb_ee.text(
+                pred_locs_clsfwd_clsprb[i, 0, 0].cpu().item(),
+                pred_locs_clsfwd_clsprb[i, 0, 1].cpu().item(),
                 "S",
                 color="#D62828",
                 fontsize=12,
@@ -1171,66 +1034,63 @@ class ProbingEvaluator:
                 va="center",
             )
             
-                        
-            if prober_open is not None:
-                ax_traj.plot(
-                    pred_open_locs[i, :, 0].cpu(),
-                    pred_open_locs[i, :, 1].cpu(),
-                    marker="o",
-                    markersize=2.5,
-                    linewidth=1,
-                    c="#ff8c00",
-                    alpha=0.8,
-                    label="endeffector_open_pred"
-                )
-
-                ax_traj.text(
-                    pred_open_locs[i, 0, 0].cpu().item(),
-                    pred_open_locs[i, 0, 1].cpu().item(),
-                    "S",
-                    color="#ff8c00",  # or a different label
-                    fontsize=12,
-                    ha="center",
-                    va="center",
-                )
-        
-            if enc_probers is not None:
-                ax_traj.plot(
-                    pred_enc_locs[i, :, 0].cpu(),
-                    pred_enc_locs[i, :, 1].cpu(),
-                    marker="o",
-                    markersize=2.5,
-                    linewidth=1,
-                    c="#6A5ACD",  # 紫っぽい色など
-                    alpha=0.8,
-                    label="endeffector_encoder_pred"
-                )
-
-                ax_traj.text(
-                    pred_enc_locs[i, 0, 0].cpu().item(),
-                    pred_enc_locs[i, 0, 1].cpu().item(),
-                    "S",
-                    color="#6A5ACD",
-                    fontsize=12,
-                    ha="center",
-                    va="center",
-                )
-
-
-
-            ax_traj.set_aspect("equal", adjustable="box")
-            ax_traj.set_xlim(0.315, 0.715)
-            ax_traj.set_ylim(-0.2, 0.2)
-            ax_traj.set_xlabel("X (meters)")
-            ax_traj.set_ylabel("Y (meters)")
-            ax_traj.legend()
-            ax_traj.set_title("Predicted vs. Ground Truth Trajectories")
+            #ee, open_forward, prober
+            ax_clsprb_ee.plot(
+                pred_locs_opnfwd_clsprb[i, :, 0].cpu(),
+                pred_locs_opnfwd_clsprb[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#ff8c00",
+                alpha=0.8,
+                label="endeffector_open_pred"
+            )
+            ax_clsprb_ee.text(
+                pred_locs_opnfwd_clsprb[i, 0, 0].cpu().item(),
+                pred_locs_opnfwd_clsprb[i, 0, 1].cpu().item(),
+                "S",
+                color="#ff8c00",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            #ee, encoder
+            ax_clsprb_ee.plot(
+                pred_enc_locs[i, :, 0].cpu(),
+                pred_enc_locs[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#6A5ACD",
+                alpha=0.8,
+                label="endeffector_encoder"
+            )
+            ax_clsprb_ee.text(
+                pred_enc_locs[i, 0, 0].cpu().item(),
+                pred_enc_locs[i, 0, 1].cpu().item(),
+                "S",
+                color="#6A5ACD",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            ax_clsprb_ee.set_aspect("equal", adjustable="box")
+            ax_clsprb_ee.set_xlim(0.315, 0.715)
+            ax_clsprb_ee.set_ylim(-0.2, 0.2)
+            ax_clsprb_ee.set_xlabel("X (meters)")
+            ax_clsprb_ee.set_ylabel("prober\nY (meters)")
+            ax_clsprb_ee.legend()
+            ax_clsprb_ee.set_title("Predicted vs. Ground Truth Trajectories")
+            ###########################################################################################
 
 
-            #bluebox 予測軌跡
-            ax_box = axes[0]
-
-            ax_box.plot(
+            #予測軌跡表示, bluebox, prober
+            ###########################################################################################
+            ax_clsprob_box = axes[0][2]
+            
+            #box, gt
+            ax_clsprob_box.plot(
                 gt_bluebox_locations[i, :, 0].cpu(),
                 gt_bluebox_locations[i, :, 1].cpu(),
                 marker="o",
@@ -1240,7 +1100,7 @@ class ProbingEvaluator:
                 alpha=0.8,
                 label="bluebox-ground-truth"
             )
-            ax_box.text(
+            ax_clsprob_box.text(
                 gt_bluebox_locations[i, 0, 0].cpu().item(),
                 gt_bluebox_locations[i, 0, 1].cpu().item(),
                 "S",
@@ -1250,20 +1110,20 @@ class ProbingEvaluator:
                 va="center",
             )
             
-            ax_box.plot(
-                pred_bluebox_locs[i, :, 0].cpu(),
-                pred_bluebox_locs[i, :, 1].cpu(),
+            #box, closed_forward, closed_prober
+            ax_clsprob_box.plot(
+                pred_bluebox_locs_clsfwd_clsprb[i, :, 0].cpu(),
+                pred_bluebox_locs_clsfwd_clsprb[i, :, 1].cpu(),
                 marker="o",
                 markersize=2.5,
                 linewidth=1,
                 c="#D62828",
                 alpha=0.8,
-                label="bluebox-pred"
+                label="bluebox-closed-pred"
             )
-
-            ax_box.text(
-                pred_bluebox_locs[i, 0, 0].cpu().item(),
-                pred_bluebox_locs[i, 0, 1].cpu().item(),
+            ax_clsprob_box.text(
+                pred_bluebox_locs_clsfwd_clsprb[i, 0, 0].cpu().item(),
+                pred_bluebox_locs_clsfwd_clsprb[i, 0, 1].cpu().item(),
                 "S",
                 color="#D62828",
                 fontsize=12,
@@ -1272,40 +1132,381 @@ class ProbingEvaluator:
             )
 
 
-            if prober_bluebox_locs_open is not None:
-                ax_box.plot(
-                    pred_bluebox_locs_open[i, :, 0].cpu(),
-                    pred_bluebox_locs_open[i, :, 1].cpu(),
-                    marker="o",
-                    markersize=2.5,
-                    linewidth=1,
-                    c="#ff8c00",
-                    alpha=0.8,
-                    label="bluebox_open_pred"
+            #box, open_forward, closed_prober
+            ax_clsprob_box.plot(
+                pred_bluebox_locs_opnfwd_clsprb[i, :, 0].cpu(),
+                pred_bluebox_locs_opnfwd_clsprb[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#ff8c00",
+                alpha=0.8,
+                label="bluebox-open-pred"
+            )
+            ax_clsprob_box.text(
+                pred_bluebox_locs_opnfwd_clsprb[i, 0, 0].cpu().item(),
+                pred_bluebox_locs_opnfwd_clsprb[i, 0, 1].cpu().item(),
+                "S",
+                color="#ff8c00",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
+
+            #box, encoder
+            ax_clsprob_box.plot(
+                pred_enc_locs[i, :, 0].cpu(),
+                pred_enc_locs[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#6A5ACD",
+                alpha=0.8,
+                label="bluebox-encoder-pred"
+            )
+            ax_clsprob_box.text(
+                pred_enc_locs[i, 0, 0].cpu().item(),
+                pred_enc_locs[i, 0, 1].cpu().item(),
+                "S",
+                color="#6A5ACD",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
+            ax_clsprob_box.set_title("Bluebox Trajectory")
+            ax_clsprob_box.set_xlim(0.315, 0.715)
+            ax_clsprob_box.set_ylim(-0.2, 0.2)
+            ax_clsprob_box.set_aspect("equal")
+            ax_clsprob_box.legend()
+            ###########################################################################################
+
+
+
+            #予測軌跡表示, prober_open, ee
+            ###########################################################################################
+            ax_opnprb_ee = axes[1][1]
+            #gt
+            ax_opnprb_ee.plot(
+                gt_locations[i, :, 0].cpu(),
+                gt_locations[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#3777FF",
+                alpha=0.8,
+                label="endeffector-ground-truth"
+            )
+            ax_opnprb_ee.text(
+                gt_locations[i, 0, 0].cpu().item(),
+                gt_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            #ee, closed_forward, prober_open
+            ax_opnprb_ee.plot(
+                pred_locs_clsfwd_opnprb[i, :, 0].cpu(),
+                pred_locs_clsfwd_opnprb[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#D62828",
+                alpha=0.8,
+                label="endeffector-closed-pred"
+            )
+            ax_opnprb_ee.text(
+                pred_locs_clsfwd_opnprb[i, 0, 0].cpu().item(),
+                pred_locs_clsfwd_opnprb[i, 0, 1].cpu().item(),
+                "S",
+                color="#D62828",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            #ee, open_forward, prober_open
+            ax_opnprb_ee.plot(
+                pred_locs_opnfwd_opnprb[i, :, 0].cpu(),
+                pred_locs_opnfwd_opnprb[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#ff8c00",
+                alpha=0.8,
+                label="endeffector-open-red"
+            )
+            ax_opnprb_ee.text(
+                pred_locs_opnfwd_opnprb[i, 0, 0].cpu().item(),
+                pred_locs_opnfwd_opnprb[i, 0, 1].cpu().item(),
+                "S",
+                color="#ff8c00",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            #ee, encoder
+            ax_opnprb_ee.plot(
+                pred_enc_locs[i, :, 0].cpu(),
+                pred_enc_locs[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#6A5ACD",
+                alpha=0.8,
+                label="endeffector-encoder-pred"
+            )
+            ax_opnprb_ee.text(
+                pred_enc_locs[i, 0, 0].cpu().item(),
+                pred_enc_locs[i, 0, 1].cpu().item(),
+                "S",
+                color="#6A5ACD",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            ax_opnprb_ee.set_aspect("equal", adjustable="box")
+            ax_opnprb_ee.set_xlim(0.315, 0.715)
+            ax_opnprb_ee.set_ylim(-0.2, 0.2)
+            ax_opnprb_ee.set_xlabel("X (meters)")
+            ax_opnprb_ee.set_ylabel("prober_open\nY (meters)")
+            ax_opnprb_ee.legend()
+            ax_opnprb_ee.set_title("Predicted vs. Ground Truth Trajectories")
+            ###########################################################################################
+
+
+            #予測軌跡表示, bluebox, prober_open
+            ###########################################################################################
+            ax_opnprob_box = axes[1][2]
+            
+            #box, gt
+            ax_opnprob_box.plot(
+                gt_bluebox_locations[i, :, 0].cpu(),
+                gt_bluebox_locations[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#3777FF",
+                alpha=0.8,
+                label="bluebox-ground-truth"
+            )
+            ax_opnprob_box.text(
+                gt_bluebox_locations[i, 0, 0].cpu().item(),
+                gt_bluebox_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            #box, closed_forward, open_prober
+            ax_opnprob_box.plot(
+                pred_bluebox_locs_clsfwd_opnprb[i, :, 0].cpu(),
+                pred_bluebox_locs_clsfwd_opnprb[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#D62828",
+                alpha=0.8,
+                label="bluebox-closed-pred"
+            )
+            ax_opnprob_box.text(
+                pred_bluebox_locs_clsfwd_opnprb[i, 0, 0].cpu().item(),
+                pred_bluebox_locs_clsfwd_opnprb[i, 0, 1].cpu().item(),
+                "S",
+                color="#D62828",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
+
+            #box, open_forward, open_prober
+            ax_opnprob_box.plot(
+                pred_bluebox_locs_opnfwd_opnprb[i, :, 0].cpu(),
+                pred_bluebox_locs_opnfwd_opnprb[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#ff8c00",
+                alpha=0.8,
+                label="bluebox-open-pred"
+            )
+            ax_opnprob_box.text(
+                pred_bluebox_locs_opnfwd_opnprb[i, 0, 0].cpu().item(),
+                pred_bluebox_locs_opnfwd_opnprb[i, 0, 1].cpu().item(),
+                "S",
+                color="#ff8c00",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
+
+            #box, encoder
+            ax_opnprob_box.plot(
+                pred_enc_locs[i, :, 0].cpu(),
+                pred_enc_locs[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#6A5ACD",
+                alpha=0.8,
+                label="bluebox-encoder-pred"
+            )
+            ax_opnprob_box.text(
+                pred_enc_locs[i, 0, 0].cpu().item(),
+                pred_enc_locs[i, 0, 1].cpu().item(),
+                "S",
+                color="#6A5ACD",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
+            ax_opnprob_box.set_title("Bluebox Trajectory")
+            ax_opnprob_box.set_xlim(0.315, 0.715)
+            ax_opnprob_box.set_ylim(-0.2, 0.2)
+            ax_opnprob_box.set_aspect("equal")
+            ax_opnprob_box.legend()
+            ###########################################################################################
+
+
+
+
+
+
+
+
+
+            feature_maps = pred_encs[:, i].detach().cpu()
+            ft_maps_gif_path, fig_width, fig_height = self.animate_feature_map_sequence(
+                feature_maps, 
+                name_prefix=name_prefix,
+                maps_idx=i
                 )
+            
 
-                ax_box.text(
-                    pred_bluebox_locs_open[i, 0, 0].cpu().item(),
-                    pred_bluebox_locs_open[i, 0, 1].cpu().item(),
-                    "S",
-                    color="#ff8c00",  # or a different label
-                    fontsize=12,
-                    ha="center",
-                    va="center",
+            obs_gif_path = self.animate_obs_sequence(
+                img[i], 
+                fig_width=fig_width, 
+                fig_height=fig_height,
+                idx = i
                 )
-
-
-            ax_box.set_title("Bluebox Trajectory")
-            ax_box.set_xlim(0.315, 0.715)
-            ax_box.set_ylim(-0.2, 0.2)
-            ax_box.set_aspect("equal")
-            ax_box.legend()
-
-
+                
+            ft_maps_and_obs_gif_path = self.concat_gifs(ft_maps_gif_path, obs_gif_path, name_prefix=name_prefix, idx=i)
+            
+            
 
 
             if not notebook:
-                Logger.run().log_figure(fig, f"{name_prefix}/prober_predictions_{i}")
+                Logger.run().log_figure(fig, f"{name_prefix}-prober_predictions_{i}")
+                # Logger.run().log_video(ft_maps_gif_path, f"{name_prefix}-featuremap_{i}")
+                Logger.run().log_video(ft_maps_and_obs_gif_path, f"{name_prefix}-featuremap_and_obs_{i}")
+
                 plt.close(fig)
             else:
                 plt.show()
+        
+        
+            
+    
+    def animate_feature_map_sequence(
+        self, 
+        feature_maps, 
+        name_prefix=None,
+        maps_idx=None,
+        save_path=None,
+        ):
+        
+        T, C, H, W = feature_maps.shape 
+        n_rows = 4 
+        n_cols = (C + n_rows - 1) // n_rows
+        
+        fig_width = n_cols * 2
+        fig_height = n_rows * 2
+        fig, axs = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height))
+        axs = axs.flatten()
+        
+        ims = []
+        for t in range(T):
+            frame = []
+            for c in range(C):
+                im = axs[c].imshow(feature_maps[t, c], cmap='viridis', animated = True)
+                axs[c].axis('off')
+                frame.append(im)
+                
+            text = fig.text(0.5, 0.02, f"timestep = {t} / {T - 1}", fontsize=14, color='black', ha='center', va='bottom', animated=True)
+            frame.append(text)
+            
+            ims.append(frame)
+        
+        ani = animation.ArtistAnimation(fig, ims, interval=200, blit=False)
+
+        if save_path is None:
+            save_dir = os.path.join(Logger.run().output_path, 'feature_maps')
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, f"{name_prefix}-featuremap_{maps_idx}.gif")
+            
+        ani.save(save_path, writer='pillow')
+        plt.close(fig)
+        
+        return save_path, fig_width, fig_height
+
+
+
+    def animate_obs_sequence(self, obs, fig_width, fig_height, save_path=None, name_prefix="obs", idx=0):
+        """
+        obs: Tensor (T, C, H, W) 
+        """
+        T, C, H, W = obs.shape
+
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+        ims = []
+
+        for t in range(T):
+            frame = obs[t].cpu().numpy().transpose(1, 2, 0)  # (H, W, C)
+            frame = frame.clip(0, 255).astype(np.uint8)
+
+            im = ax.imshow(frame, animated=True)
+            text = ax.text(0.5, -0.05, f"timestep = {t} / {T - 1}", fontsize=14, color='black', ha='center', transform=ax.transAxes)
+            ax.axis("off")
+            ims.append([im, text])
+
+        ani = animation.ArtistAnimation(fig, ims, interval=200, blit=False)
+
+        if save_path is None:
+            save_dir = os.path.join(Logger.run().output_path, 'observation')
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, f"{name_prefix}-obs_{idx}.gif")
+
+        ani.save(save_path, writer='pillow')
+        plt.close(fig)
+
+        return save_path
+
+    def concat_gifs(self, gif_path1, gif_path2, output_path = None, name_prefix: str = "", idx = 0):
+        gif1 = Image.open(gif_path1)
+        gif2 = Image.open(gif_path2)
+
+        frames = []
+        for frame1, frame2 in zip(ImageSequence.Iterator(gif1), ImageSequence.Iterator(gif2)):
+            new_frame = Image.new("RGB", (frame1.width + frame2.width, frame1.height))
+            new_frame.paste(frame1, (0, 0))
+            new_frame.paste(frame2, (frame1.width, 0))
+            frames.append(new_frame)
+            
+        if output_path is None:
+            save_dir = os.path.join(Logger.run().output_path, 'feature_map_and_obs')
+            os.makedirs(save_dir, exist_ok=True)
+            output_path = os.path.join(save_dir, f"{name_prefix}-feature_map_and_obs_{idx}.gif")
+
+        frames[0].save(output_path, save_all=True, append_images=frames[1:], loop=0, duration=200)
+
+        return output_path

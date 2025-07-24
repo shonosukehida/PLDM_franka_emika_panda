@@ -64,7 +64,7 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20250721_150109/epoch=10_sample_step=1584.ckpt #pldm/checkpoints/franka_20250719_091453/epoch=10_sample_step=1584.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20250723_130408/epoch=10_sample_step=1584.ckpt #pldm/checkpoints/franka_20250719_091453/epoch=10_sample_step=1584.ckpt
 
 use_closed_loss_func: &use_closed_loss_func false
 objectives_l1:
@@ -223,5 +223,5 @@ run_name: pldm_franka
 run_project: Franka
 save_every_n_epochs: 1
 seed: 246
-wandb: false
+wandb: true
 confirm_normalize: false

@@ -186,6 +186,11 @@ class Logger:
             wandb.log({name: wandb.Image(f"{filename}.png")})
 
 
+    def log_video(self, video_path: str, name: str):
+        if self.wandb_enabled:
+            wandb.log({name: wandb.Video(video_path, fps=5, format="gif")})
+
+
 class MetricTracker:
     def __init__(self, window_size: int):
         self.window_size = window_size

@@ -114,7 +114,7 @@ eval_cfg:
     train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
     val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy 
     val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
-    probe_targets: 'locations,propio_vel,bluebox_locs' #'locations,propio_vel' 
+    probe_targets: 'locations,propio_vel,bluebox_locs' 
     locations:
       arch: 'conv'
       subclass: 'd'
@@ -140,7 +140,7 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: true
-    load_prober: false
+    load_prober: true
   disable_planning: false
   franka_planning:
     n_envs: 10 #85

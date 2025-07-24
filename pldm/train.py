@@ -511,6 +511,11 @@ class Trainer:
                 
                 
                 forward_result = self.model.forward_posterior(s.to(self.device), a.to(self.device), **optional_fields)
+                
+                # obs_comp_shape = forward_result.level1.pred_output.obs_component.shape
+                # print('OBS_COMP.SHAPE:', obs_comp_shape)
+                
+                
                 loss_infos = []
                 if self.config.hjepa.train_l1:
                     loss_infos += [
@@ -521,7 +526,7 @@ class Trainer:
                     if loss is None:
                         print(f"[WARNING] loss_infos[{i}] is None → skipping this objective")
 
-                print("loss_infos:", loss_infos)
+
                 total_loss = sum([loss_info.total_loss for loss_info in loss_infos if loss_info is not None])
                 if total_loss.isnan():
                     raise RuntimeError("NaN loss")
