@@ -110,10 +110,10 @@ eval_cfg:
   probing:
     exe_probing: true
     l1_depth: *n_steps
-    train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy 
-    train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
-    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy 
-    val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
+    train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_10_timestep_1000/images.npy 
+    train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_10_timestep_1000/data.p
+    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_10_timestep_1000/images.npy 
+    val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_10_timestep_1000/data.p
     probe_targets: 'locations,propio_vel,bluebox_locs' 
     locations:
       arch: 'conv'
@@ -140,7 +140,7 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: true
-    load_prober: true
+    load_prober: false
   disable_planning: false
   franka_planning:
     n_envs: 10 #85
@@ -164,7 +164,7 @@ eval_cfg:
     replan_every: 4
     image_obs: true
     stack_states: 1
-    data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/'
+    data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_10_timestep_1000/'
     level1:
       planner_type: PlannerType.MPPI
       min_step: 0
