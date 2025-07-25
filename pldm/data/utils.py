@@ -131,6 +131,8 @@ def make_dataloader(ds, loader_config, normalizer=None, suffix="", train=True):
                 n_samples=1 if loader_config.quick_debug else 100,
                 min_max_normalize=loader_config.min_max_normalize,
                 normalizer_hardset=loader_config.normalizer_hardset,
+                min_val=loader_config.min_val,
+                max_val=loader_config.max_val,
             )
     else:
         normalizer = Normalizer.build_id_normalizer()
@@ -155,6 +157,8 @@ def make_dataloader_for_prebatched_ds(
                 n_samples=1 if loader_config.quick_debug else 100,
                 min_max_state=loader_config.min_max_normalize_state,
                 normalizer_hardset=loader_config.normalizer_hardset,
+                min_val=loader_config.min_val,
+                max_val=loader_config.max_val,
             )
     else:
         normalizer = Normalizer.build_id_normalizer()

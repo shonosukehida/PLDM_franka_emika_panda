@@ -52,3 +52,5 @@ class DataConfig(ConfigBase):
     normalizer_hardset: bool = False
     quick_debug: bool = False
     num_workers: int = 0
+    min_val: float = 0.0
+    max_val: float = 1.0

@@ -1156,8 +1156,8 @@ class ProbingEvaluator:
 
             #box, encoder
             ax_clsprob_box.plot(
-                pred_enc_locs[i, :, 0].cpu(),
-                pred_enc_locs[i, :, 1].cpu(),
+                pred_enc_bluebox_locs[i, :, 0].cpu(),
+                pred_enc_bluebox_locs[i, :, 1].cpu(),
                 marker="o",
                 markersize=2.5,
                 linewidth=1,
@@ -1166,8 +1166,8 @@ class ProbingEvaluator:
                 label="bluebox-encoder-pred"
             )
             ax_clsprob_box.text(
-                pred_enc_locs[i, 0, 0].cpu().item(),
-                pred_enc_locs[i, 0, 1].cpu().item(),
+                pred_enc_bluebox_locs[i, 0, 0].cpu().item(),
+                pred_enc_bluebox_locs[i, 0, 1].cpu().item(),
                 "S",
                 color="#6A5ACD",
                 fontsize=12,
@@ -1351,8 +1351,8 @@ class ProbingEvaluator:
 
             #box, encoder
             ax_opnprob_box.plot(
-                pred_enc_locs[i, :, 0].cpu(),
-                pred_enc_locs[i, :, 1].cpu(),
+                pred_enc_bluebox_locs[i, :, 0].cpu(),
+                pred_enc_bluebox_locs[i, :, 1].cpu(),
                 marker="o",
                 markersize=2.5,
                 linewidth=1,
@@ -1361,8 +1361,8 @@ class ProbingEvaluator:
                 label="bluebox-encoder-pred"
             )
             ax_opnprob_box.text(
-                pred_enc_locs[i, 0, 0].cpu().item(),
-                pred_enc_locs[i, 0, 1].cpu().item(),
+                pred_enc_bluebox_locs[i, 0, 0].cpu().item(),
+                pred_enc_bluebox_locs[i, 0, 1].cpu().item(),
                 "S",
                 color="#6A5ACD",
                 fontsize=12,
