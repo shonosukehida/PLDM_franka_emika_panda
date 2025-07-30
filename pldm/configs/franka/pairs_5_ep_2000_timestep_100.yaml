@@ -7,8 +7,18 @@ data:
   dataset_type: DatasetType.Franka
   min_max_normalize: true
   normalize: true
-  min_val: -1.0
-  max_val: 1.0
+  min_states_val: 0.0
+  max_states_val: 1.0
+  min_actions_val: 0.0
+  max_actions_val: 1.0
+  min_locations_val: 0.0
+  max_locations_val: 1.0
+  min_propio_pos_val: 0.0
+  max_propio_pos_val: 1.0
+  min_propio_vel_val: 0.0
+  max_propio_vel_val: 1.0
+  min_bluebox_locs_val: 0.0
+  max_bluebox_locs_val: 1.0
   franka_config:
     env_name: *env_name
     random_actions: false
@@ -21,7 +31,7 @@ data:
     path: pldm_envs/franka/presaved_datasets/pairs_5_ep_2000_timestep_100/data.p
     location_only: false
     # normalize: true
-    num_workers: 0 #10
+    num_workers: 4 #10
     prioritized: false
     quick_debug: false
     sample_length: *n_steps
@@ -35,7 +45,7 @@ eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
 eval_mpcs: 20
-eval_only: false
+eval_only: true
 hjepa:
   l1_n_steps: *n_steps
   train_l1: true
@@ -66,7 +76,7 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: null #pldm/checkpoints/franka_20250718_170222/epoch=10_sample_step=5610000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20250718_170222/epoch=10_sample_step=5610000.ckpt #pldm/checkpoints/franka_20250718_170222/epoch=10_sample_step=5610000.ckpt
 load_l1_only: false
 
 use_closed_loss_func: &use_closed_loss_func false
@@ -142,7 +152,7 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: true
-    load_prober: false
+    load_prober: true
   disable_planning: false
   franka_planning:
     n_envs: 10 #85

@@ -52,5 +52,15 @@ class DataConfig(ConfigBase):
     normalizer_hardset: bool = False
     quick_debug: bool = False
     num_workers: int = 0
-    min_val: float = 0.0
-    max_val: float = 1.0
+    min_states_val: float = 0.0
+    max_states_val: float = 1.0
+    min_actions_val: float = 0.0
+    max_actions_val: float = 1.0
+    min_locations_val: float = 0.0
+    max_locations_val: float = 1.0
+    min_propio_pos_val: float = 0.0
+    max_propio_pos_val: float = 1.0
+    min_propio_vel_val: float = 0.0
+    max_propio_vel_val: float = 1.0
+    min_bluebox_locs_val: float = 0.0
+    max_bluebox_locs_val: float = 1.0

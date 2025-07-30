@@ -853,6 +853,104 @@ class ProbingEvaluator:
         return unnormalized_avg_loss
 
 
+        
+            
+    
+    def animate_feature_map_sequence(
+        self, 
+        feature_maps, 
+        name_prefix=None,
+        maps_idx=None,
+        save_path=None,
+        ):
+        
+        T, C, H, W = feature_maps.shape 
+        n_rows = 4 
+        n_cols = (C + n_rows - 1) // n_rows
+        
+        fig_width = n_cols * 2
+        fig_height = n_rows * 2
+        fig, axs = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height))
+        axs = axs.flatten()
+        
+        ims = []
+        for t in range(T):
+            frame = []
+            for c in range(C):
+                im = axs[c].imshow(feature_maps[t, c], cmap='viridis', animated = True)
+                axs[c].axis('off')
+                frame.append(im)
+                
+            text = fig.text(0.5, 0.02, f"timestep = {t} / {T - 1}", fontsize=14, color='black', ha='center', va='bottom', animated=True)
+            frame.append(text)
+            
+            ims.append(frame)
+        
+        ani = animation.ArtistAnimation(fig, ims, interval=200, blit=False)
+
+        if save_path is None:
+            save_dir = os.path.join(Logger.run().output_path, 'feature_maps')
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, f"{name_prefix}-featuremap_{maps_idx}.gif")
+            
+        ani.save(save_path, writer='pillow')
+        plt.close(fig)
+        
+        return save_path, fig_width, fig_height
+
+
+
+    def animate_obs_sequence(self, obs, fig_width, fig_height, save_path=None, name_prefix="obs", idx=0):
+        """
+        obs: Tensor (T, C, H, W) 
+        """
+        T, C, H, W = obs.shape
+
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+        ims = []
+
+        for t in range(T):
+            frame = obs[t].cpu().numpy().transpose(1, 2, 0)  # (H, W, C)
+            frame = frame.clip(0, 255).astype(np.uint8)
+
+            im = ax.imshow(frame, animated=True)
+            text = ax.text(0.5, -0.05, f"timestep = {t} / {T - 1}", fontsize=14, color='black', ha='center', transform=ax.transAxes)
+            ax.axis("off")
+            ims.append([im, text])
+
+        ani = animation.ArtistAnimation(fig, ims, interval=200, blit=False)
+
+        if save_path is None:
+            save_dir = os.path.join(Logger.run().output_path, 'observation')
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, f"{name_prefix}-obs_{idx}.gif")
+
+        ani.save(save_path, writer='pillow')
+        plt.close(fig)
+
+        return save_path
+
+    def concat_gifs(self, gif_path1, gif_path2, output_path = None, name_prefix: str = "", idx = 0):
+        gif1 = Image.open(gif_path1)
+        gif2 = Image.open(gif_path2)
+
+        frames = []
+        for frame1, frame2 in zip(ImageSequence.Iterator(gif1), ImageSequence.Iterator(gif2)):
+            new_frame = Image.new("RGB", (frame1.width + frame2.width, frame1.height))
+            new_frame.paste(frame1, (0, 0))
+            new_frame.paste(frame2, (frame1.width, 0))
+            frames.append(new_frame)
+            
+        if output_path is None:
+            save_dir = os.path.join(Logger.run().output_path, 'feature_map_and_obs')
+            os.makedirs(save_dir, exist_ok=True)
+            output_path = os.path.join(save_dir, f"{name_prefix}-feature_map_and_obs_{idx}.gif")
+
+        frames[0].save(output_path, save_all=True, append_images=frames[1:], loop=0, duration=200)
+
+        return output_path
+
+
     @torch.no_grad()
     def plot_prober_predictions(
         self,
@@ -896,6 +994,8 @@ class ProbingEvaluator:
                 states, actions, encode_only=True, **optional_fields
             )
         enc_output = enc_output.backbone_output
+        #encoder 出力列から画像ベースに分離
+        encoder_encs = enc_output.obs_component
         
 
         #closed-forward 出力列から画像ベースに分離
@@ -909,10 +1009,506 @@ class ProbingEvaluator:
             pred_encs_open = pred_output_open.obs_component
         else: #x
             pred_encs_open = pred_output_open.predictions
-        encoder_encs_open = enc_output.obs_component 
 
+
+        #endeffector
+        #closed-forward出力列 --> prober
+        pred_locs_clsfwd_clsprb = torch.stack([prober(x) for x in pred_encs], dim=1)
+        pred_locs_clsfwd_clsprb = normalizer.unnormalize_location(pred_locs_clsfwd_clsprb).cpu()
+        
+        #open-forward出力列 --> prober
+        pred_locs_opnfwd_clsprb = torch.stack([prober(x) for x in pred_encs_open], dim=1)
+        pred_locs_opnfwd_clsprb = normalizer.unnormalize_location(pred_locs_opnfwd_clsprb).cpu()
+        
+        #closed-forward出力列 --> prober_open
+        pred_locs_clsfwd_opnprb = torch.stack([prober_open(x) for x in pred_encs], dim=1)
+        pred_locs_clsfwd_opnprb = normalizer.unnormalize_location(pred_locs_clsfwd_opnprb).cpu()
+        
+        #open-forward出力列 --> prober_open
+        pred_locs_opnfwd_opnprb = torch.stack([prober_open(x) for x in pred_encs_open], dim=1)
+        pred_locs_opnfwd_opnprb = normalizer.unnormalize_location(pred_locs_opnfwd_opnprb).cpu()
+        
+        #encoder出力列
+        if enc_prober is not None:
+            pred_enc_locs = torch.stack([enc_prober(x) for x in encoder_encs], dim=1)
+            pred_enc_locs = normalizer.unnormalize_location(pred_enc_locs).cpu()
+
+
+        #bluebox_locs
+        #closed-forward出力列 --> prober
+        pred_bluebox_locs_clsfwd_clsprb = torch.stack([prober_bluebox_locs(x) for x in pred_encs], dim=1)
+        pred_bluebox_locs_clsfwd_clsprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_clsfwd_clsprb).cpu()
+        
+        #open-forward出力列 --> prober
+        pred_bluebox_locs_opnfwd_clsprb = torch.stack([prober_bluebox_locs(x) for x in pred_encs_open], dim=1)
+        pred_bluebox_locs_opnfwd_clsprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_opnfwd_clsprb).cpu()
+        
+        #closed-forward出力列 --> prober_open
+        pred_bluebox_locs_clsfwd_opnprb = torch.stack([prober_bluebox_locs_open(x) for x in pred_encs], dim=1)
+        pred_bluebox_locs_clsfwd_opnprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_clsfwd_opnprb).cpu()
+        
+        #open-forward出力列 --> prober_open
+        pred_bluebox_locs_opnfwd_opnprb = torch.stack([prober_bluebox_locs_open(x) for x in pred_encs_open], dim=1)
+        pred_bluebox_locs_opnfwd_opnprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_opnfwd_opnprb).cpu()
+        
+        #encoder出力列
+        pred_enc_bluebox_locs = torch.stack([enc_prober_bluebox(x) for x in encoder_encs], dim=1)
+        pred_enc_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_enc_bluebox_locs).cpu()
+
+        # pred_locs is of shape (batch_size, time, 1, 2)
+        if idxs is None: ##
+            idxs = list(range(min(pred_locs_clsfwd_clsprb.shape[0], 64)))
+
+
+        gt_locations = normalizer.unnormalize_location(batch.locations).cpu()
+        # pred_locs = normalizer.unnormalize_location(pred_locs).cpu()
+        # if prober_open is not None:
+        #     pred_open_locs = normalizer.unnormalize_location(pred_open_locs).cpu()
+        
+        gt_bluebox_locations = normalizer.unnormalize_bluebox_locs(batch.bluebox_locs).cpu()
+        # pred_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs).cpu()
+        # if prober_bluebox_locs_open is not None:
+        #     pred_bluebox_locs_open = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_open).cpu()
+        # if enc_prober_bluebox is not None:
+        #     pred_enc_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_enc_bluebox_locs).cpu()
+
+
+        for i in tqdm(idxs, desc=f"Plotting {name_prefix}"):
+            fig, axes = plt.subplots(2, 4, figsize=(18, 12), dpi=200)
+
+            #画像表示
+            ax_img = axes[0][0]
+            img = normalizer.unnormalize_state(batch.states)
+            init_img = img[i, 0].cpu().numpy().transpose(1, 2, 0)
+            init_img = init_img.clip(0, 255).astype(np.uint8)
+            
+            ax_img.imshow(init_img)
+            ax_img.set_title("init obs")
+            ax_img.axis("off")
+
+
+            #予測軌跡表示, ee, closed-forward
+            ###########################################################################################
+            ax_ee_forward = axes[0][1]
+            #gt
+            ax_ee_forward.plot(
+                gt_locations[i, :, 0].cpu(),
+                gt_locations[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#3777FF",
+                alpha=0.8,
+                label="endeffector-ground-truth"
+            )
+            ax_ee_forward.text(
+                gt_locations[i, 0, 0].cpu().item(),
+                gt_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            #ee, closed_forward, 
+            ax_ee_forward.plot(
+                pred_locs_clsfwd_clsprb[i, :, 0].cpu(),
+                pred_locs_clsfwd_clsprb[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#D62828",
+                alpha=0.8,
+                label="endeffector_closed_pred"
+            )
+            ax_ee_forward.text(
+                pred_locs_clsfwd_clsprb[i, 0, 0].cpu().item(),
+                pred_locs_clsfwd_clsprb[i, 0, 1].cpu().item(),
+                "S",
+                color="#D62828",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            ax_ee_forward.set_aspect("equal", adjustable="box")
+            ax_ee_forward.set_xlim(0.315, 0.715)
+            ax_ee_forward.set_ylim(-0.2, 0.2)
+            ax_ee_forward.set_xlabel("X (meters)")
+            ax_ee_forward.set_ylabel("Y (meters)")
+            ax_ee_forward.legend()
+            ax_ee_forward.set_title("dynamics model vs. groundtruth")
+            ###########################################################################################
+
+
+            #予測軌跡表示, ee, open-forward
+            ###########################################################################################
+            ax_ee_forward = axes[0][2]
+            #gt
+            ax_ee_forward.plot(
+                gt_locations[i, :, 0].cpu(),
+                gt_locations[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#3777FF",
+                alpha=0.8,
+                label="endeffector-ground-truth"
+            )
+            ax_ee_forward.text(
+                gt_locations[i, 0, 0].cpu().item(),
+                gt_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            #ee, open_forward, 
+            ax_ee_forward.plot(
+                pred_locs_opnfwd_opnprb[i, :, 0].cpu(),
+                pred_locs_opnfwd_opnprb[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#ff8c00",
+                alpha=0.8,
+                label="endeffector_open_pred"
+            )
+            ax_ee_forward.text(
+                pred_locs_opnfwd_opnprb[i, 0, 0].cpu().item(),
+                pred_locs_opnfwd_opnprb[i, 0, 1].cpu().item(),
+                "S",
+                color="#ff8c00",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            ax_ee_forward.set_aspect("equal", adjustable="box")
+            ax_ee_forward.set_xlim(0.315, 0.715)
+            ax_ee_forward.set_ylim(-0.2, 0.2)
+            ax_ee_forward.set_xlabel("X (meters)")
+            ax_ee_forward.set_ylabel("Y (meters)")
+            ax_ee_forward.legend()
+            ax_ee_forward.set_title("dynamics model vs. groundtruth")
+            ###########################################################################################
+
+
+            #予測軌跡表示, ee, encoder
+            ###########################################################################################
+            ax_ee_enc = axes[0][3]
+            
+            #gt
+            ax_ee_enc.plot(
+                gt_locations[i, :, 0].cpu(),
+                gt_locations[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#3777FF",
+                alpha=0.8,
+                label="endeffector-ground-truth"
+            )
+            ax_ee_enc.text(
+                gt_locations[i, 0, 0].cpu().item(),
+                gt_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            
+            #ee, encoder
+            ax_ee_enc.plot(
+                pred_enc_locs[i, :, 0].cpu(),
+                pred_enc_locs[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#6A5ACD",
+                alpha=0.8,
+                label="endeffector_encoder"
+            )
+            ax_ee_enc.text(
+                pred_enc_locs[i, 0, 0].cpu().item(),
+                pred_enc_locs[i, 0, 1].cpu().item(),
+                "S",
+                color="#6A5ACD",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            ax_ee_enc.set_aspect("equal", adjustable="box")
+            ax_ee_enc.set_xlim(0.315, 0.715)
+            ax_ee_enc.set_ylim(-0.2, 0.2)
+            ax_ee_enc.set_xlabel("X (meters)")
+            ax_ee_enc.set_ylabel("Y (meters)")
+            ax_ee_enc.legend()
+            ax_ee_enc.set_title("encoder vs. groundtruth")
+            ###########################################################################################
+
+
+
+            #予測軌跡表示, bluebox, closed-forward
+            ###########################################################################################
+            ax_bluebox_forward = axes[1][1]
+            
+            #box, gt
+            ax_bluebox_forward.plot(
+                gt_bluebox_locations[i, :, 0].cpu(),
+                gt_bluebox_locations[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#3777FF",
+                alpha=0.8,
+                label="bluebox-ground-truth"
+            )
+            ax_bluebox_forward.text(
+                gt_bluebox_locations[i, 0, 0].cpu().item(),
+                gt_bluebox_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            #box, closed_forward, closed_prober
+            ax_bluebox_forward.plot(
+                pred_bluebox_locs_clsfwd_clsprb[i, :, 0].cpu(),
+                pred_bluebox_locs_clsfwd_clsprb[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#D62828",
+                alpha=0.8,
+                label="bluebox-closed-pred"
+            )
+            ax_bluebox_forward.text(
+                pred_bluebox_locs_clsfwd_clsprb[i, 0, 0].cpu().item(),
+                pred_bluebox_locs_clsfwd_clsprb[i, 0, 1].cpu().item(),
+                "S",
+                color="#D62828",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
+            ax_bluebox_forward.set_title("Bluebox Trajectory")
+            ax_bluebox_forward.set_xlim(0.315, 0.715)
+            ax_bluebox_forward.set_ylim(-0.2, 0.2)
+            ax_bluebox_forward.set_aspect("equal")
+            ax_bluebox_forward.legend()
+            ###########################################################################################
+
+
+            #予測軌跡表示, bluebox, open-forward
+            ###########################################################################################
+            ax_bluebox_forward = axes[1][2]
+            
+            #box, gt
+            ax_bluebox_forward.plot(
+                gt_bluebox_locations[i, :, 0].cpu(),
+                gt_bluebox_locations[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#3777FF",
+                alpha=0.8,
+                label="bluebox-ground-truth"
+            )
+            ax_bluebox_forward.text(
+                gt_bluebox_locations[i, 0, 0].cpu().item(),
+                gt_bluebox_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            #box, closed_forward, closed_prober
+            ax_bluebox_forward.plot(
+                pred_bluebox_locs_opnfwd_opnprb[i, :, 0].cpu(),
+                pred_bluebox_locs_opnfwd_opnprb[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#ff8c00",
+                alpha=0.8,
+                label="bluebox-open-pred"
+            )
+            ax_bluebox_forward.text(
+                pred_bluebox_locs_opnfwd_opnprb[i, 0, 0].cpu().item(),
+                pred_bluebox_locs_opnfwd_opnprb[i, 0, 1].cpu().item(),
+                "S",
+                color="#ff8c00",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
+            ax_bluebox_forward.set_title("Bluebox Trajectory")
+            ax_bluebox_forward.set_xlim(0.315, 0.715)
+            ax_bluebox_forward.set_ylim(-0.2, 0.2)
+            ax_bluebox_forward.set_aspect("equal")
+            ax_bluebox_forward.legend()
+            ###########################################################################################
+
+
+            #予測軌跡表示, bluebox, encoder
+            ###########################################################################################
+            ax_bluebox_enc = axes[1][3]
+            
+            #box, gt
+            ax_bluebox_enc.plot(
+                gt_bluebox_locations[i, :, 0].cpu(),
+                gt_bluebox_locations[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#3777FF",
+                alpha=0.8,
+                label="bluebox-ground-truth"
+            )
+            ax_bluebox_enc.text(
+                gt_bluebox_locations[i, 0, 0].cpu().item(),
+                gt_bluebox_locations[i, 0, 1].cpu().item(),
+                "S",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+
+            #box, encoder
+            ax_bluebox_enc.plot(
+                pred_enc_bluebox_locs[i, :, 0].cpu(),
+                pred_enc_bluebox_locs[i, :, 1].cpu(),
+                marker="o",
+                markersize=2.5,
+                linewidth=1,
+                c="#6A5ACD",
+                alpha=0.8,
+                label="bluebox-encoder-pred"
+            )
+            ax_bluebox_enc.text(
+                pred_enc_bluebox_locs[i, 0, 0].cpu().item(),
+                pred_enc_bluebox_locs[i, 0, 1].cpu().item(),
+                "S",
+                color="#6A5ACD",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
+            ax_bluebox_enc.set_title("Bluebox Trajectory")
+            ax_bluebox_enc.set_xlim(0.315, 0.715)
+            ax_bluebox_enc.set_ylim(-0.2, 0.2)
+            ax_bluebox_enc.set_aspect("equal")
+            ax_bluebox_enc.legend()
+            ###########################################################################################
+
+
+            feature_maps = pred_encs[:, i].detach().cpu()
+            ft_maps_gif_path, fig_width, fig_height = self.animate_feature_map_sequence(
+                feature_maps, 
+                name_prefix=name_prefix,
+                maps_idx=i
+                )
+            
+
+            obs_gif_path = self.animate_obs_sequence(
+                img[i], 
+                fig_width=fig_width, 
+                fig_height=fig_height,
+                idx = i
+                )
+                
+            ft_maps_and_obs_gif_path = self.concat_gifs(ft_maps_gif_path, obs_gif_path, name_prefix=name_prefix, idx=i)
+            
+            
+
+
+            if not notebook:
+                Logger.run().log_figure(fig, f"{name_prefix}-prober_predictions_{i}")
+                # Logger.run().log_video(ft_maps_gif_path, f"{name_prefix}-featuremap_{i}")
+                Logger.run().log_video(ft_maps_and_obs_gif_path, f"{name_prefix}-featuremap_and_obs_{i}")
+
+                plt.close(fig)
+            else:
+                plt.show()
+        
+
+
+
+    #使わない
+    @torch.no_grad()
+    def __plot_prober_predictions(
+        self,
+        batch,
+        jepa: JEPA,
+        prober: torch.nn.Module,
+        prober_open: torch.nn.Module,
+        prober_bluebox_locs: torch.nn.Module = None,
+        prober_bluebox_locs_open: torch.nn.Module = None,
+        enc_prober: torch.nn.Module = None,
+        enc_prober_bluebox: torch.nn.Module = None,
+        normalizer: Normalizer = None,
+        name_prefix: str = "",
+        idxs: Optional[List[int]] = None,
+        notebook: bool = False,
+        pixel_mapper=None,
+        
+    ):
+
+        # データバッチ
+        states = batch.states.to(self.device).transpose(0, 1) #torch.Size([64, 50, 3, 64, 64])
+        actions = batch.actions.to(self.device).transpose(0, 1)
+
+        optional_fields = get_optional_fields(batch, device=states.device)
+
+        # closed-forward 出力列
+        pred_output = jepa.forward_posterior(
+            states, actions, **optional_fields
+        )
+        pred_output = pred_output.pred_output
+
+        # open-forward 出力列
+        pred_output_open = jepa.forward_open(
+            states, actions, **optional_fields
+        )
+        pred_output_open = pred_output_open.pred_output
+        
+        
+        #encoderの出力列
+        enc_output = jepa.forward_posterior(
+                states, actions, encode_only=True, **optional_fields
+            )
+        enc_output = enc_output.backbone_output
         #encoder 出力列から画像ベースに分離
         encoder_encs = enc_output.obs_component
+        
+
+        #closed-forward 出力列から画像ベースに分離
+        if pred_output.obs_component is not None: ##
+            pred_encs = pred_output.obs_component
+        else: #x
+            pred_encs = pred_output.predictions
+
+        #open-forward 出力列から画像ベースに分離
+        if pred_output_open.obs_component is not None: ##
+            pred_encs_open = pred_output_open.obs_component
+        else: #x
+            pred_encs_open = pred_output_open.predictions
+
 
         #endeffector
         #closed-forward出力列 --> prober
@@ -1413,100 +2009,3 @@ class ProbingEvaluator:
                 plt.close(fig)
             else:
                 plt.show()
-        
-        
-            
-    
-    def animate_feature_map_sequence(
-        self, 
-        feature_maps, 
-        name_prefix=None,
-        maps_idx=None,
-        save_path=None,
-        ):
-        
-        T, C, H, W = feature_maps.shape 
-        n_rows = 4 
-        n_cols = (C + n_rows - 1) // n_rows
-        
-        fig_width = n_cols * 2
-        fig_height = n_rows * 2
-        fig, axs = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height))
-        axs = axs.flatten()
-        
-        ims = []
-        for t in range(T):
-            frame = []
-            for c in range(C):
-                im = axs[c].imshow(feature_maps[t, c], cmap='viridis', animated = True)
-                axs[c].axis('off')
-                frame.append(im)
-                
-            text = fig.text(0.5, 0.02, f"timestep = {t} / {T - 1}", fontsize=14, color='black', ha='center', va='bottom', animated=True)
-            frame.append(text)
-            
-            ims.append(frame)
-        
-        ani = animation.ArtistAnimation(fig, ims, interval=200, blit=False)
-
-        if save_path is None:
-            save_dir = os.path.join(Logger.run().output_path, 'feature_maps')
-            os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, f"{name_prefix}-featuremap_{maps_idx}.gif")
-            
-        ani.save(save_path, writer='pillow')
-        plt.close(fig)
-        
-        return save_path, fig_width, fig_height
-
-
-
-    def animate_obs_sequence(self, obs, fig_width, fig_height, save_path=None, name_prefix="obs", idx=0):
-        """
-        obs: Tensor (T, C, H, W) 
-        """
-        T, C, H, W = obs.shape
-
-        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-        ims = []
-
-        for t in range(T):
-            frame = obs[t].cpu().numpy().transpose(1, 2, 0)  # (H, W, C)
-            frame = frame.clip(0, 255).astype(np.uint8)
-
-            im = ax.imshow(frame, animated=True)
-            text = ax.text(0.5, -0.05, f"timestep = {t} / {T - 1}", fontsize=14, color='black', ha='center', transform=ax.transAxes)
-            ax.axis("off")
-            ims.append([im, text])
-
-        ani = animation.ArtistAnimation(fig, ims, interval=200, blit=False)
-
-        if save_path is None:
-            save_dir = os.path.join(Logger.run().output_path, 'observation')
-            os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, f"{name_prefix}-obs_{idx}.gif")
-
-        ani.save(save_path, writer='pillow')
-        plt.close(fig)
-
-        return save_path
-
-    def concat_gifs(self, gif_path1, gif_path2, output_path = None, name_prefix: str = "", idx = 0):
-        gif1 = Image.open(gif_path1)
-        gif2 = Image.open(gif_path2)
-
-        frames = []
-        for frame1, frame2 in zip(ImageSequence.Iterator(gif1), ImageSequence.Iterator(gif2)):
-            new_frame = Image.new("RGB", (frame1.width + frame2.width, frame1.height))
-            new_frame.paste(frame1, (0, 0))
-            new_frame.paste(frame2, (frame1.width, 0))
-            frames.append(new_frame)
-            
-        if output_path is None:
-            save_dir = os.path.join(Logger.run().output_path, 'feature_map_and_obs')
-            os.makedirs(save_dir, exist_ok=True)
-            output_path = os.path.join(save_dir, f"{name_prefix}-feature_map_and_obs_{idx}.gif")
-
-        frames[0].save(output_path, save_all=True, append_images=frames[1:], loop=0, duration=200)
-
-        return output_path

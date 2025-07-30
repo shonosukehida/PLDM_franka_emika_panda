@@ -63,8 +63,18 @@ class Normalizer:
         bluebox_locs_min: torch.Tensor,
         bluebox_locs_max: torch.Tensor,
         min_max_normalize: bool = True,
-        min_val: float = 0.0,
-        max_val: float = 1.0,
+        min_states_val: float = 0.0,
+        max_states_val: float = 1.0,
+        min_actions_val: float = 0.0,
+        max_actions_val: float = 1.0,
+        min_locations_val: float = 0.0,
+        max_locations_val: float = 1.0,
+        min_propio_pos_val: float = 0.0,
+        max_propio_pos_val: float = 1.0,
+        min_propio_vel_val: float = 0.0,
+        max_propio_vel_val: float = 1.0,
+        min_bluebox_locs_val: float = 0.0,
+        max_bluebox_locs_val: float = 1.0,
     ):
         self.state_mean = state_mean
         self.state_std = state_std
@@ -96,8 +106,25 @@ class Normalizer:
         
         self.min_max_normalize = min_max_normalize
         
-        self.min_val = min_val
-        self.max_val = max_val
+        
+        
+        self.min_states_val = min_states_val
+        self.max_states_val = max_states_val
+        
+        self.min_actions_val = min_actions_val
+        self.max_actions_val = max_actions_val
+        
+        self.min_locations_val = min_locations_val 
+        self.max_locations_val = max_locations_val
+        
+        self.min_propio_pos_val = min_propio_pos_val
+        self.max_propio_pos_val = max_propio_pos_val 
+        
+        self.min_propio_vel_val = min_propio_vel_val 
+        self.max_propio_vel_val = max_propio_vel_val 
+        
+        self.min_bluebox_locs_val = min_bluebox_locs_val
+        self.max_bluebox_locs_val = max_bluebox_locs_val
 
     @staticmethod
     def _has_attr(sample, attr):
@@ -115,8 +142,18 @@ class Normalizer:
         n_samples: int = 100,
         min_max_normalize: bool = False,
         normalizer_hardset: bool = False,
-        min_val: float = 0.0,
-        max_val: float = 1.0,
+        min_states_val: float = 0.0,
+        max_states_val: float = 1.0,
+        min_actions_val: float = 0.0,
+        max_actions_val: float = 1.0,
+        min_locations_val: float = 0.0,
+        max_locations_val: float = 1.0,
+        min_propio_pos_val: float = 0.0,
+        max_propio_pos_val: float = 1.0,
+        min_propio_vel_val: float = 0.0,
+        max_propio_vel_val: float = 1.0,
+        min_bluebox_locs_val: float = 0.0,
+        max_bluebox_locs_val: float = 1.0,
     ):
         all_actions = []
         all_locations = []
@@ -342,8 +379,18 @@ class Normalizer:
             total_bluebox_locs_min,
             total_bluebox_locs_max,
             min_max_normalize=min_max_normalize,
-            min_val=min_val,
-            max_val=max_val,
+            min_states_val=min_states_val,
+            max_states_val=max_states_val,
+            min_actions_val=min_actions_val,
+            max_actions_val=max_actions_val,
+            min_locations_val=min_locations_val,
+            max_locations_val=max_locations_val,
+            min_propio_pos_val=min_propio_pos_val,
+            max_propio_pos_val=max_propio_pos_val,
+            min_propio_vel_val=min_propio_vel_val,
+            max_propio_vel_val=max_propio_vel_val,
+            min_bluebox_locs_val=min_bluebox_locs_val,
+            max_bluebox_locs_val=max_bluebox_locs_val,
         )
 
     @classmethod
@@ -377,8 +424,8 @@ class Normalizer:
         denom = (self.state_max - self.state_min).to(state.device)
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
 
-        state_norm_flat = (state_flat - self.state_min.to(state.device)) / denom * (self.max_val - self.min_val) + self.min_val
-        state_norm_flat = state_norm_flat.clamp(self.min_val, self.max_val)
+        state_norm_flat = (state_flat - self.state_min.to(state.device)) / denom * (self.max_states_val - self.min_states_val) + self.min_states_val
+        state_norm_flat = state_norm_flat.clamp(self.min_states_val, self.max_states_val)
 
         state_norm = state_norm_flat.view(orig_shape)
         return state_norm
@@ -394,7 +441,7 @@ class Normalizer:
         denom = (self.state_max - self.state_min).to(state_norm.device)
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
 
-        state_unnorm_flat = (state_norm_flat - self.min_val) / (self.max_val - self.min_val) * denom + self.state_min.to(state_norm.device)
+        state_unnorm_flat = (state_norm_flat - self.min_states_val) / (self.max_states_val - self.min_states_val) * denom + self.state_min.to(state_norm.device)
         state_unnorm = state_unnorm_flat.view(orig_shape)
 
         return state_unnorm
@@ -405,15 +452,15 @@ class Normalizer:
         denom = (self.action_max - self.action_min).to(action.device)
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
         
-        action_norm = ((action - self.action_min.to(action.device)) / denom) * (self.max_val - self.min_val) + self.min_val
-        action_norm = action_norm.clamp(self.min_val, self.max_val)
+        action_norm = ((action - self.action_min.to(action.device)) / denom) * (self.max_actions_val - self.min_actions_val) + self.min_actions_val
+        action_norm = action_norm.clamp(self.min_actions_val, self.max_actions_val)
         return action_norm
     
     def unnormalize_action(self, action_norm: torch.Tensor) -> torch.Tensor:
         denom = (self.action_max - self.action_min).to(action_norm.device)
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
         
-        action_unnorm = (action_norm - self.min_val) / (self.max_val - self.min_val) * denom + self.action_min.to(action_norm.device)
+        action_unnorm = (action_norm - self.min_actions_val) / (self.max_actions_val - self.min_actions_val) * denom + self.action_min.to(action_norm.device)
         return action_unnorm
 
 
@@ -421,56 +468,56 @@ class Normalizer:
     def normalize_location(self, location: torch.Tensor) -> torch.Tensor:
         denom = (self.location_max - self.location_min).to(location.device)
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
-        loc_norm = ((location - self.location_min.to(location.device)) / denom) * (self.max_val - self.min_val) + self.min_val
-        loc_norm = loc_norm.clamp(self.min_val, self.max_val)
+        loc_norm = ((location - self.location_min.to(location.device)) / denom) * (self.max_locations_val - self.min_locations_val) + self.min_locations_val
+        loc_norm = loc_norm.clamp(self.min_locations_val, self.max_locations_val)
         return loc_norm
 
     def unnormalize_location(self, location_norm: torch.Tensor) -> torch.Tensor:
         denom = (self.location_max - self.location_min).to(location_norm.device)
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
         
-        loc_unnorm = (location_norm - self.min_val) / (self.max_val - self.min_val) * denom + self.location_min.to(location_norm.device)
+        loc_unnorm = (location_norm - self.min_locations_val) / (self.max_locations_val - self.min_locations_val) * denom + self.location_min.to(location_norm.device)
         return loc_unnorm
 
     def normalize_propio_pos(self, propio_pos: torch.Tensor) -> torch.Tensor:
         denom = (self.propio_pos_max - self.propio_pos_min).to(propio_pos.device)
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
-        propio_pos_norm = (propio_pos - self.propio_pos_min.to(propio_pos.device)) / denom * (self.max_val - self.min_val) + self.min_val
-        propio_pos_norm = propio_pos_norm.clamp(self.min_val, self.max_val)
+        propio_pos_norm = (propio_pos - self.propio_pos_min.to(propio_pos.device)) / denom * (self.max_propio_pos_val - self.min_propio_pos_val) + self.min_propio_pos_val
+        propio_pos_norm = propio_pos_norm.clamp(self.min_propio_pos_val, self.max_propio_pos_val)
         return propio_pos_norm
 
     def unnormalize_propio_pos(self, propio_pos_norm: torch.Tensor) -> torch.Tensor:
         denom = (self.propio_pos_max - self.propio_pos_min).to(propio_pos_norm.device)
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
-        propio_pos_unnorm = (propio_pos_norm - self.min_val) / (self.max_val - self.min_val) * denom + self.propio_pos_min.to(propio_pos_norm.device)
+        propio_pos_unnorm = (propio_pos_norm - self.min_propio_pos_val) / (self.max_propio_pos_val - self.min_propio_pos_val) * denom + self.propio_pos_min.to(propio_pos_norm.device)
         return propio_pos_unnorm
 
     def normalize_propio_vel(self, propio_vel: torch.Tensor) -> torch.Tensor:
         denom = (self.propio_vel_max - self.propio_vel_min).to(propio_vel.device)
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
-        propio_vel_norm = (propio_vel - self.propio_vel_min.to(propio_vel.device)) / denom * (self.max_val - self.min_val) + self.min_val
-        propio_vel_norm = propio_vel_norm.clamp(self.min_val, self.max_val)
+        propio_vel_norm = (propio_vel - self.propio_vel_min.to(propio_vel.device)) / denom * (self.max_propio_vel_val - self.min_propio_vel_val) + self.min_propio_vel_val
+        propio_vel_norm = propio_vel_norm.clamp(self.min_propio_vel_val, self.max_propio_vel_val)
         return propio_vel_norm
 
     def unnormalize_propio_vel(self, propio_vel_norm: torch.Tensor) -> torch.Tensor:
         denom = (self.propio_vel_max - self.propio_vel_min).to(propio_vel_norm.device)
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
-        propio_vel_unnorm = (propio_vel_norm - self.min_val) / (self.max_val - self.min_val) * denom + self.propio_vel_min.to(propio_vel_norm.device)
+        propio_vel_unnorm = (propio_vel_norm - self.min_propio_vel_val) / (self.max_propio_vel_val - self.min_propio_vel_val) * denom + self.propio_vel_min.to(propio_vel_norm.device)
         return propio_vel_unnorm
 
     def normalize_bluebox_locs(self, bluebox_locs: torch.Tensor) -> torch.Tensor:
         denom = (self.bluebox_locs_max - self.bluebox_locs_min).to(bluebox_locs.device)
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
         
-        bluebox_locs_norm = (bluebox_locs - self.bluebox_locs_min.to(bluebox_locs.device)) / denom * (self.max_val - self.min_val) + self.min_val
-        bluebox_locs_norm = bluebox_locs_norm.clamp(self.min_val, self.max_val)
+        bluebox_locs_norm = (bluebox_locs - self.bluebox_locs_min.to(bluebox_locs.device)) / denom * (self.max_bluebox_locs_val - self.min_bluebox_locs_val) + self.min_bluebox_locs_val
+        bluebox_locs_norm = bluebox_locs_norm.clamp(self.min_bluebox_locs_val, self.max_bluebox_locs_val)
         return bluebox_locs_norm
 
     def unnormalize_bluebox_locs(self, bluebox_locs_norm: torch.Tensor) -> torch.Tensor:
         denom = (self.bluebox_locs_max - self.bluebox_locs_min).to(bluebox_locs_norm.device)
         denom = torch.where(denom < 1e-6, torch.ones_like(denom), denom)
         
-        bluebox_locs_unnorm = (bluebox_locs_norm - self.min_val) / (self.max_val - self.min_val) * denom + self.bluebox_locs_min.to(bluebox_locs_norm.device)
+        bluebox_locs_unnorm = (bluebox_locs_norm - self.min_bluebox_locs_val) / (self.max_bluebox_locs_val - self.min_bluebox_locs_val) * denom + self.bluebox_locs_min.to(bluebox_locs_norm.device)
         return bluebox_locs_unnorm
 
 

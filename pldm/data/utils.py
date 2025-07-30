@@ -131,8 +131,18 @@ def make_dataloader(ds, loader_config, normalizer=None, suffix="", train=True):
                 n_samples=1 if loader_config.quick_debug else 100,
                 min_max_normalize=loader_config.min_max_normalize,
                 normalizer_hardset=loader_config.normalizer_hardset,
-                min_val=loader_config.min_val,
-                max_val=loader_config.max_val,
+                min_states_val=loader_config.min_states_val,
+                max_states_val=loader_config.max_states_val,
+                min_actions_val=loader_config.min_actions_val,
+                max_actions_val=loader_config.max_actions_val,
+                min_locations_val=loader_config.min_locations_val,
+                max_locations_val=loader_config.max_locations_val,
+                min_propio_pos_val=loader_config.min_propio_pos_val,
+                max_propio_pos_val=loader_config.max_propio_pos_val,
+                min_propio_vel_val=loader_config.min_propio_vel_val,
+                max_propio_vel_val=loader_config.max_propio_vel_val,
+                min_bluebox_locs_val=loader_config.min_bluebox_locs_val,
+                max_bluebox_locs_val=loader_config.max_bluebox_locs_val,
             )
     else:
         normalizer = Normalizer.build_id_normalizer()
