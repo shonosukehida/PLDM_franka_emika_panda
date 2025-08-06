@@ -77,6 +77,10 @@ class ProbingConfig(ConfigBase):
     eval_contrastive: bool = False
     
     use_closed_loss_func: bool = False
+    
+    vis_dynamics_closed_featuremap: bool = True
+    vis_dynamics_open_featuremap: bool = True
+    vis_encoder_featruemap: bool = True
 
 
 class ProbeResult(NamedTuple):
@@ -467,6 +471,9 @@ class ProbingEvaluator:
         visualize=True,
         probers_open=None,
         enc_probers=None,
+        vis_dynamics_closed_featuremap: bool = True,
+        vis_dynamics_open_featuremap: bool = True,
+        vis_encoder_featruemap: bool = True,
     ):
         """
         Evaluates on all the different validation datasets
@@ -484,6 +491,9 @@ class ProbingEvaluator:
                 visualize=visualize,
                 probers_open=probers_open,
                 enc_probers=enc_probers,
+                vis_dynamics_closed_featuremap = vis_dynamics_closed_featuremap,
+                vis_dynamics_open_featuremap = vis_dynamics_open_featuremap,
+                vis_encoder_featruemap = vis_encoder_featruemap, 
             )
 
     @torch.no_grad()
@@ -496,6 +506,9 @@ class ProbingEvaluator:
         visualize=True,
         probers_open=None,
         enc_probers=None,
+        vis_dynamics_closed_featuremap: bool = True,
+        vis_dynamics_open_featuremap: bool = True,
+        vis_encoder_featruemap: bool = True,
     ):
         level = "l1"
 
@@ -630,6 +643,9 @@ class ProbingEvaluator:
                 name_prefix=plot_prefix,
                 idxs=None if not quick_debug else list(range(10)),
                 pixel_mapper=pixel_mapper,
+                vis_dynamics_closed_featuremap = vis_dynamics_closed_featuremap,
+                vis_dynamics_open_featuremap = vis_dynamics_open_featuremap,
+                vis_encoder_featruemap = vis_encoder_featruemap,
             )
 
         return
@@ -859,6 +875,7 @@ class ProbingEvaluator:
     def animate_feature_map_sequence(
         self, 
         feature_maps, 
+        filename = "111",
         name_prefix=None,
         maps_idx=None,
         save_path=None,
@@ -891,7 +908,8 @@ class ProbingEvaluator:
         if save_path is None:
             save_dir = os.path.join(Logger.run().output_path, 'feature_maps')
             os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, f"{name_prefix}-featuremap_{maps_idx}.gif")
+            # save_path = os.path.join(save_dir, f"{name_prefix}-featuremap_{maps_idx}.gif")
+            save_path = os.path.join(save_dir, f"{filename}.gif")
             
         ani.save(save_path, writer='pillow')
         plt.close(fig)
@@ -930,7 +948,7 @@ class ProbingEvaluator:
 
         return save_path
 
-    def concat_gifs(self, gif_path1, gif_path2, output_path = None, name_prefix: str = "", idx = 0):
+    def concat_gifs(self, gif_path1, gif_path2, save_dir = None, save_file = None, output_path = None, name_prefix: str = "", idx = 0):
         gif1 = Image.open(gif_path1)
         gif2 = Image.open(gif_path2)
 
@@ -942,9 +960,10 @@ class ProbingEvaluator:
             frames.append(new_frame)
             
         if output_path is None:
-            save_dir = os.path.join(Logger.run().output_path, 'feature_map_and_obs')
+            save_dir = os.path.join(Logger.run().output_path, save_dir)
             os.makedirs(save_dir, exist_ok=True)
-            output_path = os.path.join(save_dir, f"{name_prefix}-feature_map_and_obs_{idx}.gif")
+            # output_path = os.path.join(save_dir, f"{name_prefix}-feature_map_and_obs_{idx}.gif")
+            output_path = os.path.join(save_dir, f"{save_file}.gif")
 
         frames[0].save(output_path, save_all=True, append_images=frames[1:], loop=0, duration=200)
 
@@ -966,7 +985,10 @@ class ProbingEvaluator:
         name_prefix: str = "",
         idxs: Optional[List[int]] = None,
         notebook: bool = False,
-        pixel_mapper=None,
+        pixel_mapper = None,
+        vis_dynamics_closed_featuremap: bool = True,
+        vis_dynamics_open_featuremap: bool = True,
+        vis_encoder_featruemap: bool = True,
         
     ):
 
@@ -1230,7 +1252,7 @@ class ProbingEvaluator:
                 marker="o",
                 markersize=2.5,
                 linewidth=1,
-                c="#6A5ACD",
+                c="#008000",
                 alpha=0.8,
                 label="endeffector_encoder"
             )
@@ -1238,7 +1260,7 @@ class ProbingEvaluator:
                 pred_enc_locs[i, 0, 0].cpu().item(),
                 pred_enc_locs[i, 0, 1].cpu().item(),
                 "S",
-                color="#6A5ACD",
+                color="#008000",
                 fontsize=12,
                 ha="center",
                 va="center",
@@ -1395,7 +1417,7 @@ class ProbingEvaluator:
                 marker="o",
                 markersize=2.5,
                 linewidth=1,
-                c="#6A5ACD",
+                c="#008000",
                 alpha=0.8,
                 label="bluebox-encoder-pred"
             )
@@ -1403,7 +1425,7 @@ class ProbingEvaluator:
                 pred_enc_bluebox_locs[i, 0, 0].cpu().item(),
                 pred_enc_bluebox_locs[i, 0, 1].cpu().item(),
                 "S",
-                color="#6A5ACD",
+                color="#008000",
                 fontsize=12,
                 ha="center",
                 va="center",
@@ -1416,23 +1438,90 @@ class ProbingEvaluator:
             ax_bluebox_enc.legend()
             ###########################################################################################
 
-
-            feature_maps = pred_encs[:, i].detach().cpu()
-            ft_maps_gif_path, fig_width, fig_height = self.animate_feature_map_sequence(
-                feature_maps, 
-                name_prefix=name_prefix,
-                maps_idx=i
-                )
+            obs_gif_path = None
             
+            #ダイナミクスモデル出力(closed-forward)の特徴マップ
+            if vis_dynamics_closed_featuremap:
+                feature_maps = pred_encs[:, i].detach().cpu()
+                filename = f"{name_prefix}-dynamics_closed-featuremap_{i}"
+                ft_maps_gif_path, fig_width, fig_height = self.animate_feature_map_sequence(
+                    feature_maps, 
+                    filename=filename,
+                    name_prefix=name_prefix,
+                    maps_idx=i
+                    )
 
-            obs_gif_path = self.animate_obs_sequence(
-                img[i], 
-                fig_width=fig_width, 
-                fig_height=fig_height,
-                idx = i
-                )
+                obs_gif_path = self.animate_obs_sequence(
+                    img[i], 
+                    fig_width=fig_width, 
+                    fig_height=fig_height,
+                    idx = i
+                    )
+
+                ft_maps_and_obs_gif_path = self.concat_gifs(
+                    ft_maps_gif_path, 
+                    obs_gif_path, 
+                    save_dir="dynamics_closed_ftmap_obs", 
+                    save_file=f"{name_prefix}-dynamics_closed_{i}.gif",
+                    name_prefix=name_prefix, 
+                    idx=i,
+                    )
+            
+            #ダイナミクスモデル出力(open-forward)の特徴マップ
+            if vis_dynamics_open_featuremap:
+                feature_maps = pred_encs_open[:, i].detach().cpu()
+                filename = f"{name_prefix}-dynamics_open-featuremap_{i}"
+                ft_maps_gif_path, fig_width, fig_height = self.animate_feature_map_sequence(
+                    feature_maps, 
+                    filename=filename,
+                    name_prefix=name_prefix,
+                    maps_idx=i
+                    )
                 
-            ft_maps_and_obs_gif_path = self.concat_gifs(ft_maps_gif_path, obs_gif_path, name_prefix=name_prefix, idx=i)
+                if obs_gif_path is None:
+                    obs_gif_path = self.animate_obs_sequence(
+                        img[i], 
+                        fig_width=fig_width, 
+                        fig_height=fig_height,
+                        idx = i
+                        )
+                
+                ft_maps_and_obs_gif_path = self.concat_gifs(
+                    ft_maps_gif_path, 
+                    obs_gif_path, #実観測は作成ずみ
+                    save_dir="dynamics_open_ftmap_obs", 
+                    save_file=f"{name_prefix}-dynamics_open_{i}.gif",
+                    name_prefix=name_prefix, 
+                    idx=i,
+                    )
+                
+            #エンコーダ出力の特徴マップ
+            if vis_encoder_featruemap:
+                feature_maps = encoder_encs[:, i].detach().cpu() 
+                filename = f"{name_prefix}-encoder-featuremap_{i}"
+                ft_maps_gif_path, fig_width, fig_height = self.animate_feature_map_sequence(
+                    feature_maps, 
+                    filename=filename,
+                    name_prefix=name_prefix,
+                    maps_idx=i
+                    )
+                
+                if obs_gif_path is None:
+                    obs_gif_path = self.animate_obs_sequence(
+                        img[i], 
+                        fig_width=fig_width, 
+                        fig_height=fig_height,
+                        idx = i
+                        )
+                
+                ft_maps_and_obs_gif_path = self.concat_gifs(
+                    ft_maps_gif_path, 
+                    obs_gif_path, #実観測は作成ずみ
+                    save_dir="encoder_ftmap_obs", 
+                    save_file=f"{name_prefix}-encoder_{i}.gif",
+                    name_prefix=name_prefix, 
+                    idx=i,
+                    )
             
             
 
@@ -1658,7 +1747,7 @@ class ProbingEvaluator:
                 marker="o",
                 markersize=2.5,
                 linewidth=1,
-                c="#6A5ACD",
+                c="#008000",
                 alpha=0.8,
                 label="endeffector_encoder"
             )
@@ -1666,7 +1755,7 @@ class ProbingEvaluator:
                 pred_enc_locs[i, 0, 0].cpu().item(),
                 pred_enc_locs[i, 0, 1].cpu().item(),
                 "S",
-                color="#6A5ACD",
+                color="#008000",
                 fontsize=12,
                 ha="center",
                 va="center",
@@ -1757,7 +1846,7 @@ class ProbingEvaluator:
                 marker="o",
                 markersize=2.5,
                 linewidth=1,
-                c="#6A5ACD",
+                c="#008000",
                 alpha=0.8,
                 label="bluebox-encoder-pred"
             )
@@ -1765,7 +1854,7 @@ class ProbingEvaluator:
                 pred_enc_bluebox_locs[i, 0, 0].cpu().item(),
                 pred_enc_bluebox_locs[i, 0, 1].cpu().item(),
                 "S",
-                color="#6A5ACD",
+                color="#008000",
                 fontsize=12,
                 ha="center",
                 va="center",
@@ -1853,7 +1942,7 @@ class ProbingEvaluator:
                 marker="o",
                 markersize=2.5,
                 linewidth=1,
-                c="#6A5ACD",
+                c="#008000",
                 alpha=0.8,
                 label="endeffector-encoder-pred"
             )
@@ -1861,7 +1950,7 @@ class ProbingEvaluator:
                 pred_enc_locs[i, 0, 0].cpu().item(),
                 pred_enc_locs[i, 0, 1].cpu().item(),
                 "S",
-                color="#6A5ACD",
+                color="#008000",
                 fontsize=12,
                 ha="center",
                 va="center",
@@ -1952,7 +2041,7 @@ class ProbingEvaluator:
                 marker="o",
                 markersize=2.5,
                 linewidth=1,
-                c="#6A5ACD",
+                c="#008000",
                 alpha=0.8,
                 label="bluebox-encoder-pred"
             )
@@ -1960,7 +2049,7 @@ class ProbingEvaluator:
                 pred_enc_bluebox_locs[i, 0, 0].cpu().item(),
                 pred_enc_bluebox_locs[i, 0, 1].cpu().item(),
                 "S",
-                color="#6A5ACD",
+                color="#008000",
                 fontsize=12,
                 ha="center",
                 va="center",

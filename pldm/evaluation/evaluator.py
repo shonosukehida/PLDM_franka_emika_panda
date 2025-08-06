@@ -129,6 +129,9 @@ class Evaluator:
                     pixel_mapper=self.pixel_mapper,
                     probers_open=probers_open,
                     enc_probers=enc_probers,
+                    vis_dynamics_closed_featuremap = self.config.probing.vis_dynamics_closed_featuremap,
+                    vis_dynamics_open_featuremap = self.config.probing.vis_dynamics_open_featuremap,
+                    vis_encoder_featruemap = self.config.probing.vis_encoder_featruemap, 
                 )
         return probers, None
 

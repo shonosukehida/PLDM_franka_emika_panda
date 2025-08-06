@@ -464,6 +464,7 @@ class FrankaDatasetGenerator:
                 return new_pos, cur_yaw
 
         if not flag:
+            #! 何も向きを変えていないことになってしまっている
             # print('max_loop reached in sample_direc_xyz')
             if not self.is_within_bounds(new_pos, self.X_RANGE, self.Y_RANGE):
                 cur_yaw = cur_yaw + np.pi 
