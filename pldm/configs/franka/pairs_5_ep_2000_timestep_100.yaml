@@ -7,8 +7,8 @@ data:
   dataset_type: DatasetType.Franka
   min_max_normalize: true
   normalize: true
-  min_states_val: 0.0
-  max_states_val: 255.0
+  min_states_val: -1.0
+  max_states_val: 1.0
   min_actions_val: -1.0
   max_actions_val: 1.0
   min_locations_val: -1.0
@@ -76,7 +76,7 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20250730_154400/epoch=10_sample_step=5610000.ckpt #pldm/checkpoints/franka_20250718_170222/epoch=10_sample_step=5610000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20250725_162503/epoch=10_sample_step=5610000.ckpt #pldm/checkpoints/franka_20250718_170222/epoch=10_sample_step=5610000.ckpt
 load_l1_only: false
 
 use_closed_loss_func: &use_closed_loss_func false
@@ -122,10 +122,10 @@ eval_cfg:
   probing:
     exe_probing: true
     l1_depth: *n_steps
-    train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy 
-    train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
-    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy 
-    val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
+    train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/images.npy 
+    train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/data.p
+    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/images.npy 
+    val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/data.p
     probe_targets: 'locations,propio_vel,bluebox_locs' 
     locations:
       arch: 'conv'
@@ -143,9 +143,9 @@ eval_cfg:
     probe_encoder: true
     probe_preds: true
     use_closed_loss_func: *use_closed_loss_func
-    vis_dynamics_closed_featuremap: true
+    vis_dynamics_closed_featuremap: false
     vis_dynamics_open_featuremap: true
-    vis_encoder_featruemap: true
+    vis_encoder_featruemap: false
     epochs: 5 #5
     epochs_enc: 5 #5
     epochs_latent: 5 #5
@@ -179,7 +179,7 @@ eval_cfg:
     replan_every: 4
     image_obs: true
     stack_states: 1
-    data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/'
+    data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/'
     level1:
       planner_type: PlannerType.MPPI
       min_step: 0
