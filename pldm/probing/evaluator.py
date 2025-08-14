@@ -1083,16 +1083,9 @@ class ProbingEvaluator:
 
 
         gt_locations = normalizer.unnormalize_location(batch.locations).cpu()
-        # pred_locs = normalizer.unnormalize_location(pred_locs).cpu()
-        # if prober_open is not None:
-        #     pred_open_locs = normalizer.unnormalize_location(pred_open_locs).cpu()
         
         gt_bluebox_locations = normalizer.unnormalize_bluebox_locs(batch.bluebox_locs).cpu()
-        # pred_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs).cpu()
-        # if prober_bluebox_locs_open is not None:
-        #     pred_bluebox_locs_open = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_open).cpu()
-        # if enc_prober_bluebox is not None:
-        #     pred_enc_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_enc_bluebox_locs).cpu()
+
 
 
         for i in tqdm(idxs, desc=f"Plotting {name_prefix}"):
@@ -1133,6 +1126,18 @@ class ProbingEvaluator:
                 va="center",
             )
             
+            ax_ee_forward.text(
+                gt_locations[i, -1, 0].cpu().item(),
+                gt_locations[i, -1, 1].cpu().item(),
+                "G",
+                color="#3777FF",  
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
+            
+            
             #ee, closed_forward, 
             ax_ee_forward.plot(
                 pred_locs_clsfwd_clsprb[i, :, 0].cpu(),
@@ -1148,6 +1153,15 @@ class ProbingEvaluator:
                 pred_locs_clsfwd_clsprb[i, 0, 0].cpu().item(),
                 pred_locs_clsfwd_clsprb[i, 0, 1].cpu().item(),
                 "S",
+                color="#D62828",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            ax_ee_forward.text(
+                pred_locs_clsfwd_clsprb[i, -1, 0].cpu().item(),
+                pred_locs_clsfwd_clsprb[i, -1, 1].cpu().item(),
+                "G",
                 color="#D62828",
                 fontsize=12,
                 ha="center",
@@ -1187,6 +1201,15 @@ class ProbingEvaluator:
                 ha="center",
                 va="center",
             )
+            ax_ee_forward.text(
+                gt_locations[i, -1, 0].cpu().item(),
+                gt_locations[i, -1, 1].cpu().item(),
+                "G",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
             
             #ee, open_forward, 
             ax_ee_forward.plot(
@@ -1203,6 +1226,15 @@ class ProbingEvaluator:
                 pred_locs_opnfwd_opnprb[i, 0, 0].cpu().item(),
                 pred_locs_opnfwd_opnprb[i, 0, 1].cpu().item(),
                 "S",
+                color="#ff8c00",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            ax_ee_forward.text(
+                pred_locs_opnfwd_opnprb[i, -1, 0].cpu().item(),
+                pred_locs_opnfwd_opnprb[i, -1, 1].cpu().item(),
+                "G",
                 color="#ff8c00",
                 fontsize=12,
                 ha="center",
@@ -1243,6 +1275,15 @@ class ProbingEvaluator:
                 ha="center",
                 va="center",
             )
+            ax_ee_enc.text(
+                gt_locations[i, -1, 0].cpu().item(),
+                gt_locations[i, -1, 1].cpu().item(),
+                "G",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
             
             
             #ee, encoder
@@ -1260,6 +1301,15 @@ class ProbingEvaluator:
                 pred_enc_locs[i, 0, 0].cpu().item(),
                 pred_enc_locs[i, 0, 1].cpu().item(),
                 "S",
+                color="#008000",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            ax_ee_enc.text(
+                pred_enc_locs[i, -1, 0].cpu().item(),
+                pred_enc_locs[i, -1, 1].cpu().item(),
+                "G",
                 color="#008000",
                 fontsize=12,
                 ha="center",
@@ -1300,6 +1350,16 @@ class ProbingEvaluator:
                 ha="center",
                 va="center",
             )
+            ax_bluebox_forward.text(
+                gt_bluebox_locations[i, -1, 0].cpu().item(),
+                gt_bluebox_locations[i, -1, 1].cpu().item(),
+                "G",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
             
             #box, closed_forward, closed_prober
             ax_bluebox_forward.plot(
@@ -1316,6 +1376,15 @@ class ProbingEvaluator:
                 pred_bluebox_locs_clsfwd_clsprb[i, 0, 0].cpu().item(),
                 pred_bluebox_locs_clsfwd_clsprb[i, 0, 1].cpu().item(),
                 "S",
+                color="#D62828",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            ax_bluebox_forward.text(
+                pred_bluebox_locs_clsfwd_clsprb[i, -1, 0].cpu().item(),
+                pred_bluebox_locs_clsfwd_clsprb[i, -1, 1].cpu().item(),
+                "G",
                 color="#D62828",
                 fontsize=12,
                 ha="center",
@@ -1354,6 +1423,16 @@ class ProbingEvaluator:
                 ha="center",
                 va="center",
             )
+            ax_bluebox_forward.text(
+                gt_bluebox_locations[i, -1, 0].cpu().item(),
+                gt_bluebox_locations[i, -1, 1].cpu().item(),
+                "G",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            
             
             #box, closed_forward, closed_prober
             ax_bluebox_forward.plot(
@@ -1375,6 +1454,16 @@ class ProbingEvaluator:
                 ha="center",
                 va="center",
             )
+            ax_bluebox_forward.text(
+                pred_bluebox_locs_opnfwd_opnprb[i, -1, 0].cpu().item(),
+                pred_bluebox_locs_opnfwd_opnprb[i, -1, 1].cpu().item(),
+                "G",
+                color="#ff8c00",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+
 
             ax_bluebox_forward.set_title("Bluebox Trajectory")
             ax_bluebox_forward.set_xlim(0.315, 0.715)
@@ -1408,6 +1497,15 @@ class ProbingEvaluator:
                 ha="center",
                 va="center",
             )
+            ax_bluebox_enc.text(
+                gt_bluebox_locations[i, -1, 0].cpu().item(),
+                gt_bluebox_locations[i, -1, 1].cpu().item(),
+                "G",
+                color="#3777FF",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
             
 
             #box, encoder
@@ -1425,6 +1523,15 @@ class ProbingEvaluator:
                 pred_enc_bluebox_locs[i, 0, 0].cpu().item(),
                 pred_enc_bluebox_locs[i, 0, 1].cpu().item(),
                 "S",
+                color="#008000",
+                fontsize=12,
+                ha="center",
+                va="center",
+            )
+            ax_bluebox_enc.text(
+                pred_enc_bluebox_locs[i, -1, 0].cpu().item(),
+                pred_enc_bluebox_locs[i, -1, 1].cpu().item(),
+                "G",
                 color="#008000",
                 fontsize=12,
                 ha="center",
@@ -1458,7 +1565,7 @@ class ProbingEvaluator:
                     idx = i
                     )
 
-                ft_maps_and_obs_gif_path = self.concat_gifs(
+                dynamics_closed_ft_maps_and_obs_gif_path = self.concat_gifs(
                     ft_maps_gif_path, 
                     obs_gif_path, 
                     save_dir="dynamics_closed_ftmap_obs", 
@@ -1486,7 +1593,7 @@ class ProbingEvaluator:
                         idx = i
                         )
                 
-                ft_maps_and_obs_gif_path = self.concat_gifs(
+                dynamics_open_ft_maps_and_obs_gif_path = self.concat_gifs(
                     ft_maps_gif_path, 
                     obs_gif_path, #実観測は作成ずみ
                     save_dir="dynamics_open_ftmap_obs", 
@@ -1514,7 +1621,7 @@ class ProbingEvaluator:
                         idx = i
                         )
                 
-                ft_maps_and_obs_gif_path = self.concat_gifs(
+                encoder_ft_maps_and_obs_gif_path = self.concat_gifs(
                     ft_maps_gif_path, 
                     obs_gif_path, #実観測は作成ずみ
                     save_dir="encoder_ftmap_obs", 
@@ -1529,7 +1636,12 @@ class ProbingEvaluator:
             if not notebook:
                 Logger.run().log_figure(fig, f"{name_prefix}-prober_predictions_{i}")
                 # Logger.run().log_video(ft_maps_gif_path, f"{name_prefix}-featuremap_{i}")
-                Logger.run().log_video(ft_maps_and_obs_gif_path, f"{name_prefix}-featuremap_and_obs_{i}")
+                if vis_dynamics_closed_featuremap:
+                    Logger.run().log_video(dynamics_closed_ft_maps_and_obs_gif_path, f"{name_prefix}-closed_dynamics_ftmaps_{i}")
+                if vis_dynamics_open_featuremap:
+                    Logger.run().log_video(dynamics_open_ft_maps_and_obs_gif_path, f"{name_prefix}-open_dynamics_ftmaps_{i}")
+                if vis_encoder_featruemap:
+                    Logger.run().log_video(encoder_ft_maps_and_obs_gif_path, f"{name_prefix}-encoder_ftmaps_{i}")
 
                 plt.close(fig)
             else:
