@@ -125,11 +125,12 @@ def make_dataloader(ds, loader_config, normalizer=None, suffix="", train=True):
     loader.config = config
     
     if loader_config.normalize:
-        if normalizer is None: #probe_ds を作成する際にこのif 文を通っていない --> OK? 先にtrain-dataset作成時にnormalizerを作っている
+        if normalizer is None: #probe_ds を作成する際にこのif 文を通っていない --> OK? 先のtrain-dataset作成時にnormalizerを作っている
             normalizer = Normalizer.build_normalizer(
                 loader,
                 n_samples=1 if loader_config.quick_debug else 100,
-                min_max_normalize=loader_config.min_max_normalize,
+                # min_max_normalize=loader_config.min_max_normalize,
+                normalize_mode=loader_config.normalize_mode,
                 normalizer_hardset=loader_config.normalizer_hardset,
                 min_states_val=loader_config.min_states_val,
                 max_states_val=loader_config.max_states_val,

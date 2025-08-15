@@ -378,6 +378,7 @@ class Trainer:
         return False
 
     def train(self):
+        print('TRININGGGGGG')
         self.optimizer = OptimizerFactory(
             model=self.model,
             optimizer_type=self.config.optimizer_type,
@@ -426,20 +427,26 @@ class Trainer:
                 # move to cuda and swap batch and time
                 s = batch.states.to(self.device).transpose(0, 1)
                 a = batch.actions.to(self.device).transpose(0, 1)
-                print('====state====')
-                print('s.type:', type(s))
-                print('s.shape:', s.shape)
-                print('s.mean:', s.mean())
-                print('s.std:', s.std())
-                print('s.min:', s.min())
-                print('s.max:', s.max())
-                print('====action====')
-                print('a.type:', type(a))
-                print('a.shape:', a.shape)
-                print('a.mean:', a.mean())
-                print('a.std:', a.std())
-                print('a.min:', a.min())
-                print('a.max:', a.max())
+                
+                # print('====BATCH CHECK====')
+                # print('s.shape:', s.shape)
+                # print('a.shape:', a.shape)
+                
+                # print('====state====')
+                # print('s.type:', type(s))
+                # print('s.shape:', s.shape)
+                # print('s.mean:', s.mean())
+                # print('s.std:', s.std())
+                # print('s.min:', s.min())
+                # print('s.max:', s.max())
+                # print('====action====')
+                # print('a.type:', type(a))
+                # print('a.shape:', a.shape)
+                # print('a.mean:', a.mean())
+                # print('a.std:', a.std())
+                # print('a.min:', a.min())
+                # print('a.max:', a.max())
+                # print("================")
 
                 lr = scheduler.adjust_learning_rate(step)
 
@@ -773,76 +780,157 @@ class Trainer:
         log_path = os.path.join(self.config.output_path, log_filename)
         os.makedirs(self.config.output_path, exist_ok=True)
 
+        # NaN/Inf無視のマスク mean / std
+        def masked_mean(x: torch.Tensor, dim=None, keepdim=False):
+            mask = torch.isfinite(x)
+            xz = torch.where(mask, x, torch.zeros_like(x))
+            cnt = mask.sum(dim=dim, keepdim=keepdim).clamp_min(1)
+            return xz.sum(dim=dim, keepdim=keepdim) / cnt
+
+        def masked_std(x: torch.Tensor, dim=None, keepdim=False, unbiased=False):
+            # std = sqrt( sum((x-mu)^2)/N )  or  / (N-1) if unbiased
+            mu = masked_mean(x, dim=dim, keepdim=True)
+            mask = torch.isfinite(x)
+            xc = torch.where(mask, x - mu, torch.zeros_like(x))
+            cnt = mask.sum(dim=dim, keepdim=True)
+            denom = (cnt - 1) if unbiased else cnt
+            denom = denom.clamp_min(1)
+            var = (xc * xc).sum(dim=dim, keepdim=True) / denom
+            out = torch.sqrt(var)
+            if not keepdim and dim is not None:
+                out = out.squeeze(dim)
+            return out
+
+        def flatten_to_ND(x: torch.Tensor) -> torch.Tensor:
+            x = x if x.is_floating_point() else x.float()
+            if x.dim() >= 3:  # 画像など
+                flat = x.flatten(start_dim=2)
+                return flat.view(-1, flat.shape[-1])
+            elif x.dim() == 2:
+                return x
+            elif x.dim() == 1:
+                return x.view(-1, 1)
+            else:
+                return x.view(x.shape[0], -1)
+
+        def summarize_stats(x: torch.Tensor):
+            x = x.detach().float()
+
+            # --- グローバル統計（NaN/Inf 無視） ---
+            g_mean = masked_mean(x).item()
+            g_std  = masked_std(x, unbiased=False).item()
+
+            # --- (N,D) に畳んで per-dim の μ/σ を評価 ---
+            xf = flatten_to_ND(x)  # (N, D)
+            mu  = masked_mean(xf, dim=0)
+            sig = masked_std(xf, dim=0, unbiased=False)
+
+            abs_mu   = mu.abs()
+            abs_sigd = (sig - 1).abs()
+
+            def q99(t: torch.Tensor):
+                try:
+                    return torch.quantile(t, 0.99).item()
+                except Exception:
+                    k = max(1, int(0.99 * t.numel()))
+                    return t.kthvalue(k).values.item()
+
+            stats = {
+                "global_mean": g_mean,
+                "global_std": g_std,
+                "abs_mu_avg": abs_mu.mean().item(),
+                "abs_mu_p99": q99(abs_mu),
+                "abs_sigma_minus1_avg": abs_sigd.mean().item(),
+                "abs_sigma_minus1_p99": q99(abs_sigd),
+                "dims": xf.shape[1],
+            }
+            return stats
+
         with open(log_path, "w", encoding="utf-8") as f:
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            f.write(f"=== 正規化テスト {now}===\n")
+            f.write(f"=== 正規化テスト {now} ===\n")
             train_loader = self.datasets.ds
             normalizer = train_loader.normalizer
 
+            mode = getattr(normalizer, "normalize_mode", "minmax")
+            f.write(f"normalize_mode: {mode}\n")
+
+            def log_block(title, orig, unnorm, renorm, diff):
+                def write_stats(tag, x):
+                    st = summarize_stats(x)
+                    f.write(
+                        f"{tag}:\n"
+                        f"  shape: {tuple(x.shape)}\n"
+                        f"  min: {x.min().item()}  max: {x.max().item()}\n"
+                        f"  global mean/std: {st['global_mean']:.6g} / {st['global_std']:.6g}\n"
+                        f"  |μ| avg/p99: {st['abs_mu_avg']:.6g} / {st['abs_mu_p99']:.6g} (per-dim)\n"
+                        f"  |σ-1| avg/p99: {st['abs_sigma_minus1_avg']:.6g} / {st['abs_sigma_minus1_p99']:.6g} (per-dim)\n"
+                    )
+
+                f.write(f"\n--- {title} ---\n")
+                write_stats("Original (normalized)", orig)
+                write_stats("Recovered (unnormalized)", unnorm)
+                write_stats("Re-normalized", renorm)
+
+                f.write(f"Max diff: {diff.max().item()}\n")
+                f.write(f"Mean diff: {diff.mean().item()}\n")
+                f.write(f"Is close? {torch.allclose(orig, renorm, atol=1e-5)}\n")
+
+                if mode == "zscore":
+                    st_n = summarize_stats(orig)
+                    ok_mu  = st_n["abs_mu_p99"] < 5e-2
+                    ok_std = st_n["abs_sigma_minus1_p99"] < 5e-2
+                    f.write(f"[zscore check] |μ|_p99<0.05? {ok_mu}, |σ-1|_p99<0.05? {ok_std}\n")
+
             for batch in train_loader:
-                # Helper function for writing block logs
-                def log_block(title, orig, unnorm, renorm, diff):
-                    f.write(f"\n--- {title} ---\n")
-                    f.write(f"Original (normalized):\n")
-                    f.write(f"  shape: {orig.shape}\n")
-                    f.write(f"  min: {orig.min().item()}  max: {orig.max().item()}\n")
-
-                    f.write(f"Recovered (unnormalized):\n")
-                    f.write(f"  shape: {unnorm.shape}\n")
-                    f.write(f"  min: {unnorm.min().item()}  max: {unnorm.max().item()}\n")
-
-                    f.write(f"Re-normalized:\n")
-                    f.write(f"  shape: {renorm.shape}\n")
-                    f.write(f"  min: {renorm.min().item()}  max: {renorm.max().item()}\n")
-
-                    f.write(f"Max diff: {diff.max().item()}\n")
-                    f.write(f"Mean diff: {diff.mean().item()}\n")
-                    f.write(f"Is close? {torch.allclose(orig, renorm, atol=1e-5)}\n")
-
-                # state の確認
-                if hasattr(batch, "states"):
+                if hasattr(batch, "states") and batch.states is not None:
                     x = batch.states
                     x_unnorm = normalizer.unnormalize_state(x)
                     x_renorm = normalizer.normalize_state(x_unnorm)
                     diff = (x - x_renorm).abs()
                     log_block("states", x, x_unnorm, x_renorm, diff)
 
-                # location の確認
-                if hasattr(batch, "locations"):
+                if hasattr(batch, "locations") and batch.locations is not None:
                     y = batch.locations
                     y_unnorm = normalizer.unnormalize_location(y)
                     y_renorm = normalizer.normalize_location(y_unnorm)
                     diff = (y - y_renorm).abs()
                     log_block("locations", y, y_unnorm, y_renorm, diff)
 
-                # action の確認
-                if hasattr(batch, "actions"):
+                if hasattr(batch, "actions") and batch.actions is not None:
                     a = batch.actions
                     a_unnorm = normalizer.unnormalize_action(a)
                     a_renorm = normalizer.normalize_action(a_unnorm)
                     diff = (a - a_renorm).abs()
                     log_block("actions", a, a_unnorm, a_renorm, diff)
 
-                # propio_pos の確認
-                if hasattr(batch, "propio_pos"):
+                if hasattr(batch, "propio_pos") and batch.propio_pos is not None:
                     p = batch.propio_pos
                     p_unnorm = normalizer.unnormalize_propio_pos(p)
                     p_renorm = normalizer.normalize_propio_pos(p_unnorm)
                     diff = (p - p_renorm).abs()
                     log_block("propio_pos", p, p_unnorm, p_renorm, diff)
 
-                # propio_vel の確認
-                if hasattr(batch, "propio_vel"):
+                if hasattr(batch, "propio_vel") and batch.propio_vel is not None:
                     v = batch.propio_vel
                     v_unnorm = normalizer.unnormalize_propio_vel(v)
                     v_renorm = normalizer.normalize_propio_vel(v_unnorm)
                     diff = (v - v_renorm).abs()
                     log_block("propio_vel", v, v_unnorm, v_renorm, diff)
 
+                if hasattr(batch, "bluebox_locs") and batch.bluebox_locs is not None:
+                    b = batch.bluebox_locs
+                    b_unnorm = normalizer.unnormalize_bluebox_locs(b)
+                    b_renorm = normalizer.normalize_bluebox_locs(b_unnorm)
+                    diff = (b - b_renorm).abs()
+                    log_block("bluebox_locs", b, b_unnorm, b_renorm, diff)
+
                 if check_only_first_batch:
                     break
 
         print(f"Normalizer test results saved to: {log_path}")
+        
+        
 def main(config: TrainConfig):
     torch.set_num_threads(1)
     trainer = Trainer(config)
