@@ -8,7 +8,7 @@ import imageio
 from tqdm import tqdm
 from dm_control import mujoco
 
-from pldm_envs.franka.envs import FrankaSimEnv
+from pldm_envs.franka.envs_dataset import FrankaSimEnv
 from PIL import Image 
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection

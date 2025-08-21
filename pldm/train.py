@@ -1,3 +1,6 @@
+import os
+os.environ["MUJOCO_GL"] = "egl"
+
 import multiprocessing
 import warnings
 
