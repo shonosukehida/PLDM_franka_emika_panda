@@ -6,7 +6,7 @@ base_lr: 0.041037
 data:
   dataset_type: DatasetType.Franka
   normalize: true
-  normalize_mode: "minmax"
+  normalize_mode: "zscore"
   min_states_val: 0.0
   max_states_val: 1.0
   min_actions_val: 0.0
@@ -76,7 +76,7 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20250718_170222/epoch=10_sample_step=5610000.ckpt #pldm/checkpoints/franka_20250718_170222/epoch=10_sample_step=5610000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20250819_182724/epoch=10_sample_step=5610000.ckpt #pldm/checkpoints/franka_20250718_170222/epoch=10_sample_step=5610000.ckpt
 load_l1_only: false
 
 use_closed_loss_func: &use_closed_loss_func false
@@ -143,9 +143,9 @@ eval_cfg:
     probe_encoder: true
     probe_preds: true
     use_closed_loss_func: *use_closed_loss_func
-    vis_dynamics_closed_featuremap: false
-    vis_dynamics_open_featuremap: false
-    vis_encoder_featruemap: false
+    vis_dynamics_closed_featuremap: true
+    vis_dynamics_open_featuremap: true
+    vis_encoder_featruemap: true
     epochs: 5 #5
     epochs_enc: 5 #5
     epochs_latent: 5 #5

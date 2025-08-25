@@ -32,6 +32,7 @@ from pldm.objectives import ObjectivesConfig
 from pldm.objectives.idm import IDMObjective
 
 from PIL import Image, ImageSequence
+from pathlib import Path
 
 @dataclass
 class ProbeTargetConfig(ConfigBase):
@@ -928,9 +929,17 @@ class ProbingEvaluator:
             # save_path = os.path.join(save_dir, f"{name_prefix}-featuremap_{maps_idx}.gif")
             save_path = os.path.join(save_dir, f"{filename}.gif")
             
-        ani.save(save_path, writer='pillow')
+
+
+        out_path = Path(save_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+        tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+        ani.save(str(tmp_path), writer="pillow")
+        tmp_path.replace(out_path)
+
         plt.close(fig)
-        
         return save_path, fig_width, fig_height
 
 
