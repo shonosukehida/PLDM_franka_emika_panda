@@ -455,93 +455,128 @@ class Normalizer:
     #     return state_norm.view(orig_shape)
 
 
-    def normalize_state(self, state):
+    def normalize_state(self, state: torch.Tensor):
         """
-        Accepts (B,T,C,H,W) / (B,C,H,W) / (C,H,W) / (B,H,W,C) / (H,W,C) / (H,W).
-        Always flattens the last 3 dims (C,H,W) to D=CHW, normalizes, then restores shape.
+        Input shape must be one of:
+        (B,T,C,H,W) / (B,C,H,W) / (C,H,W) / (H,W).
+        Normalizes over the flattened last 3 dims (C,H,W).
         """
-        x = state
-        assert isinstance(x, torch.Tensor), "normalize_state expects a torch.Tensor"
+        assert isinstance(state, torch.Tensor), "normalize_state expects a torch.Tensor"
 
-        # NHWC -> NCHW if we can detect it
-        if x.ndim >= 4 and x.shape[-1] in (1, 3) and (x.shape[1] not in (1, 3)):
-            x = x.permute(0, 3, 1, 2).contiguous()  # (B,H,W,C)->(B,C,H,W)
-        elif x.ndim == 3 and x.shape[-1] in (1, 3) and (x.shape[0] not in (1, 3)):
-            x = x.permute(2, 0, 1).contiguous()     # (H,W,C)->(C,H,W)
+        # (H,W) --> (1,1,H,W)
+        if state.ndim == 2:
+            x = state.unsqueeze(0).unsqueeze(0)
+        # (C,H,W) --> (1,C,H,W)
+        elif state.ndim == 3:
+            x = state.unsqueeze(0)
+        # (B,C,H,W) --> as is
+        elif state.ndim == 4:
+            x = state
+        # (B,T,C,H,W) --> flatten time: (B*T,C,H,W)
+        elif state.ndim == 5:
+            B, T, C, H, W = state.shape
+            x = state.reshape(B * T, C, H, W)   # ← view ではなく reshape
+        else:
+            raise ValueError(f"Unsupported state shape {state.shape}, ndim={state.ndim}")
 
-        # Keep original meta for later restoration
-        orig_ndim = x.ndim
-        orig_shape = x.shape
+        # ここで連続化しておくと安全
+        x = x.contiguous()
 
-        # Ensure at least (C,H,W)
-        if x.ndim == 2:            # (H,W)
-            x = x.unsqueeze(0).unsqueeze(0)        # -> (1,1,H,W)
-        elif x.ndim == 3 and x.shape[0] not in (1, 3):
-            x = x.unsqueeze(0)                      # safety
+        # Flatten to (N, D)
+        N, C, H, W = x.shape
+        x_flat = x.reshape(N, -1)   # ← view ではなく reshape
 
-        # (B,T,C,H,W) -> remember (B,T,C,H,W) and view to (B*T,C,H,W)
-        BT = None
-        if x.ndim == 5:
-            B, T, C, H, W = x.shape
-            BT = (B, T, C, H, W)
-            x = x.view(B * T, C, H, W)
-        elif x.ndim == 4:
-            B, C, H, W = x.shape
-        elif x.ndim == 3:
-            C, H, W = x.shape
-            x = x.unsqueeze(0)  # (1,C,H,W)
+        # stats も 1D へ
+        state_min  = self.state_min.reshape(-1)
+        state_max  = self.state_max.reshape(-1)
+        state_mean = self.state_mean.reshape(-1)
+        state_std  = self.state_std.reshape(-1)
 
-        # Match stats length D=CHW
-        D_stats = int(self.state_min.numel())
-        C_now, H_now, W_now = x.shape[1], x.shape[2], x.shape[3]
-        if H_now * W_now > 0 and D_stats % (H_now * W_now) == 0:
-            C_target = D_stats // (H_now * W_now)
-            if C_now == 1 and C_target in (3, 1):
-                x = x.repeat(1, C_target, 1, 1)
-            elif C_now != C_target:
-                raise RuntimeError(
-                    f"[normalize_state] channel mismatch: got C={C_now}, expect C={C_target} "
-                    f"(D_stats={D_stats}, H={H_now}, W={W_now})"
-                )
-
-        N = x.shape[0]
-        x_flat = x.view(N, -1)  # (N, D)
-
-        # Flatten stats too
-        state_min = self.state_min.view(-1)
-        state_max = self.state_max.view(-1)
-        state_mean = self.state_mean.view(-1)
-        state_std = self.state_std.view(-1)
         assert x_flat.shape[-1] == state_min.numel(), \
             f"[normalize_state] D mismatch: x {x_flat.shape[-1]} vs stats {state_min.numel()}"
 
+        # normalize
         x_norm = self._normalize(
             x_flat, state_min, state_max, state_mean, state_std,
             self.min_states_val, self.max_states_val
-        ).view_as(x)
+        ).reshape_as(x)   # ← view_as ではなく reshape_as
 
-        # Restore to input-like dims
-        out = x_norm
-        if BT is not None:
-            B, T, C, H, W = BT
-            out = out.view(B, T, C, H, W)               # ← ここで (B,T,C,H,W) に戻す！
-        elif state.ndim == 3 and out.ndim == 4 and out.shape[0] == 1:
-            out = out[0]                                 # (1,C,H,W) -> (C,H,W)
-        elif state.ndim == 2 and out.ndim == 4:
-            out = out[0, 0]                              # (1,1,H,W) -> (H,W)
+        # --- restore ---
+        if state.ndim == 5:
+            out = x_norm.reshape(B, T, C, H, W)
+        elif state.ndim == 4:
+            out = x_norm
+        elif state.ndim == 3:
+            out = x_norm[0]
+        elif state.ndim == 2:
+            out = x_norm[0, 0]
+        else:
+            out = x_norm
+
         return out
 
+    # def unnormalize_state(self, state_norm):
+    #     orig_shape = state_norm.shape
+    #     state_flat = state_norm.flatten(start_dim=2).view(-1, state_norm.flatten(start_dim=2).shape[-1])
+    #     state_unnorm = self._unnormalize(
+    #         state_flat, self.state_min, self.state_max,
+    #         self.state_mean, self.state_std,
+    #         self.min_states_val, self.max_states_val
+    #     )
+    #     return state_unnorm.view(orig_shape)
 
 
-    def unnormalize_state(self, state_norm):
-        orig_shape = state_norm.shape
-        state_flat = state_norm.flatten(start_dim=2).view(-1, state_norm.flatten(start_dim=2).shape[-1])
-        state_unnorm = self._unnormalize(
-            state_flat, self.state_min, self.state_max,
-            self.state_mean, self.state_std,
+    def unnormalize_state(self, state_norm: torch.Tensor):
+        """
+        Input shape must be one of:
+        (B,T,C,H,W) / (B,C,H,W) / (C,H,W) / (H,W).
+        Inverts the normalization done over the flattened last 3 dims (C,H,W).
+        """
+        assert isinstance(state_norm, torch.Tensor), "unnormalize_state expects a torch.Tensor"
+
+        if state_norm.ndim == 2:
+            x = state_norm.unsqueeze(0).unsqueeze(0)
+        elif state_norm.ndim == 3:
+            x = state_norm.unsqueeze(0)
+        elif state_norm.ndim == 4:
+            x = state_norm
+        elif state_norm.ndim == 5:
+            B, T, C, H, W = state_norm.shape
+            x = state_norm.reshape(B * T, C, H, W)   # ← reshape
+        else:
+            raise ValueError(f"Unsupported state_norm shape {state_norm.shape}, ndim={state_norm.ndim}")
+
+        x = x.contiguous()
+
+        N, C, H, W = x.shape
+        x_flat = x.reshape(N, -1)   # ← reshape
+
+        state_min  = self.state_min.reshape(-1)
+        state_max  = self.state_max.reshape(-1)
+        state_mean = self.state_mean.reshape(-1)
+        state_std  = self.state_std.reshape(-1)
+
+        assert x_flat.shape[-1] == state_min.numel(), \
+            f"[unnormalize_state] D mismatch: x {x_flat.shape[-1]} vs stats {state_min.numel()}"
+
+        x_unnorm = self._unnormalize(
+            x_flat, state_min, state_max, state_mean, state_std,
             self.min_states_val, self.max_states_val
-        )
-        return state_unnorm.view(orig_shape)
+        ).reshape_as(x)   # ← reshape_as
+
+        if state_norm.ndim == 5:
+            out = x_unnorm.reshape(B, T, C, H, W)
+        elif state_norm.ndim == 4:
+            out = x_unnorm
+        elif state_norm.ndim == 3:
+            out = x_unnorm[0]
+        elif state_norm.ndim == 2:
+            out = x_unnorm[0, 0]
+        else:
+            out = x_unnorm
+
+        return out
+
 
     def normalize_action(self, action):
         return self._normalize(action, self.action_min, self.action_max,

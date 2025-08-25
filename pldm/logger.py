@@ -170,10 +170,10 @@ class Logger:
                 }
             )
 
-    def log_figure(self, figure: Any, name: str):
+    def log_figure(self, figure: Any, name: str, dir_name: str = "media"):
         if self.output_path is not None:
             # This assumes that the image is already saved to disk
-            filename = Path(self.output_path) / "media" / f"{name}"
+            filename = Path(self.output_path) / dir_name / f"{name}"
             filename.parent.mkdir(parents=True, exist_ok=True)
         else:
             filename = tempfile.NamedTemporaryFile(suffix=".png").name[

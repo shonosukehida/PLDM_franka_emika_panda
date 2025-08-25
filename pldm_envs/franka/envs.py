@@ -1,10 +1,12 @@
 # envs_dc.py など新ファイルにしてもOK
 import os
-os.environ["MUJOCO_GL"] = "egl"   # ★ import前に！train.py 最上段にも入れてね
-os.environ.pop("DISPLAY", None)   # ★ヘッドレスなら DISPLAY は邪魔なので消す
+os.environ["MUJOCO_GL"] = "egl"   
+os.environ.pop("DISPLAY", None)   
 import numpy as np
 import torch
 from dm_control import mujoco as dm_mj
+from dm_control.utils.inverse_kinematics import qpos_from_site_pose
+from scipy.spatial.transform import Rotation as R
 from pldm_envs.utils.normalizer import Normalizer
 
 class FrankaSimEnv:
@@ -16,7 +18,7 @@ class FrankaSimEnv:
         goal_noise=0.01,
         normalizer: Normalizer = None,
         success_thresh=0.05,    # しきい値 m
-        substeps=200,           # 1 env.step で進める物理ステップ数（dataset に合わせて 200）
+        substeps=200,           
     ):
         self.model_path = model_path
         self.image_size = tuple(image_size)
@@ -27,10 +29,8 @@ class FrankaSimEnv:
         self.success_thresh = success_thresh
         self.substeps = substeps
 
-        # dm_control の Physics を使う（オフスクリーン描画OK）
         self.physics = dm_mj.Physics.from_xml_path(self.model_path)
 
-        # カメラ
         if self.camera_name == "default":
             self.camera_id = -1
         else:
@@ -41,17 +41,68 @@ class FrankaSimEnv:
         self.start_idx = self.physics.model.jnt_qposadr[self.joint_id]  # pos(xyz)=3, quat=4
 
         # actuator 範囲（行動クリップ用）
-        self.ctrlrange = self.physics.model.actuator_ctrlrange.copy()
-
+        # self.ctrlrange = self.physics.model.actuator_ctrlrange.copy()
+        
+        arm_ids = []
+        for i in range(1, 8):
+            arm_ids.append(self.physics.model.name2id(f"actuator{i}", "actuator"))
+        self.arm_actuator_ids = np.array(arm_ids, dtype=int)
+        self.ctrlrange = self.physics.model.actuator_ctrlrange[self.arm_actuator_ids].copy()
+        self.n_arm_act = len(self.arm_actuator_ids) 
+        
         self.t = 0
         self.max_episode_steps = 100
         self.start_pos = None
         self.goal_pos = None
 
+    def calc_inverse_kinematic(self, target_xyz, target_rotmat=None, rot_weight=1.0):
+        target_quat = None
+        if target_rotmat is not None:
+            target_quat = R.from_matrix(target_rotmat).as_quat(scalar_first=True)
+        # print('target_quat:', target_quat)
+        
+        joint_names = [f"joint{i}" for i in range(1, 8)]
+        
+        result = qpos_from_site_pose(
+            self.physics,
+            site_name="ee_target",
+            target_pos=target_xyz,
+            target_quat=target_quat,
+            joint_names=joint_names,
+            rot_weight=rot_weight
+        )
+        return result
+
     # ========== 基本I/O ==========
     def reset(self, start_pos=None, goal_pos=None):
         self.physics.reset()
         self.t = 0
+        
+        
+        target_rotmat = None
+        # 姿勢制御: hand を下に向けたい
+        x = np.array([1, 0, 0])         
+        y = np.array([0, -1, 0])
+        z = np.array([0, 0, -1])        
+
+        # 回転行列を構成（各軸を列に並べる）
+        target_rotmat = np.stack([x, y, z], axis=1)
+        
+        init_xyz = np.array([0.515, 0.0, 0.1])
+        result = self.calc_inverse_kinematic(init_xyz, target_rotmat=target_rotmat)
+        init_joint = result.qpos[:7]
+        self.physics.forward()
+        
+        self.physics.data.qpos[:7] = init_joint
+        self.physics.data.qvel[:7] = 0.0
+        self.physics.forward()
+        
+        self.physics.data.ctrl[:] = 0.0
+        self.physics.data.ctrl[self.arm_actuator_ids] = init_joint
+        
+        
+        for _ in range(5):
+            self.physics.step()
 
         if start_pos is None:
             start_pos = np.random.uniform(low=[0.365, -0.15, 0.05], high=[0.665, 0.15, 0.05])
@@ -73,17 +124,27 @@ class FrankaSimEnv:
         return self.get_obs()
 
     def step(self, action):
-        # 行動クリップ（dm_control でも ctrlrange は同じ形状）
-        low, high = self.ctrlrange[:, 0], self.ctrlrange[:, 1]
-        action = np.clip(np.asarray(action), low, high)
-        self.physics.data.ctrl[:] = action
+        action = np.asarray(action, dtype=np.float32).reshape(-1)
+        if action.shape[0] != self.n_arm_act:
+            raise ValueError(f"expected action dim {self.n_arm_act} but got {action.shape}")
 
-        # 1制御で 200 サブステップ（XML timestep=0.001 → 0.2s/step）
+        # 行動クリップ（腕7軸のみ）
+        low, high = self.ctrlrange[:, 0], self.ctrlrange[:, 1]
+        action = np.clip(action, low, high)
+
+        # まず全アクチュエータを0で初期化（lock_gripper含む）
+        self.physics.data.ctrl[:] = 0.0
+        # 腕7軸のスロットにだけ書き込み
+        self.physics.data.ctrl[self.arm_actuator_ids] = action
+
+
         for _ in range(self.substeps):
             self.physics.step()
 
         self.t += 1
         image_obs = self.get_obs()
+        if isinstance(image_obs, torch.Tensor):
+            image_obs = image_obs.detach().cpu().numpy()
         object_obs = self.get_object_position()
         done = self.t >= self.max_episode_steps
         reward = self._is_success(object_obs)
@@ -103,7 +164,11 @@ class FrankaSimEnv:
         return img
 
     def get_target_obs(self):
-        # ゴール位置のシーンを作って 1枚レンダ
+        # backup
+        qpos_bk = self.physics.data.qpos.copy()
+        qvel_bk = self.physics.data.qvel.copy()
+
+        # 一時的にゴール配置にしてレンダ
         self.physics.data.qpos[self.start_idx:self.start_idx+3] = self.goal_pos
         self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0])
         self.physics.data.qvel[self.start_idx:self.start_idx+6] = 0
@@ -113,15 +178,33 @@ class FrankaSimEnv:
         img = torch.from_numpy(img).contiguous()
         if self.use_normalize:
             img = self.normalizer.normalize_state(img)
+
+        # restore
+        self.physics.data.qpos[:] = qpos_bk
+        self.physics.data.qvel[:] = qvel_bk
+        self.physics.forward()
         return img
 
     def _get_goal_obs_vec(self, goal_pos):
-        # proprio ベクトル版（必要なら）
-        self.physics.data.qpos[self.start_idx:self.start_idx+3] = goal_pos
-        self.physics.forward()
-        qpos = self.physics.data.qpos[:7]
-        qvel = self.physics.data.qvel[:7]
-        return np.concatenate([qpos, qvel])
+        # --- backup ---
+        qpos_bk = self.physics.data.qpos.copy()
+        qvel_bk = self.physics.data.qvel.copy()
+        try:
+            # 一時的にゴール配置にして順運動学の値を取る
+            self.physics.data.qpos[self.start_idx:self.start_idx+3] = goal_pos
+            self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0])
+            self.physics.data.qvel[self.start_idx:self.start_idx+6] = 0
+            self.physics.forward()
+
+            qpos = self.physics.data.qpos[:7].copy()
+            qvel = self.physics.data.qvel[:7].copy()
+            return np.concatenate([qpos, qvel])
+        finally:
+            # --- restore ---
+            self.physics.data.qpos[:] = qpos_bk
+            self.physics.data.qvel[:] = qvel_bk
+            self.physics.forward()
+
 
     # ========== 補助 ==========
     def _is_success(self, object_pos):
@@ -131,8 +214,14 @@ class FrankaSimEnv:
         return self.goal_pos
 
     def get_ee_position(self):
-        hand_body_id = self.physics.model.name2id("panda_hand", "body")
-        return self.physics.data.xpos[hand_body_id].copy()
+        try:
+            sid = self.physics.model.name2id("ee_target", "site")
+            return self.physics.data.site_xpos[sid].copy()
+        except Exception:
+            pass
+
+        bid = self.physics.model.name2id("hand", "body")
+        return self.physics.data.xpos[bid].copy()
 
     def get_object_position(self):
         return self.physics.data.qpos[self.start_idx : self.start_idx + 3].copy()

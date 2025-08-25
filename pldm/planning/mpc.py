@@ -166,6 +166,9 @@ class MPCEvaluator(ABC):
             targets: (bs, 4)
             loss_history: list of a_T (n_iters,)
         """
+
+        for e in envs: e.reset()
+            
         #ゴール位置
         targets = [e.get_target() for e in envs]
         targets = torch.from_numpy(np.stack(targets))

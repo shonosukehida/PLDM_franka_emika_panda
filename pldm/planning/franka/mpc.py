@@ -45,6 +45,8 @@ class FrankaMPCEvaluator(MPCEvaluator):
             normalizer=normalizer
         )
         self.envs = envs_generator()
+        for e in self.envs:
+            e.reset()
 
     def _construct_report(self, data: PooledMPCResult):
         # D4RLの `MazeMPCEvaluator` に近い方式で評価
