@@ -935,9 +935,8 @@ class ProbingEvaluator:
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
 
-        tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
-        ani.save(str(tmp_path), writer="pillow")
-        tmp_path.replace(out_path)
+        # tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+        ani.save(str(out_path), writer="pillow")
 
         plt.close(fig)
         return save_path, fig_width, fig_height
