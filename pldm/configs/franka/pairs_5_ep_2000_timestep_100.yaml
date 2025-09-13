@@ -83,7 +83,7 @@ use_closed_loss_func: &use_closed_loss_func false
 objectives_l1:
   idm:
     action_dim: 7
-    coeff: 5.3964
+    coeff: 5.3964 #5.3964
     arch: 'conv'
     use_pred: false
     arch_subclass: a
@@ -100,17 +100,17 @@ objectives_l1:
   vicreg_obs:
     adjust_cov: true
     cov_chunk_size: null
-    cov_coeff: 11.925
-    cov_coeff_t: 0
+    cov_coeff: 11.925 #11.925
+    cov_coeff_t: 0 #0
     cov_per_feature: false
     projector: id
     random_projector: false
-    sim_coeff: 1
-    std_coeff: 35.026
-    std_coeff_t: 2.9199
-    sim_coeff_t: 0.10193
+    sim_coeff: 1 #1
+    std_coeff: 35.026 #35.026
+    std_coeff_t: 2.9199 #2.9199
+    sim_coeff_t: 0.10193 #0.10193
   prediction_propio:
-    global_coeff: 1.4108
+    global_coeff: 1.4108 #1.4108
 optimizer_type: Adam
 output_dir: franka
 output_root: ./pldm/checkpoints
@@ -150,7 +150,7 @@ eval_cfg:
     epochs_enc: 5 #5
     epochs_latent: 5 #5
     full_finetune: false
-    lr: 0.0032
+    lr: 0.0032 #0.0032 
     max_samples: 2000000
     max_samples_enc: 2000000
     schedule: Cosine
