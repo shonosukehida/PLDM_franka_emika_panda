@@ -39,48 +39,61 @@ def get_lr_p_results(features, outcomes):
     return result.params[1]
 
 
-def normalize_actions(
-    actions: torch.Tensor,
-    min_angle: float = -1.74,
-    max_angle: float = 1.71,
-    min_norm: float = -2.27,
-    max_norm: float = 2.27,
-    eps: float = 1e-6,
-    xy_action: bool = True,
-    clamp_actions: bool = False,
-):
-    if clamp_actions:
-        # we bound the absolute values instead of norm
-        if actions.shape[-1] == 8:
-            # TODO: FIX THIS HACK
-            abs_min_norm = torch.tensor(
-                [-1.2022, -1.1061, -1.3260, -1.1111, -1.2677, -1.4228, -1.3263, -1.5168]
-            )
-            abs_max_norm = torch.tensor(
-                [1.3606, 1.5552, 1.2483, 1.4850, 1.2797, 1.1922, 1.2396, 1.1205]
-            )
 
-            min_norm = (abs_min_norm + 0.1).to(actions.device)
-            max_norm = (abs_max_norm - 0.1).to(actions.device)
+def normalize_actions(actions):  # actions: [B,H,7] or [B,7]
+    low  = torch.tensor([-2.8973, -1.7628, -2.8973, -3.0718, -2.8,   -0.0175, -2.8973], device=actions.device)
+    high = torch.tensor([ 2.8973,  1.7628,  2.8973, -0.0698,  2.8,    3.7525,  2.8973], device=actions.device)
+    return torch.clamp(actions, low.view(1,1,-1), high.view(1,1,-1))
 
-            actions_n = torch.clamp(
-                actions, min=min_norm.view(1, -1), max=max_norm.view(1, -1)
-            )
-        else:
-            actions_n = torch.clamp(actions, min=min_norm, max=max_norm)
-        return actions_n
 
-    # we calculate norms of actions
-    norms = actions.norm(dim=-1, keepdim=True)  # [300, 4, 1]
-    # calculate min and max allowed step sizes
-    max_norms = torch.ones_like(norms) * max_norm
-    min_norms = torch.ones_like(norms) * min_norm
 
-    # coeff is either 1 if the norm is below max, or max_norm / norm if it is above
-    # coeff = torch.min(norms, max_norms) / (norms + eps)
 
-    # coefficients for normalization
-    coeff = torch.min(torch.max(norms, min_norms), max_norms) / (norms + eps)
 
-    # rescale the actions
-    return actions * coeff
+
+
+#公式実験用: Franka では省く
+# def normalize_actions(
+#     actions: torch.Tensor,
+#     min_angle: float = -1.74,
+#     max_angle: float = 1.71,
+#     min_norm: float = -2.27,
+#     max_norm: float = 2.27,
+#     eps: float = 1e-6,
+#     xy_action: bool = True,
+#     clamp_actions: bool = False,
+# ):
+#     if clamp_actions:
+#         # we bound the absolute values instead of norm
+#         if actions.shape[-1] == 8:
+#             # TODO: FIX THIS HACK
+#             abs_min_norm = torch.tensor(
+#                 [-1.2022, -1.1061, -1.3260, -1.1111, -1.2677, -1.4228, -1.3263, -1.5168]
+#             )
+#             abs_max_norm = torch.tensor(
+#                 [1.3606, 1.5552, 1.2483, 1.4850, 1.2797, 1.1922, 1.2396, 1.1205]
+#             )
+
+#             min_norm = (abs_min_norm + 0.1).to(actions.device)
+#             max_norm = (abs_max_norm - 0.1).to(actions.device)
+
+#             actions_n = torch.clamp(
+#                 actions, min=min_norm.view(1, -1), max=max_norm.view(1, -1)
+#             )
+#         else:
+#             actions_n = torch.clamp(actions, min=min_norm, max=max_norm)
+#         return actions_n
+
+#     # we calculate norms of actions
+#     norms = actions.norm(dim=-1, keepdim=True)  # [300, 4, 1]
+#     # calculate min and max allowed step sizes
+#     max_norms = torch.ones_like(norms) * max_norm
+#     min_norms = torch.ones_like(norms) * min_norm
+
+#     # coeff is either 1 if the norm is below max, or max_norm / norm if it is above
+#     # coeff = torch.min(norms, max_norms) / (norms + eps)
+
+#     # coefficients for normalization
+#     coeff = torch.min(torch.max(norms, min_norms), max_norms) / (norms + eps)
+
+#     # rescale the actions
+#     return actions * coeff

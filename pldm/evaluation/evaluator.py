@@ -214,9 +214,6 @@ class Evaluator:
         elif self.config.env_name == 'franka':
             from pldm.planning.franka.mpc import FrankaMPCEvaluator
                     
-            # print('EEVALUATE')
-            # print("norm_mean:", self.normalizer.state_mean)
-            # print("norm_std :", self.normalizer.state_std)
             planning_evaluator = FrankaMPCEvaluator(
                 config=mpc_config,
                 normalizer=self.normalizer,

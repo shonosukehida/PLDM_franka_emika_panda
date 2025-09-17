@@ -10,7 +10,7 @@ import sys
 
 default_plot_idxs = list(range(100))
 
-
+#直交座標 --> ピクセル座標
 def log_planning_plots(
     result,
     report,
@@ -30,7 +30,7 @@ def log_planning_plots(
 
     img_size = result.observations[0][0].shape[-1]
 
-
+    #直交座標 --> pixel座標に変換
     if pixel_mapper is not None: ##
         # targets_pixels = torch.as_tensor(
         #     pixel_mapper.obs_coord_to_pixel_coord(result.targets)
@@ -59,6 +59,7 @@ def log_planning_plots(
         locations_pixels = result.locations
         pred_locations_pixels = result.pred_locations
 
+    #時系列で画像を描画
     if idxs is None:
         idxs = default_plot_idxs
     for idx in idxs:
@@ -76,7 +77,6 @@ def log_planning_plots(
                 break
             plt.subplot(grid_size, grid_size, subplot_idx + 1)
             
-            # print('RESULT.OBSERVATONS', result.observations[i][idx].shape)
             
 
             if "wall" in prefix:
@@ -173,10 +173,6 @@ def log_planning_plots(
             plt.gca().set_yticks([])
             subplot_idx += 1
 
-        # if quick_debug:
-        #     breakpoint()
-        # result.targets.shape = [15, 2]
-        # result.locations[0].shape = [15, 2]
 
         log_name = f"mpc/{prefix}_{idx}"
         if plot_failure_only:
@@ -202,3 +198,95 @@ def log_l1_planning_loss(result, prefix: str = "wall_"):
             log_dict = {f"{prefix}_l1_step_{step}_plan_loss": loss}
             logger.log(log_dict)
         logger.log({f"{prefix}_l1_step_{step}_plan_iterations": len(losses)})
+
+
+
+def log_planning_plots_split(
+    result, report, idxs=None,
+    plot_every=1, xy_action=True,
+    plot_failure_only=False,
+    world_xlim=None, world_ylim=None,
+    use_pixel_mapper=False, pixel_mapper=None,
+):
+
+    if idxs is None:
+        idxs = default_plot_idxs
+
+    T = len(result.locations)
+    B = result.observations[0].shape[0]
+    H = result.observations[0][0].shape[-2]
+    W = result.observations[0][0].shape[-1]
+
+    #図A:観測のみ
+    num_panels = math.ceil(T / plot_every)
+    grid = max(4, math.ceil(math.sqrt(num_panels)))
+
+    for idx in idxs:
+        if plot_failure_only and report.success[idx]:
+            continue
+
+        figA = plt.figure(dpi=250)
+        p = 0
+        for t in range(T):
+            if t % plot_every: continue
+            if t > report.terminations[idx]: break
+            plt.subplot(grid, grid, p+1)
+
+            obs = result.observations[t][idx]
+            if obs.shape[0] > 1:  
+                img = obs.detach().cpu().numpy().transpose(1,2,0)
+                # img = 0.2989*img[...,0] + 0.5870*img[...,1] + 0.1140*img[...,2]
+                img = (img - img.min())/(img.max()-img.min() + 1e-12)
+            else:
+                img = obs[0].detach().cpu().numpy()
+
+            plt.imshow(img)
+            plt.xticks([]); plt.yticks([])
+            p += 1
+
+        Logger.run().log_figure(figA, f"mpc/obs_seq_{idx}")
+        plt.close(figA)
+
+        #図B: 軌跡のみ
+        starts = result.locations[0][idx].detach().cpu()        # (2,)
+        targets = result.targets[idx].detach().cpu()            # (2,)
+        traj = torch.stack([result.locations[t][idx] for t in range(T)], dim=0).detach().cpu()  # (T,2)
+
+        # 予測列：各tで H 分の予測
+        preds = []
+        T_loc  = len(result.locations)         # 初期+各ステップ → T+1
+        T_pred = len(result.pred_locations)    # 各ステップ → T
+        t_term = getattr(report, "terminations", [T_loc-1])[idx]
+        t_max = min(T_pred, T_loc - 1, t_term + 1)
+        for t in range(t_max):
+            if t > report.terminations[idx]: break
+            preds.append(result.pred_locations[t][:, idx, :].detach().cpu())  # (H,2)
+            
+        #必要であればpixel変換
+        if use_pixel_mapper and pixel_mapper is not None:
+            starts = pixel_mapper(starts).squeeze().float()
+            targets = pixel_mapper(targets).squeeze().float()
+            traj = pixel_mapper(traj).squeeze().float()
+            preds = [pixel_mapper(p).squeeze().float() for p in preds]
+
+        figB = plt.figure(dpi=250)
+        ax = plt.gca()
+        ax.scatter(starts[0],  starts[1],  s=12, c="tab:blue",  label="start")
+        ax.scatter(targets[0], targets[1], s=12, c="tab:orange", label="goal")
+        # ax.plot(traj[:,0], traj[:,1], lw=1.2, c="tab:blue", alpha=0.9, label="executed")
+        ax.scatter(traj[:,0], traj[:,1], s=8, c="tab:blue", alpha=0.9)
+
+
+        #予測列
+        for t, P in enumerate(preds):
+            if t % plot_every: continue
+            ax.plot(P[:,0], P[:,1], lw=0.6, alpha=0.6, c="red")
+
+        ax.set_aspect("equal")
+        if world_xlim: ax.set_xlim(*world_xlim)
+        if world_ylim: ax.set_ylim(*world_ylim)
+        ax.grid(True, ls=":", lw=0.5, alpha=0.5)
+        ax.legend(fontsize=8, loc="best")
+
+        Logger.run().log_figure(figB, f"mpc/prediction_seq_{idx}")
+        plt.close(figB)

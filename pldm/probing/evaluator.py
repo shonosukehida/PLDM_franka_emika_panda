@@ -479,6 +479,7 @@ class ProbingEvaluator:
         """
         Evaluates on all the different validation datasets
         """
+        # self.model.eval() 
 
         val_datasets = {"pred_probe": self.val_ds}
         val_datasets.update(self.extra_val_ds)

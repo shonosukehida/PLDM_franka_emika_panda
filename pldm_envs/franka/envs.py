@@ -1,4 +1,3 @@
-# envs_dc.py など新ファイルにしてもOK
 import os
 os.environ["MUJOCO_GL"] = "egl"   
 os.environ.pop("DISPLAY", None)   
@@ -101,7 +100,7 @@ class FrankaSimEnv:
         self.physics.data.ctrl[self.arm_actuator_ids] = init_joint
         
         
-        for _ in range(5):
+        for _ in range(50):
             self.physics.step()
 
         if start_pos is None:
@@ -127,15 +126,23 @@ class FrankaSimEnv:
         action = np.asarray(action, dtype=np.float32).reshape(-1)
         if action.shape[0] != self.n_arm_act:
             raise ValueError(f"expected action dim {self.n_arm_act} but got {action.shape}")
+        if not np.all(np.isfinite(action)):
+            action = np.zeros_like(action)
 
-        # 行動クリップ（腕7軸のみ）
+        
+        qpos = self.physics.data.qpos[:7].copy()
+        
+        MAX_DQ = 0.01 #1step あたりの最大増分rad
+        dq = np.clip(action, -MAX_DQ, MAX_DQ)
+        target = qpos + dq
+
+
         low, high = self.ctrlrange[:, 0], self.ctrlrange[:, 1]
-        action = np.clip(action, low, high)
+        target = np.clip(target, low, high)
 
-        # まず全アクチュエータを0で初期化（lock_gripper含む）
+
         self.physics.data.ctrl[:] = 0.0
-        # 腕7軸のスロットにだけ書き込み
-        self.physics.data.ctrl[self.arm_actuator_ids] = action
+        self.physics.data.ctrl[self.arm_actuator_ids] = target
 
 
         for _ in range(self.substeps):

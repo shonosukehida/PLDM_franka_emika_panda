@@ -103,17 +103,78 @@ class MPPI:
 
         self.noise_mu = noise_mu.to(self.d)
         self.noise_sigma = noise_sigma.to(self.d)
+
+        ##############################################################
+        # ===== Debug & Stabilize covariance =====
+        def _symmetrize(A):
+            return 0.5 * (A + A.transpose(-1, -2))
+
+        def _add_jitter(A, eps):
+            eye = torch.eye(A.size(-1), dtype=A.dtype, device=A.device)
+            return A + eps * eye
+
+        # 基本情報ログ
+        print(f"[MPPI] device={self.d}, dtype={self.noise_sigma.dtype}, "
+              f"nu={self.nu}, T(horizon)={self.T}, K(samples)={self.K}")
+
+        # 形状・有限値
+        assert self.noise_sigma.dim() == 2, "noise_sigma must be 2D"
+        assert self.noise_sigma.shape[0] == self.noise_sigma.shape[1], "noise_sigma must be square"
+        assert self.noise_sigma.shape[0] == self.nu, (
+            f"noise_sigma shape {self.noise_sigma.shape} != (nu, nu) with nu={self.nu}"
+        )
+        if not torch.isfinite(self.noise_sigma).all():
+            raise RuntimeError("[MPPI] noise_sigma has NaN/Inf")
+
+        # 対称化
+        self.noise_sigma = _symmetrize(self.noise_sigma)
+
+        # 固有値チェック（CPUで倍精度）
+        eigvals_cpu = torch.linalg.eigvalsh(self.noise_sigma.double().cpu())
+        min_eig = float(eigvals_cpu.min().item())
+        max_eig = float(eigvals_cpu.max().item())
+        print(f"[MPPI] cov eigvals: min={min_eig:.3e}, max={max_eig:.3e}")
+
+        # 正定値でない/ギリギリの時はジッター自動付与（段階的に増やす）
+        if min_eig <= 0.0:
+            for eps in [1e-10, 1e-8, 1e-6, 1e-4, 1e-3]:
+                cov_try = _add_jitter(self.noise_sigma, eps)
+                me = torch.linalg.eigvalsh(cov_try.double().cpu()).min().item()
+                print(f"[MPPI] add jitter {eps:g} => min_eig={me:.3e}")
+                if me > 0:
+                    self.noise_sigma = cov_try
+                    break
+            # まだ非正定値なら、ここで即停止して原因を見たい
+            eig_final = torch.linalg.eigvalsh(self.noise_sigma.double().cpu()).min().item()
+            if eig_final <= 0:
+                raise RuntimeError(f"[MPPI] covariance not PD even after jitter, min_eig={eig_final}")
+
+        # ---- MultivariateNormal 生成（GPU Cholesky バイパス版）----
+        # まずは CPU で Cholesky を試し、成功したら scale_tril を渡す
+        try:
+            L_cpu = torch.linalg.cholesky(self.noise_sigma.double().cpu())
+            L = L_cpu.to(dtype=self.noise_sigma.dtype, device=self.d)
+            self.noise_dist = MultivariateNormal(self.noise_mu, scale_tril=L)
+            print("[MPPI] MultivariateNormal initialized with CPU cholesky -> scale_tril")
+        except Exception as e:
+            print(f"[MPPI] CPU cholesky failed: {e}")
+            # 最終手段として、GPU でそのまま covariance_matrix を渡す（元の実装）
+            # ここでまた落ちるなら本当に cuSolver 側の問題
+            self.noise_dist = MultivariateNormal(self.noise_mu, covariance_matrix=self.noise_sigma)
+            print("[MPPI] MultivariateNormal initialized with covariance_matrix on device (GPU)")
+        ##############################################################
         
 
         try:
             self.noise_sigma_inv = torch.linalg.pinv(self.noise_sigma)
         except RuntimeError as e:
             print("WARNING: pinv failed on CUDA. Switching to CPU.")
-            self.noise_sigma_inv = torch.linalg.pinv(self.noise_sigma.cpu()).to(self.noise_sigma.device)
+            self.noise_sigma_inv = torch.linalg.pinv(self.noise_sigma.cpu()).to(self.noise_sigma.device)    
             
-        self.noise_dist = MultivariateNormal(
-            self.noise_mu, covariance_matrix=self.noise_sigma
-        )
+        # self.noise_dist = MultivariateNormal(
+        #     self.noise_mu, covariance_matrix=self.noise_sigma
+        # )
+        
         # T x nu control sequence
         self.U = U_init
         self.u_init = u_init.to(self.d)
@@ -173,7 +234,7 @@ class MPPI:
 
         return self._command(state)
 
-    def _command(self, state):
+    def _command(self, state): #一本の行動列を作る
         if not torch.is_tensor(state):
             state = torch.tensor(state)
         self.state = state.to(dtype=self.dtype, device=self.d)

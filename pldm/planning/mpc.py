@@ -66,13 +66,17 @@ class MPCEvaluator(ABC):
             loss_coeff_last=config.level1.loss_coeff_last,
         )
 
-        action_normalizer = lambda x: normalize_actions(
-            x,
-            min_norm=config.level1.min_step,
-            max_norm=config.level1.max_step,
-            xy_action=True,
-            clamp_actions=config.level1.clamp_actions,
-        )
+        #公式実験
+        # action_normalizer = lambda x: normalize_actions(
+        #     x,
+        #     min_norm=config.level1.min_step,
+        #     max_norm=config.level1.max_step,
+        #     xy_action=True,
+        #     clamp_actions=config.level1.clamp_actions,
+        # )
+        
+        #Franka だがここで不必要
+        # action_normalizer = lambda x: normalize_actions(x)
 
         if config.level1.planner_type == PlannerType.MPPI:
             planner = MPPIPlanner(
@@ -81,7 +85,7 @@ class MPCEvaluator(ABC):
                 normalizer=self.normalizer,
                 objective=objective,  # [300, 13456]
                 prober=self.prober,
-                action_normalizer=action_normalizer,
+                action_normalizer=None,
                 n_envs=n_envs,
                 projected_cost=config.level1.projected_cost,
             )
@@ -92,7 +96,7 @@ class MPCEvaluator(ABC):
                 normalizer=self.normalizer,
                 objective=objective,
                 prober=self.prober,
-                action_normalizer=action_normalizer,
+                action_normalizer=None, #diverse_maze の時は, action_normalizer を使用
             )
         else:
             raise NotImplementedError(

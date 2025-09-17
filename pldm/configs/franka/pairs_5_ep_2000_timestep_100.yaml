@@ -1,4 +1,4 @@
-n_steps: &n_steps 50
+n_steps: &n_steps 70
 val_n_steps: *n_steps
 env_name: &env_name franka
 
@@ -76,10 +76,10 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20250819_182724/epoch=10_sample_step=5610000.ckpt #pldm/checkpoints/franka_20250718_170222/epoch=10_sample_step=5610000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt #pldm/checkpoints/franka_20250718_170222/epoch=10_sample_step=5610000.ckpt
 load_l1_only: false
 
-use_closed_loss_func: &use_closed_loss_func false
+use_closed_loss_func: &use_closed_loss_func false #実際はopen
 objectives_l1:
   idm:
     action_dim: 7
@@ -87,7 +87,7 @@ objectives_l1:
     arch: 'conv'
     use_pred: false
     arch_subclass: a
-  open_objectives:
+  open_objectives: #実際はclosed
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   - ObjectiveType.IDM
@@ -143,9 +143,9 @@ eval_cfg:
     probe_encoder: true
     probe_preds: true
     use_closed_loss_func: *use_closed_loss_func
-    vis_dynamics_closed_featuremap: true
-    vis_dynamics_open_featuremap: true
-    vis_encoder_featruemap: true
+    vis_dynamics_closed_featuremap: false
+    vis_dynamics_open_featuremap: false
+    vis_encoder_featruemap: false
     epochs: 5 #5
     epochs_enc: 5 #5
     epochs_latent: 5 #5
@@ -184,16 +184,16 @@ eval_cfg:
       planner_type: PlannerType.MPPI
       min_step: 0
       max_step: 1
-      max_plan_length: 64 #128
+      max_plan_length: 64 #128 #一度に予測するホライズン
       sgd:
         action_change_reg: 0
         l2_reg: 0
         lr: 0.03
         n_iters: 200
       mppi:
-        noise_sigma: 5 #5
-        num_samples: 500 #500
-        lambda_: 0.0025
+        noise_sigma: 5 #5 #ノイズ共分散
+        num_samples: 500 #500.  #ランダム行動列のサンプル数
+        lambda_: 0.0025 #温度
   # d4rl_planning:
   #   n_envs: 10 #85
   #   n_envs_batch_size: 4 #16

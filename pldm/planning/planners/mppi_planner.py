@@ -240,7 +240,7 @@ class MPPIPlanner:
         if self.action_normalizer is not None:
             actions = self.action_normalizer(actions)
 
-        actions = self.normalizer.unnormalize_action(actions)
+        actions = self.normalizer.unnormalize_action(actions) #出力列の逆正規化
 
         self.dynamics.after_planning_callback()
         self.last_plan_size = plan_size
@@ -254,6 +254,10 @@ class MPPIPlanner:
             ).detach()
         else:
             unnormed_locations = None
+
+        print("[DBG] pred_locs raw:", pred_locs.min().item(), pred_locs.max().item())
+        print("[DBG] unnormed_locations:", unnormed_locations.min().item(), unnormed_locations.max().item())
+
 
         return PlanningResult(
             pred_encs=pred_encs,
