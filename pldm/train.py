@@ -544,6 +544,17 @@ class Trainer:
                 total_loss.backward()
                 self.optimizer.step()
                 self.model.update_ema()  # if ema is enabled, update ema encoder
+
+                #IDM のactionpredictor のパラメータが更新されるか
+                ###############
+                ap_has_grad = False
+                for n, p in self.model.named_parameters():
+                    if "action_predictor" in n:
+                        if p.grad is not None and p.grad.abs().sum().item() > 0:
+                            ap_has_grad = True
+                            break
+                print("[IDM DEBUG]IDM action_predictor gets grads? ->", ap_has_grad)
+                ###############
                 
                 self.validate_loss_val_ds() 
 
