@@ -90,7 +90,7 @@ class TrainConfig(ConfigBase):
     hjepa: HJEPAConfig = field(default_factory=HJEPAConfig)
 
     resume_if_possible: bool = True
-    compile_model: bool = True
+    compile_model: bool = False
 
     eval_cfg: EvalConfig = field(default_factory=EvalConfig)
     
@@ -188,6 +188,7 @@ class Trainer:
             probing_cfg=config.eval_cfg.probing,
             disable_l2=config.hjepa.disable_l2,
         ).create_datasets()
+        print('FINISHED CREATING DATASET!!')
 
         self.datasets = datasets
         

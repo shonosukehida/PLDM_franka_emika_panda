@@ -134,6 +134,7 @@ class MPCEvaluator(ABC):
             loss_history_c = mpc_result.loss_history
             qpos_history_c = mpc_result.qpos_history
             propio_history_c = mpc_result.propio_history
+            object_history_c = getattr(mpc_result, "object_history", None)
 
             mpc_data.observations.append(obs_c)
             mpc_data.locations.append(location_history_c)
@@ -145,8 +146,13 @@ class MPCEvaluator(ABC):
             mpc_data.loss_history.append(loss_history_c)
             mpc_data.qpos_history.append(qpos_history_c)
             mpc_data.propio_history.append(propio_history_c)
-
+            if object_history_c is not None:                         # ←
+                mpc_data.object_history.append(object_history_c)
             chunk_offset += chunk_size
+            
+            
+            print("[DBG] object_history len:", len(object_history_c),
+                "t0 shape:", getattr(object_history_c[0], "shape", None) if object_history_c else None)
 
         mpc_data.concatenate_chunks()
 
@@ -211,6 +217,8 @@ class MPCEvaluator(ABC):
         pred_positions_history = []
         loss_history = []
         final_preds_dist_history = []
+        
+        object_history = [] 
 
         init_infos = [e.get_info() for e in envs]
         if "location" in init_infos[0]:
@@ -221,6 +229,9 @@ class MPCEvaluator(ABC):
 
         if "propio" in init_infos[0]:
             propio_history.append(np.array([info["propio"] for info in init_infos]))
+            
+        if "object_pos" in init_infos[0]:
+            object_history.append(np.array([info["object_pos"] for info in init_infos]))
 
         for i in tqdm(range(self.config.n_steps), desc="Planning steps"):
             if i % self.config.replan_every == 0:
@@ -292,6 +303,9 @@ class MPCEvaluator(ABC):
 
             if "propio" in infos[0]:
                 propio_history.append(np.array([info["propio"] for info in infos]))
+                
+            if "object_pos" in infos[0]:
+                object_history.append(np.array([info["object_pos"] for info in infos]))
 
             if planning_result.locations is not None:
                 pred_locations = planning_result.locations.detach().cpu()
@@ -323,4 +337,5 @@ class MPCEvaluator(ABC):
             loss_history=loss_history,
             qpos_history=[torch.from_numpy(x) for x in qpos_history],
             propio_history=[torch.from_numpy(x) for x in propio_history],
+            object_history=[torch.from_numpy(x) for x in object_history],
         )

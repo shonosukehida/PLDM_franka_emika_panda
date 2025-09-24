@@ -293,50 +293,194 @@ class Normalizer:
             total_propio_vel_max = torch.ones_like(total_propio_vel_mean)
             total_bluebox_locs_min = torch.zeros_like(total_bluebox_locs_mean)
             total_bluebox_locs_max = torch.ones_like(total_bluebox_locs_mean)
-        else: ##
-            total_state = torch.cat(all_states, dim=0)
-            total_state_mean = total_state.mean(dim=0)
-            total_state_std = total_state.std(dim=0)
+        else:  ## ← normalizer_hardset=False の場合
+            # ---- オンライン（逐次）集計に切り替え：CPU / no-grad ----
+            import contextlib
+            device_cpu = torch.device("cpu")
 
-            total_action = torch.cat(all_actions)
-            total_action_mean = total_action.mean(dim=0)
-            total_action_std = total_action.std(dim=0)
+            # 初期化フラグ
+            init = False
 
-            total_location = torch.cat(all_locations)
-            total_location_mean = total_location.mean(dim=0)
-            total_location_std = total_location.std(dim=0)
+            # 総サンプル数（各フィールドで別管理）
+            n_state = n_action = n_loc = n_ppos = n_pvel = n_blue = 0
 
-            total_propio_pos = torch.cat(all_propio_pos)
-            total_propio_pos_mean = total_propio_pos.mean(dim=0)
-            total_propio_pos_std = total_propio_pos.std(dim=0)
+            with torch.inference_mode():
+                it2 = iter(dataset)
+                for _i in range(n_samples):
+                    try:
+                        sample = next(it2)
+                    except StopIteration:
+                        it2 = iter(dataset)
+                        sample = next(it2)
 
-            total_propio_vel = torch.cat(all_propio_vel)
-            total_propio_vel_mean = total_propio_vel.mean(dim=0)
-            total_propio_vel_std = total_propio_vel.std(dim=0)
+                    # --- STATES ---
+                    if cls._has_attr(sample, "states"):
+                        st = sample.states.float()  # (B,T,C,H,W) or (B,feat) etc.
+                        if st.ndim == 5:
+                            B, T, C, H, W = st.shape
+                            st = st.reshape(B*T, C*H*W)
+                        elif st.ndim == 3:  # (B, T, D)
+                            B, T, D = st.shape
+                            st = st.reshape(B*T, D)
+                        elif st.ndim == 2:  # (B, D)
+                            pass
+                        else:
+                            # 想定外はスキップ（元実装と同様の振る舞いに合わせるなら調整）
+                            st = None
 
-            total_bluebox_locs = torch.cat(all_bluebox_locs)
-            total_bluebox_locs_mean = total_bluebox_locs.mean(dim=0)
-            total_bluebox_locs_std = total_bluebox_locs.std(dim=0)
-            
-            
+                        if st is not None:
+                            st = st.to(device_cpu, dtype=torch.float32, copy=False)
+                            # バッチ統計
+                            nb = st.shape[0]
+                            b_mean = st.mean(0)
+                            # M2b = sum((xi - b_mean)^2) = var(unbiased=False) * nb
+                            b_M2 = st.var(dim=0, unbiased=False) * nb
+
+                            if not init:
+                                # 走査の初回はそのままセット
+                                state_mean = b_mean.clone()
+                                state_M2   = b_M2.clone()
+                                # min/max
+                                state_min  = st.min(0).values
+                                state_max  = st.max(0).values
+                                n_state    = nb
+                            else:
+                                # Welford の並列合成
+                                delta      = b_mean - state_mean
+                                tot        = n_state + nb
+                                state_mean = state_mean + delta * (nb / tot)
+                                state_M2   = state_M2 + b_M2 + delta.pow(2) * (n_state * nb / tot)
+                                n_state    = tot
+                                # min/max 更新
+                                state_min  = torch.minimum(state_min, st.min(0).values)
+                                state_max  = torch.maximum(state_max, st.max(0).values)
+
+                    # --- ACTIONS ---
+                    act = sample.actions
+                    if hasattr(dataset.config, "chunked_actions") and dataset.config.chunked_actions and not dataset.config.substitute_action == "direction":
+                        bs, T, chunk_sz, ad = act.shape
+                        act = act.view(bs*T*chunk_sz, ad)
+                    else:
+                        bs, T, ad = act.shape
+                        act = act.view(bs*T, ad)
+
+                    act = act.to(device_cpu, dtype=torch.float32, copy=False)
+                    nb = act.shape[0]
+                    a_mean = act.mean(0); a_M2 = act.var(0, unbiased=False) * nb
+                    if not init:
+                        action_mean, action_M2 = a_mean.clone(), a_M2.clone()
+                        action_min = act.min(0).values; action_max = act.max(0).values
+                        n_action = nb
+                    else:
+                        delta = a_mean - action_mean; tot = n_action + nb
+                        action_mean = action_mean + delta * (nb / tot)
+                        action_M2   = action_M2 + a_M2 + delta.pow(2) * (n_action * nb / tot)
+                        n_action    = tot
+                        action_min  = torch.minimum(action_min, act.min(0).values)
+                        action_max  = torch.maximum(action_max, act.max(0).values)
+
+                    # --- LOCATIONS ---
+                    loc = sample.locations.view(-1, sample.locations.shape[-1]).to(device_cpu, dtype=torch.float32, copy=False)
+                    nb = loc.shape[0]
+                    l_mean = loc.mean(0); l_M2 = loc.var(0, unbiased=False) * nb
+                    if not init:
+                        location_mean, location_M2 = l_mean.clone(), l_M2.clone()
+                        location_min = loc.min(0).values; location_max = loc.max(0).values
+                        n_loc = nb
+                    else:
+                        delta = l_mean - location_mean; tot = n_loc + nb
+                        location_mean = location_mean + delta * (nb / tot)
+                        location_M2   = location_M2 + l_M2 + delta.pow(2) * (n_loc * nb / tot)
+                        n_loc         = tot
+                        location_min  = torch.minimum(location_min, loc.min(0).values)
+                        location_max  = torch.maximum(location_max, loc.max(0).values)
+
+                    # --- PROPIO_POS ---
+                    if cls._has_attr(sample, "propio_pos"):
+                        ppos = sample.propio_pos.view(-1, sample.propio_pos.shape[-1]).to(device_cpu, dtype=torch.float32, copy=False)
+                    else:
+                        ppos = torch.zeros([1, 2], dtype=torch.float32)
+                    nb = ppos.shape[0]
+                    ppos_mean_b = ppos.mean(0); ppos_M2_b = ppos.var(0, unbiased=False) * nb
+                    if not init:
+                        propio_pos_mean, propio_pos_M2 = ppos_mean_b.clone(), ppos_M2_b.clone()
+                        propio_pos_min = ppos.min(0).values; propio_pos_max = ppos.max(0).values
+                        n_ppos = nb
+                    else:
+                        delta = ppos_mean_b - propio_pos_mean; tot = n_ppos + nb
+                        propio_pos_mean = propio_pos_mean + delta * (nb / tot)
+                        propio_pos_M2   = propio_pos_M2 + ppos_M2_b + delta.pow(2) * (n_ppos * nb / tot)
+                        n_ppos          = tot
+                        propio_pos_min  = torch.minimum(propio_pos_min, ppos.min(0).values)
+                        propio_pos_max  = torch.maximum(propio_pos_max, ppos.max(0).values)
+
+                    # --- PROPIO_VEL ---
+                    if cls._has_attr(sample, "propio_vel"):
+                        pvel = sample.propio_vel.view(-1, sample.propio_vel.shape[-1]).to(device_cpu, dtype=torch.float32, copy=False)
+                    else:
+                        pvel = torch.zeros([1, 2], dtype=torch.float32)
+                    nb = pvel.shape[0]
+                    pvel_mean_b = pvel.mean(0); pvel_M2_b = pvel.var(0, unbiased=False) * nb
+                    if not init:
+                        propio_vel_mean, propio_vel_M2 = pvel_mean_b.clone(), pvel_M2_b.clone()
+                        propio_vel_min = pvel.min(0).values; propio_vel_max = pvel.max(0).values
+                        n_pvel = nb
+                    else:
+                        delta = pvel_mean_b - propio_vel_mean; tot = n_pvel + nb
+                        propio_vel_mean = propio_vel_mean + delta * (nb / tot)
+                        propio_vel_M2   = propio_vel_M2 + pvel_M2_b + delta.pow(2) * (n_pvel * nb / tot)
+                        n_pvel          = tot
+                        propio_vel_min  = torch.minimum(propio_vel_min, pvel.min(0).values)
+                        propio_vel_max  = torch.maximum(propio_vel_max, pvel.max(0).values)
+
+                    # --- BLUEBOX_LOCS ---
+                    if cls._has_attr(sample, "bluebox_locs"):
+                        bl = sample.bluebox_locs.view(-1, sample.bluebox_locs.shape[-1]).to(device_cpu, dtype=torch.float32, copy=False)
+                    else:
+                        bl = torch.zeros([1, 3], dtype=torch.float32)
+                    nb = bl.shape[0]
+                    bl_mean_b = bl.mean(0); bl_M2_b = bl.var(0, unbiased=False) * nb
+                    if not init:
+                        bluebox_locs_mean, bluebox_locs_M2 = bl_mean_b.clone(), bl_M2_b.clone()
+                        bluebox_locs_min = bl.min(0).values; bluebox_locs_max = bl.max(0).values
+                        n_blue = nb
+                        init = True
+                    else:
+                        delta = bl_mean_b - bluebox_locs_mean; tot = n_blue + nb
+                        bluebox_locs_mean = bluebox_locs_mean + delta * (nb / tot)
+                        bluebox_locs_M2   = bluebox_locs_M2 + bl_M2_b + delta.pow(2) * (n_blue * nb / tot)
+                        n_blue            = tot
+                        bluebox_locs_min  = torch.minimum(bluebox_locs_min, bl.min(0).values)
+                        bluebox_locs_max  = torch.maximum(bluebox_locs_max, bl.max(0).values)
+
+            # 最終std（不偏に合わせたい場合は (n-1) で割るが、元実装は .std(dim=0) → デフォルト不偏=True なので合わせる）
+            eps = 1e-8
+            total_state_mean = state_mean
+            total_state_std  = torch.sqrt(state_M2 / max(n_state-1, 1) + eps)
+
+            total_action_mean = action_mean
+            total_action_std  = torch.sqrt(action_M2 / max(n_action-1, 1) + eps)
+
+            total_location_mean = location_mean
+            total_location_std  = torch.sqrt(location_M2 / max(n_loc-1, 1) + eps)
+
+            total_propio_pos_mean = propio_pos_mean
+            total_propio_pos_std  = torch.sqrt(propio_pos_M2 / max(n_ppos-1, 1) + eps)
+
+            total_propio_vel_mean = propio_vel_mean
+            total_propio_vel_std  = torch.sqrt(propio_vel_M2 / max(n_pvel-1, 1) + eps)
+
+            total_bluebox_locs_mean = bluebox_locs_mean
+            total_bluebox_locs_std  = torch.sqrt(bluebox_locs_M2 / max(n_blue-1, 1) + eps)
+
+            # minmax のレンジ
             if normalize_mode == "minmax":
-                total_state_min = torch.stack(all_states_min).min(dim=0).values
-                total_state_max = torch.stack(all_states_max).max(dim=0).values
-
-                total_action_min = torch.stack(all_actions_min).min(dim=0).values
-                total_action_max = torch.stack(all_actions_max).max(dim=0).values
-
-                total_location_min = torch.stack(all_locations_min).min(dim=0).values
-                total_location_max = torch.stack(all_locations_max).max(dim=0).values
-
-                total_propio_pos_min = torch.stack(all_propio_pos_min).min(dim=0).values
-                total_propio_pos_max = torch.stack(all_propio_pos_max).max(dim=0).values
-
-                total_propio_vel_min = torch.stack(all_propio_vel_min).min(dim=0).values
-                total_propio_vel_max = torch.stack(all_propio_vel_max).max(dim=0).values
-                
-                total_bluebox_locs_min = torch.stack(all_bluebox_locs_min).min(dim=0).values
-                total_bluebox_locs_max = torch.stack(all_bluebox_locs_max).max(dim=0).values
+                total_state_min, total_state_max = state_min, state_max
+                total_action_min, total_action_max = action_min, action_max
+                total_location_min, total_location_max = location_min, location_max
+                total_propio_pos_min, total_propio_pos_max = propio_pos_min, propio_pos_max
+                total_propio_vel_min, total_propio_vel_max = propio_vel_min, propio_vel_max
+                total_bluebox_locs_min, total_bluebox_locs_max = bluebox_locs_min, bluebox_locs_max
             else:
                 total_state_min = torch.zeros_like(total_state_mean)
                 total_state_max = torch.ones_like(total_state_mean)

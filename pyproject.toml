@@ -36,6 +36,7 @@ dependencies = [
     "numpy-quaternion>=2023.0.3",
     "omegaconf>=2.3.0",
     "rospkg>=1.6.0",
+    "scikit-learn>=1.7.2",
     "scipy>=1.15.2",
     "statsmodels>=0.14.1",
     "torch>=2.5.1",

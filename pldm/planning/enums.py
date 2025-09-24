@@ -61,6 +61,7 @@ class MPCResult(NamedTuple):
     loss_history: List[torch.Tensor]
     qpos_history: Optional[List[torch.Tensor]] = None
     propio_history: Optional[List[torch.Tensor]] = None
+    object_history: Optional[List[torch.Tensor]] = None
 
 
 @dataclass
@@ -76,6 +77,7 @@ class PooledMPCResult:
     extra: list = field(default_factory=list)
     qpos_history: list = field(default_factory=list)
     propio_history: list = field(default_factory=list)
+    object_history: list = field(default_factory=list)
 
     def concatenate_chunks(self):
         # combine different chunks together in batch dimension
@@ -102,3 +104,5 @@ class PooledMPCResult:
 
         self.qpos_history = [torch.cat(t, dim=0) for t in zip(*self.qpos_history)]
         self.propio_history = [torch.cat(t, dim=0) for t in zip(*self.propio_history)]
+        if len(self.object_history) > 0:
+            self.object_history = [torch.cat(t, dim=0) for t in zip(*self.object_history)]

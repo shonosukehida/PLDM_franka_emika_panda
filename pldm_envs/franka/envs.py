@@ -238,6 +238,7 @@ class FrankaSimEnv:
             "location": self.get_ee_position(),
             "qpos": self.physics.data.qpos[:7].copy(),
             "qvel": self.physics.data.qvel[:7].copy(),
+            "object_pos": self.get_object_position().copy(),
         }
 
     def get_propio_pos(self):

@@ -216,6 +216,18 @@ def log_planning_plots_split(
     B = result.observations[0].shape[0]
     H = result.observations[0][0].shape[-2]
     W = result.observations[0][0].shape[-1]
+    
+    ###############################################################################################
+    print("[DBG] has object_history:", hasattr(result, "object_history"))
+    if hasattr(result, "object_history"):
+        print("[DBG] len(object_history):", len(result.object_history))
+        if len(result.object_history) > 0:
+            oh0 = result.object_history[0]
+            try:
+                print("[DBG] object_history[0] shape:", getattr(oh0, "shape", type(oh0)))
+            except Exception as e:
+                print("[DBG] object_history[0] type:", type(oh0), "err:", e)
+    ###############################################################################################
 
     #図A:観測のみ
     num_panels = math.ceil(T / plot_every)
@@ -261,30 +273,80 @@ def log_planning_plots_split(
         for t in range(t_max):
             if t > report.terminations[idx]: break
             preds.append(result.pred_locations[t][:, idx, :].detach().cpu())  # (H,2)
+
+
+        obj_traj = None
+        if getattr(result, "object_history", None):  
+            T_obj = len(result.object_history)
+            t_term = getattr(report, "terminations", [T - 1])[idx]  # report が無ければ T-1
+            tt = min(T, T_obj, t_term + 1) 
+
+            if tt > 0:
+                obj_traj = torch.stack(
+                    [result.object_history[t][idx] for t in range(tt)],
+                    dim=0
+                ).cpu()
+                # xyz→xy
+                if obj_traj.shape[-1] == 3:
+                    obj_traj = obj_traj[:, :2]
+
+
             
-        #必要であればpixel変換
+        #pixel変換(使う予定なし)
         if use_pixel_mapper and pixel_mapper is not None:
             starts = pixel_mapper(starts).squeeze().float()
             targets = pixel_mapper(targets).squeeze().float()
             traj = pixel_mapper(traj).squeeze().float()
             preds = [pixel_mapper(p).squeeze().float() for p in preds]
+            if obj_traj is not None:                        
+                obj_traj = pixel_mapper(obj_traj).squeeze().float()
 
         figB = plt.figure(dpi=250)
         ax = plt.gca()
-        ax.scatter(starts[0],  starts[1],  s=12, c="tab:blue",  label="start")
-        ax.scatter(targets[0], targets[1], s=12, c="tab:orange", label="goal")
-        # ax.plot(traj[:,0], traj[:,1], lw=1.2, c="tab:blue", alpha=0.9, label="executed")
-        ax.scatter(traj[:,0], traj[:,1], s=8, c="tab:blue", alpha=0.9)
 
 
-        #予測列
-        for t, P in enumerate(preds):
-            if t % plot_every: continue
-            ax.plot(P[:,0], P[:,1], lw=0.6, alpha=0.6, c="red")
+        # ax.scatter(starts[0],  starts[1],  s=12, c="black",  label="start")
+        ax.scatter(targets[0], targets[1], s=12, c="tab:orange", label="goal", zorder=5)
+        ax.scatter(traj[:,0],  traj[:,1],  s=8,  c="black",  alpha=0.9, label="end-effector", zorder=6)
+        ax.text(traj[0, 0], traj[0, 1], "S", fontsize=10, color="black", ha="center", va="center", fontweight="bold", zorder=7)
+
+        if preds:
+            for t, P in enumerate(preds):
+                if t % plot_every:  continue
+                ax.plot(P[:,0], P[:,1], lw=0.6, alpha=0.6, c="red", zorder=2)
+                ax.scatter(P[0, 0], P[0, 1], s=10, c="lime", marker="o", zorder=1)
+
+
+        if obj_traj is not None and len(obj_traj) > 0:
+            ax.plot(obj_traj[:,0], obj_traj[:,1], lw=1.2, c="tab:blue", label="bluebox", zorder=4)
+            ax.scatter(obj_traj[0,0], obj_traj[0,1], s=14, c="tab:blue", marker="x", label="bluebox_start", zorder=3)
+            
+
+
+        # 環境grid可視化
+        if world_xlim is not None and world_ylim is not None:
+            xmin, xmax = world_xlim
+            ymin, ymax = world_ylim
+
+
+            if use_pixel_mapper and pixel_mapper is not None:
+                box_xy = torch.tensor([[xmin, ymin],
+                                    [xmax, ymin],
+                                    [xmax, ymax],
+                                    [xmin, ymax],
+                                    [xmin, ymin]], dtype=torch.float32)
+                box_xy = pixel_mapper(box_xy).squeeze().float().cpu().numpy()
+                ax.plot(box_xy[:,0], box_xy[:,1],
+                        linestyle="--", linewidth=1.0, alpha=0.6,
+                        color="black",)
+            else:
+                from matplotlib.patches import Rectangle
+                rect = Rectangle((xmin, ymin), xmax - xmin, ymax - ymin,
+                                fill=False, linewidth=1.0, linestyle="--",
+                                edgecolor="black", alpha=0.6, zorder=0)
+                ax.add_patch(rect)
 
         ax.set_aspect("equal")
-        if world_xlim: ax.set_xlim(*world_xlim)
-        if world_ylim: ax.set_ylim(*world_ylim)
         ax.grid(True, ls=":", lw=0.5, alpha=0.5)
         ax.legend(fontsize=8, loc="best")
 

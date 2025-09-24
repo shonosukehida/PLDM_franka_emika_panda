@@ -1,4 +1,4 @@
-n_steps: &n_steps 70
+n_steps: &n_steps 100
 val_n_steps: *n_steps
 env_name: &env_name franka
 
@@ -31,7 +31,7 @@ data:
     path: pldm_envs/franka/presaved_datasets/pairs_5_ep_2000_timestep_100/data.p
     location_only: false
     # normalize: true
-    num_workers: 4 #10
+    num_workers: 0 #10
     prioritized: false
     quick_debug: false
     sample_length: *n_steps
@@ -76,7 +76,7 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt #pldm/checkpoints/franka_20250718_170222/epoch=10_sample_step=5610000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20250913_125623/epoch=10_sample_step=110000.ckpt #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
 load_l1_only: false
 
 use_closed_loss_func: &use_closed_loss_func false #実際はopen
@@ -191,7 +191,7 @@ eval_cfg:
         lr: 0.03
         n_iters: 200
       mppi:
-        noise_sigma: 5 #5 #ノイズ共分散
+        noise_sigma: 0.01 #5 #ノイズ共分散 0.01
         num_samples: 500 #500.  #ランダム行動列のサンプル数
         lambda_: 0.0025 #温度
   # d4rl_planning:
