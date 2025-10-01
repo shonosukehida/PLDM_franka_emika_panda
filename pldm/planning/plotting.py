@@ -7,6 +7,7 @@ from tqdm import tqdm
 import numpy as np
 import torch
 import sys
+import gc
 
 default_plot_idxs = list(range(100))
 
@@ -216,18 +217,7 @@ def log_planning_plots_split(
     B = result.observations[0].shape[0]
     H = result.observations[0][0].shape[-2]
     W = result.observations[0][0].shape[-1]
-    
-    ###############################################################################################
-    print("[DBG] has object_history:", hasattr(result, "object_history"))
-    if hasattr(result, "object_history"):
-        print("[DBG] len(object_history):", len(result.object_history))
-        if len(result.object_history) > 0:
-            oh0 = result.object_history[0]
-            try:
-                print("[DBG] object_history[0] shape:", getattr(oh0, "shape", type(oh0)))
-            except Exception as e:
-                print("[DBG] object_history[0] type:", type(oh0), "err:", e)
-    ###############################################################################################
+
 
     #図A:観測のみ
     num_panels = math.ceil(T / plot_every)
@@ -309,6 +299,8 @@ def log_planning_plots_split(
         ax.scatter(targets[0], targets[1], s=12, c="tab:orange", label="goal", zorder=5)
         ax.scatter(traj[:,0],  traj[:,1],  s=8,  c="black",  alpha=0.9, label="end-effector", zorder=6)
         ax.text(traj[0, 0], traj[0, 1], "S", fontsize=10, color="black", ha="center", va="center", fontweight="bold", zorder=7)
+        ax.text(traj[-1, 0], traj[-1, 1], "G", fontsize=10, color="black", ha="center", va="center", fontweight="bold", zorder=7)
+
 
         if preds:
             for t, P in enumerate(preds):
@@ -352,3 +344,34 @@ def log_planning_plots_split(
 
         Logger.run().log_figure(figB, f"mpc/prediction_seq_{idx}")
         plt.close(figB)
+
+
+        # figを必ず閉じる（ログ直後にやるのがベスト）
+        try: plt.close(figA)
+        except: pass
+        try: plt.close(figB)
+        except: pass
+
+        # 大きい参照を明示解放
+        for _n in ('ax', 'traj', 'obj_traj'):
+            if _n in locals():
+                try: del locals()[_n]
+                except: pass
+
+        # preds がリストなら中身を解放してからdel
+        if 'preds' in locals() and isinstance(preds, list):
+            try: preds.clear()
+            except: pass
+            try: del preds
+            except: pass
+
+        # 使い捨て変数も削除（任意）
+        for _n in ('img', 'obs', 'P'):
+            if _n in locals():
+                try: del locals()[_n]
+                except: pass
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()

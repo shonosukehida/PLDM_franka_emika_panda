@@ -1,4 +1,4 @@
-#データセット生成用に作った,最新環境
+#データセット生成用に作った環境
 
 import os
 os.environ["MUJOCO_GL"] = "egl"
@@ -125,7 +125,6 @@ class FrankaSimEnv:
         if not result.success:
             raise ValueError("IK failed!")
 
-        # --- 計算結果をそのまま反映 ---
         self.physics.data.qpos[:7] = result.qpos[:7]
         self.physics.data.qvel[:7] = 0
         self.physics.forward()

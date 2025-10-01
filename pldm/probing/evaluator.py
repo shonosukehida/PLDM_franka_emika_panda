@@ -21,6 +21,7 @@ from pldm.data.utils import get_optional_fields
 from pldm.optimizers.schedulers import Scheduler, LRSchedule
 import glob
 import tempfile
+import gc
 
 
 from pldm_envs.utils.normalizer import Normalizer
@@ -981,7 +982,25 @@ class ProbingEvaluator:
         # tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
         ani.save(str(out_path), writer="pillow")
 
-        plt.close(fig)
+        
+        try:
+            for ax in axs:
+                ax.cla()
+                if hasattr(ax, "images"):
+                    try:
+                        ax.images.clear()
+                    except Exception:
+                        pass
+        finally:
+            plt.close(fig)            
+            del ani
+            del ims
+            del axs
+            del fig
+            import gc, torch
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         return save_path, fig_width, fig_height
 
 
@@ -1012,7 +1031,25 @@ class ProbingEvaluator:
             save_path = os.path.join(save_dir, f"{name_prefix}-obs_{idx}.gif")
 
         ani.save(save_path, writer='pillow')
-        plt.close(fig)
+
+
+        try:
+            ax.cla()
+            if hasattr(ax, "images"):
+                try:
+                    ax.images.clear()
+                except Exception:
+                    pass
+        finally:
+            plt.close(fig)
+            del ani
+            del ims
+            del ax
+            del fig
+            import gc, torch
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         return save_path
 
@@ -1714,6 +1751,49 @@ class ProbingEvaluator:
                 plt.close(fig)
             else:
                 plt.show()
+
+
+        plt.close('all')
+
+        try:
+            del pred_locs_clsfwd_encprb, pred_locs_opnfwd_encprb
+        except Exception:
+            pass
+        try:
+            del pred_bluebox_locs_clsfwd_encprb, pred_bluebox_locs_opnfwd_encprb
+        except Exception:
+            pass
+        try:
+            del pred_enc_locs, pred_enc_bluebox_locs
+        except Exception:
+            pass
+
+        try:
+            del pred_encs, pred_encs_open, encoder_encs
+        except Exception:
+            pass
+
+        try:
+            del gt_locations, gt_bluebox_locations
+        except Exception:
+            pass
+        try:
+            del img, init_img
+        except Exception:
+            pass
+
+        try:
+            del pred_output, pred_output_open, enc_output
+        except Exception:
+            pass
+        try:
+            del states, actions, optional_fields
+        except Exception:
+            pass
+
+        gc.collect()
+        torch.cuda.empty_cache()
+
         
 
 
@@ -2446,6 +2526,48 @@ class ProbingEvaluator:
                 plt.close(fig)
             else:
                 plt.show()
+
+        plt.close('all')
+
+        try:
+            del pred_locs_clsfwd_encprb, pred_locs_opnfwd_encprb
+        except Exception:
+            pass
+        try:
+            del pred_bluebox_locs_clsfwd_encprb, pred_bluebox_locs_opnfwd_encprb
+        except Exception:
+            pass
+        try:
+            del pred_enc_locs, pred_enc_bluebox_locs
+        except Exception:
+            pass
+
+        try:
+            del pred_encs, pred_encs_open, encoder_encs
+        except Exception:
+            pass
+
+        try:
+            del gt_locations, gt_bluebox_locations
+        except Exception:
+            pass
+
+        try:
+            del img, init_img
+        except Exception:
+            pass
+
+        try:
+            del pred_output, pred_output_open, enc_output
+        except Exception:
+            pass
+        try:
+            del states, actions, optional_fields
+        except Exception:
+            pass
+
+        gc.collect()
+        torch.cuda.empty_cache()
             
 
     @torch.no_grad()
@@ -2488,6 +2610,8 @@ class ProbingEvaluator:
 
 
         pred_output = jepa.forward_posterior(states, actions, **optional_fields).pred_output
+        
+        
         if getattr(pred_output, "obs_component", None) is not None:
             closed_lat_seq = pred_output.obs_component  # [T,B,C,H,W] or [T,B,D]
         else:
@@ -2500,6 +2624,11 @@ class ProbingEvaluator:
         enc_output = jepa.forward_posterior(states, actions, encode_only=True, **optional_fields).backbone_output
         encoder_lat_seq = enc_output.obs_component    # [T,B,C,H,W] or [T,B,D]
 
+        print("[DEGUB: plot_cca] closed_lat_seq.shape", closed_lat_seq.shape)
+        print("[DEGUB: plot_cca] encoder_lat_seq", encoder_lat_seq.shape)
+        
+        
+        
         # [B,T,D] に正規化
         T_ref, B_ref = states.shape[0], states.shape[1]  # states は [T,B,...]
 
@@ -2543,8 +2672,8 @@ class ProbingEvaluator:
             return x.reshape(B, T, D).contiguous()
 
 
-        closed_lat_seq  = _to_BTD(closed_lat_seq,  pool="flat")  # or "gap"
-        encoder_lat_seq = _to_BTD(encoder_lat_seq, pool="flat")  # or "gap"
+        closed_lat_seq  = _to_BTD(closed_lat_seq,  pool="gap")  # or "gap"
+        encoder_lat_seq = _to_BTD(encoder_lat_seq, pool="gap")  # or "gap"
         print("[CCA plot]closed_lat_seq final shape:", closed_lat_seq.shape)
         print("[CCA plot]encoder_lat_seq final shape:", encoder_lat_seq.shape)
         print("[CCA plot]closed_lat_seq std:", closed_lat_seq.std().item())
@@ -2585,7 +2714,7 @@ class ProbingEvaluator:
         V_bt = V.reshape(B, T, k_eff)
 
 
-        t_colors = np.linspace(0.0, 1.0, T) 
+        # t_colors = np.linspace(0.3, 1.0, T) 
         cmap_e = cm.Blues 
         cmap_c = cm.Reds
         
@@ -2600,7 +2729,7 @@ class ProbingEvaluator:
             lim = float(max(abs(U2).max(), abs(V2).max()))  
 
 
-            norm = mpl.colors.Normalize(vmin=0, vmax=T-1)
+            norm = mpl.colors.Normalize(vmin=0.3, vmax=1.0)
             cmap_e = cm.Blues
             cmap_c = cm.Reds
 
@@ -2612,17 +2741,17 @@ class ProbingEvaluator:
 
 
                 for t in range(T - 1):
-                    ax2d.plot(u2d[t:t+2, 0], u2d[t:t+2, 1], color=cmap_e(norm(t)), alpha=0.9)
-                    ax2d.plot(v2d[t:t+2, 0], v2d[t:t+2, 1], color=cmap_c(norm(t)), alpha=0.9)
+                    ax2d.plot(u2d[t:t+2, 0], u2d[t:t+2, 1], color=cmap_e(norm(0.3 + 0.7 * t / (T-1))), alpha=0.95)
+                    ax2d.plot(v2d[t:t+2, 0], v2d[t:t+2, 1], color=cmap_c(norm(0.3 + 0.7 * t / (T-1))), alpha=0.95)
 
                 # 始点・終点
-                ax2d.scatter(u2d[0, 0], u2d[0, 1], s=12, c=cmap_e(norm(0)), label="Encoder (U)")
-                ax2d.text(u2d[0, 0], u2d[0, 1], "S", fontsize=9, ha="center", va="center", color=cmap_e(norm(0)))
-                ax2d.text(u2d[-1, 0], u2d[-1, 1], "G", fontsize=9, ha="center", va="center", color=cmap_e(norm(T-1)))
+                ax2d.scatter(u2d[0, 0], u2d[0, 1], s=12, c=cmap_e(norm(0.3)), label="Encoder (U)")
+                ax2d.text(u2d[0, 0], u2d[0, 1], "S", fontsize=9, ha="center", va="center", color=cmap_e(norm(0.3)))
+                ax2d.text(u2d[-1, 0], u2d[-1, 1], "G", fontsize=9, ha="center", va="center", color=cmap_e(norm(1.0)))
                 
-                ax2d.scatter(v2d[0, 0], v2d[0, 1], s=12, c=cmap_c(norm(0)), label="Closed (V)")
-                ax2d.text(v2d[0,0],  v2d[0,1],  "S", fontsize=9, ha="center", va="center", color=cmap_c(norm(0)),   zorder=4)
-                ax2d.text(v2d[-1,0], v2d[-1,1], "G", fontsize=9, ha="center", va="center", color=cmap_c(norm(T-1)), zorder=4)
+                ax2d.scatter(v2d[0, 0], v2d[0, 1], s=12, c=cmap_c(norm(0.3)), label="Closed (V)")
+                ax2d.text(v2d[0,0],  v2d[0,1],  "S", fontsize=9, ha="center", va="center", color=cmap_c(norm(0.3)),   zorder=4)
+                ax2d.text(v2d[-1,0], v2d[-1,1], "G", fontsize=9, ha="center", va="center", color=cmap_c(norm(1.0)), zorder=4)
 
                 ax2d.set_xlim(-lim, lim)
                 ax2d.set_ylim(-lim, lim)
@@ -2632,8 +2761,8 @@ class ProbingEvaluator:
                 ax2d.set_title(f"{name_prefix} | idx={i} | mean corr={mean_corr:.3f}")
 
                 handles = [
-                    Line2D([0], [0], color=cmap_e(norm(T-1)), lw=2, label="Encoder (U)"),
-                    Line2D([0], [0], color=cmap_c(norm(T-1)), lw=2, label="Closed (V)")
+                    Line2D([0], [0], color=cmap_e(norm(1.0)), lw=2, label="Encoder (U)"),
+                    Line2D([0], [0], color=cmap_c(norm(1.0)), lw=2, label="Closed (V)")
                 ]
                 ax2d.legend(handles=handles, loc="best", frameon=True)
 
@@ -2655,7 +2784,7 @@ class ProbingEvaluator:
         # --- 3D (CC1-CC2-CC3) ---
         if k_eff >= 3:
             from mpl_toolkits.mplot3d import Axes3D  # noqa
-            norm = mpl.colors.Normalize(vmin=0, vmax=T-1)
+            norm = mpl.colors.Normalize(vmin=0.3, vmax=1.0)
             cmap_e = cm.Blues
             cmap_c = cm.Reds
 
@@ -2667,8 +2796,8 @@ class ProbingEvaluator:
                 v3d = V_bt[i, :, :3]
 
                 for t in range(T - 1):
-                    ax3d.plot(u3d[t:t+2, 0], u3d[t:t+2, 1], u3d[t:t+2, 2], color=cmap_e(norm(t)), alpha=0.9)
-                    ax3d.plot(v3d[t:t+2, 0], v3d[t:t+2, 1], v3d[t:t+2, 2], color=cmap_c(norm(t)), alpha=0.9)
+                    ax3d.plot(u3d[t:t+2, 0], u3d[t:t+2, 1], u3d[t:t+2, 2], color=cmap_e(norm(0.3 + 0.7 * t / (T-1))), alpha=0.95)
+                    ax3d.plot(v3d[t:t+2, 0], v3d[t:t+2, 1], v3d[t:t+2, 2], color=cmap_c(norm(0.3 + 0.7 * t / (T-1))), alpha=0.95)
 
                 # --- Start/Goal markers for 3D (U=Encoder, V=Closed) ---
                 # 目印サイズとオフセット（重なり回避用）
@@ -2676,20 +2805,20 @@ class ProbingEvaluator:
                 off = 0.02 * float(max(abs(U_bt[:, :, :3]).max(), abs(V_bt[:, :, :3]).max()))
 
                 # U (青)
-                ax3d.scatter(u3d[0,0],  u3d[0,1],  u3d[0,2],  s=s_size, c=cmap_e(norm(0)),   depthshade=False, zorder=5)
-                ax3d.scatter(u3d[-1,0], u3d[-1,1], u3d[-1,2], s=s_size, c=cmap_e(norm(T-1)), depthshade=False, zorder=5)
+                ax3d.scatter(u3d[0,0],  u3d[0,1],  u3d[0,2],  s=s_size, c=cmap_e(norm(0.3)),   depthshade=False, zorder=5)
+                ax3d.scatter(u3d[-1,0], u3d[-1,1], u3d[-1,2], s=s_size, c=cmap_e(norm(1.0)), depthshade=False, zorder=5)
                 ax3d.text(u3d[0,0]+off,  u3d[0,1]+off,  u3d[0,2]+off,  "S",
-                        color=cmap_e(norm(0)),   fontsize=9, zorder=6)
+                        color=cmap_e(norm(0.3)),   fontsize=9, zorder=6)
                 ax3d.text(u3d[-1,0]+off, u3d[-1,1]+off, u3d[-1,2]+off, "G",
-                        color=cmap_e(norm(T-1)), fontsize=9, zorder=6)
+                        color=cmap_e(norm(1.0)), fontsize=9, zorder=6)
 
                 # V (赤)
-                ax3d.scatter(v3d[0,0],  v3d[0,1],  v3d[0,2],  s=s_size, c=cmap_c(norm(0)),   depthshade=False, zorder=5)
-                ax3d.scatter(v3d[-1,0], v3d[-1,1], v3d[-1,2], s=s_size, c=cmap_c(norm(T-1)), depthshade=False, zorder=5)
+                ax3d.scatter(v3d[0,0],  v3d[0,1],  v3d[0,2],  s=s_size, c=cmap_c(norm(0.3)),   depthshade=False, zorder=5)
+                ax3d.scatter(v3d[-1,0], v3d[-1,1], v3d[-1,2], s=s_size, c=cmap_c(norm(1.0)), depthshade=False, zorder=5)
                 ax3d.text(v3d[0,0]+off,  v3d[0,1]+off,  v3d[0,2]+off,  "S",
-                        color=cmap_c(norm(0)),   fontsize=9, zorder=6)
+                        color=cmap_c(norm(0.3)),   fontsize=9, zorder=6)
                 ax3d.text(v3d[-1,0]+off, v3d[-1,1]+off, v3d[-1,2]+off, "G",
-                        color=cmap_c(norm(T-1)), fontsize=9, zorder=6)
+                        color=cmap_c(norm(1.0)), fontsize=9, zorder=6)
 
 
 
@@ -2704,8 +2833,8 @@ class ProbingEvaluator:
                 )
                 
                 handles = [
-                    Line2D([0], [0], color=cmap_e(norm(T-1)), lw=2, label="Encoder (U)"),
-                    Line2D([0], [0], color=cmap_c(norm(T-1)), lw=2, label="Closed (V)")
+                    Line2D([0], [0], color=cmap_e(norm(1.0)), lw=2, label="Encoder (U)"),
+                    Line2D([0], [0], color=cmap_c(norm(1.0)), lw=2, label="Closed (V)")
                 ]
                 ax3d.legend(handles=handles, loc="upper left", frameon=True)
 
@@ -2754,6 +2883,23 @@ class ProbingEvaluator:
                 plt.show()
         except Exception:
             pass
+    
+        plt.close('all')
+        try:
+            del U_bt, V_bt, U, V, Z_enc, Z_clo
+        except Exception:
+            pass
+        try:
+            del closed_lat_seq, encoder_lat_seq
+        except Exception:
+            pass
+        try:
+            del pred_output, enc_output, states, actions, optional_fields
+        except Exception:
+            pass
+        gc.collect()
+        torch.cuda.empty_cache()
+
 
 
 
@@ -3556,3 +3702,44 @@ class ProbingEvaluator:
                 plt.close(fig)
             else:
                 plt.show()
+                
+            plt.close('all')
+
+        try:
+            del pred_locs_clsfwd_encprb, pred_locs_opnfwd_encprb
+        except Exception:
+            pass
+        try:
+            del pred_bluebox_locs_clsfwd_encprb, pred_bluebox_locs_opnfwd_encprb
+        except Exception:
+            pass
+        try:
+            del pred_enc_locs, pred_enc_bluebox_locs
+        except Exception:
+            pass
+
+        try:
+            del pred_encs, pred_encs_open, encoder_encs
+        except Exception:
+            pass
+
+        try:
+            del gt_locations, gt_bluebox_locations
+        except Exception:
+            pass
+        try:
+            del img, init_img
+        except Exception:
+            pass
+
+        try:
+            del pred_output, pred_output_open, enc_output
+        except Exception:
+            pass
+        try:
+            del states, actions, optional_fields
+        except Exception:
+            pass
+
+        gc.collect()
+        torch.cuda.empty_cache()

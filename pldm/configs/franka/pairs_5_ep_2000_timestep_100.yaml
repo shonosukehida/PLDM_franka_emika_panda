@@ -1,4 +1,4 @@
-n_steps: &n_steps 100
+n_steps: &n_steps 70
 val_n_steps: *n_steps
 env_name: &env_name franka
 
@@ -76,14 +76,14 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20250913_125623/epoch=10_sample_step=110000.ckpt #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20250924_165801/epoch=10_sample_step=3410000.ckpt #pldm/checkpoints/franka_20250913_125623/epoch=10_sample_step=110000.ckpt
 load_l1_only: false
 
 use_closed_loss_func: &use_closed_loss_func false #現在はopen_objectives を共通の損失関数として使用
 objectives_l1:
   idm:
     action_dim: 7
-    coeff: 5.3964 #5.3964
+    coeff: 10.0 #5.3964
     arch: 'conv'
     use_pred: false
     arch_subclass: a
@@ -158,8 +158,8 @@ eval_cfg:
     load_prober: true
   disable_planning: false
   franka_planning:
-    n_envs: 10 #85
-    n_envs_batch_size: 5 #16
+    n_envs: 4 #85
+    n_envs_batch_size: 1 #16
     n_steps: 192
     levels: "easy"
     easy:

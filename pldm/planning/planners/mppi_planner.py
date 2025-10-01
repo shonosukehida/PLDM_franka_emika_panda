@@ -255,10 +255,6 @@ class MPPIPlanner:
         else:
             unnormed_locations = None
 
-        print("[DBG] in ''pldm/planning/planners/mppi_planner.py''")
-        print("[DBG] pred_locs raw:", pred_locs.min().item(), pred_locs.max().item())
-        print("[DBG] unnormed_locations:", unnormed_locations.min().item(), unnormed_locations.max().item())
-
 
         return PlanningResult(
             pred_encs=pred_encs,

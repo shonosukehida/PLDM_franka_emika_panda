@@ -238,27 +238,30 @@ class MPPI:
         if not torch.is_tensor(state):
             state = torch.tensor(state)
         self.state = state.to(dtype=self.dtype, device=self.d)
-        cost_total = self._compute_total_cost_batch()
-        torch.cuda.empty_cache()
-        beta = torch.min(cost_total)
-        self.cost_total_non_zero = _ensure_non_zero(cost_total, beta, 1 / self.lambda_)
-        eta = torch.sum(self.cost_total_non_zero)
-        self.omega = (1.0 / eta) * self.cost_total_non_zero
-        perturbations = []
-        for t in range(self.T):
-            perturbations.append(
-                torch.sum(self.omega.view(-1, 1) * self.noise[:, t], dim=0)
-            )
-        perturbations = torch.stack(perturbations)
-        self.U = self.U + perturbations
-        if self.u_per_command == -1:
-            # return all the actions
-            return self.U
-        action = self.U[: self.u_per_command]
-        # reduce dimensionality if we only need the first command
-        if self.u_per_command == 1:
-            action = action[0]
-        return action
+        
+        
+        with torch.inference_mode():
+            cost_total = self._compute_total_cost_batch()
+            torch.cuda.empty_cache()
+            beta = torch.min(cost_total)
+            self.cost_total_non_zero = _ensure_non_zero(cost_total, beta, 1 / self.lambda_)
+            eta = torch.sum(self.cost_total_non_zero)
+            self.omega = (1.0 / eta) * self.cost_total_non_zero
+            perturbations = []
+            for t in range(self.T):
+                perturbations.append(
+                    torch.sum(self.omega.view(-1, 1) * self.noise[:, t], dim=0)
+                )
+            perturbations = torch.stack(perturbations)
+            self.U = self.U + perturbations
+            if self.u_per_command == -1:
+                # return all the actions
+                return self.U
+            action = self.U[: self.u_per_command]
+            # reduce dimensionality if we only need the first command
+            if self.u_per_command == 1:
+                action = action[0]
+            return action
 
     def change_horizon(self, horizon):
         if horizon < self.U.shape[0]:
@@ -278,6 +281,9 @@ class MPPI:
         self.U = self.noise_dist.sample((self.T,))
 
     def _compute_rollout_costs(self, perturbed_actions):
+        torch.cuda.reset_peak_memory_stats()
+        print("[MEM] start MB=", torch.cuda.memory_allocated()/1024**2)
+
         K, T, nu = perturbed_actions.shape
         assert nu == self.nu
 
@@ -334,7 +340,54 @@ class MPPI:
     def _compute_total_cost_batch(self):
         # parallelize sampling across trajectories
         # resample noise each time we take an action
-        noise = self.noise_dist.rsample((self.K, self.T))
+        
+        ##########################################################
+        loc   = self.noise_dist.loc
+        L     = self.noise_dist._unbroadcasted_scale_tril  # ※ scale_tril を使っている前提
+        A     = loc.shape[-1]
+
+        print("[CHK] loc   :", tuple(loc.shape),  loc.dtype,  loc.device, "finite=", bool(torch.isfinite(loc).all()))
+        print("[CHK] L     :", tuple(L.shape),    L.dtype,    L.device,   "finite=", bool(torch.isfinite(L).all()))
+        diag = torch.diagonal(L, 0, -2, -1)   # これを一度計算して…
+        print("[CHK] diag>0:", (diag > 0).all().item(),
+            "min=", diag.min().item(),
+            "max=", diag.max().item())
+
+        print("[CHK] K,T,A :", self.K, self.T, A)
+
+        # まず極小バッチで単発テスト（ここで落ちたら分布が壊れてます）
+        # test = self.noise_dist.rsample((1,1))
+        # print("[CHK] single rsample OK:", test.shape)
+        ##########################################################
+        
+        
+        
+        
+        
+        
+        # noise = self.noise_dist.rsample((self.K, self.T))
+
+        with torch.no_grad():
+            # try:
+            # 一時的に CPU 側の分布を作ってサンプル → GPU へ
+            if self.noise_dist._unbroadcasted_scale_tril is not None:
+                L_cpu = self.noise_dist._unbroadcasted_scale_tril.detach().double().cpu()
+                mu_cpu = self.noise_dist.loc.detach().double().cpu()
+                cpu_dist = MultivariateNormal(mu_cpu, scale_tril=L_cpu)
+            else:
+                Sigma_cpu = self.noise_sigma.detach().double().cpu()
+                mu_cpu    = self.noise_mu.detach().double().cpu()
+                cpu_dist  = MultivariateNormal(mu_cpu, covariance_matrix=Sigma_cpu)
+
+            noise = cpu_dist.sample((self.K, self.T)).to(self.d, dtype=self.dtype, non_blocking=True)
+            # except RuntimeError:
+            #     # 最終手段：対角近似で手動サンプル（min_eig≈max_eig=1e-2 なら等方と同等）
+            #     std = torch.sqrt(torch.diagonal(self.noise_sigma, 0, -2, -1))
+            #     noise = (torch.randn(self.K, self.T, self.nu, device=self.d, dtype=self.dtype) * std + self.noise_mu)
+
+        
+        
+        
         # broadcast own control to noise over samples; now it's K x T x nu
         perturbed_action = self.U + noise
         if self.sample_null_action:
@@ -397,6 +450,7 @@ class MPPI:
                 self.u_scale * self.U[t].tile(num_rollouts, 1),
                 t,
             )
+        print("[MEM] after rollout MB=", torch.cuda.max_memory_allocated()/1024**2)
         return states[:, 1:]
 
 

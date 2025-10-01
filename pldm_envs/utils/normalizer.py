@@ -494,6 +494,40 @@ class Normalizer:
                 total_propio_vel_max = torch.ones_like(total_propio_vel_mean)
                 total_bluebox_locs_min = torch.zeros_like(total_bluebox_locs_mean)
                 total_bluebox_locs_max = torch.ones_like(total_bluebox_locs_mean)
+                
+            # return の直前に追加
+            device = torch.device("cuda", 0)     # 使っているGPUに合わせて
+            dtype  = torch.float32
+
+            def _fix(t):
+                return t.to(device=device, dtype=dtype, non_blocking=True).contiguous()
+
+            total_state_mean = _fix(total_state_mean)
+            total_state_std  = torch.clamp(_fix(total_state_std), min=1e-6)   # ゼロ割り対策
+
+            total_action_mean = _fix(total_action_mean)
+            total_action_std  = torch.clamp(_fix(total_action_std), min=1e-6)
+
+            total_location_mean = _fix(total_location_mean)
+            total_location_std  = torch.clamp(_fix(total_location_std), min=1e-6)
+
+            total_propio_pos_mean = _fix(total_propio_pos_mean)
+            total_propio_pos_std  = torch.clamp(_fix(total_propio_pos_std), min=1e-6)
+
+            total_propio_vel_mean = _fix(total_propio_vel_mean)
+            total_propio_vel_std  = torch.clamp(_fix(total_propio_vel_std), min=1e-6)
+
+            total_bluebox_locs_mean = _fix(total_bluebox_locs_mean)
+            total_bluebox_locs_std  = torch.clamp(_fix(total_bluebox_locs_std), min=1e-6)
+
+            # minmax 用の下限上限も同様に
+            total_state_min, total_state_max = _fix(total_state_min), _fix(total_state_max)
+            total_action_min, total_action_max = _fix(total_action_min), _fix(total_action_max)
+            total_location_min, total_location_max = _fix(total_location_min), _fix(total_location_max)
+            total_propio_pos_min, total_propio_pos_max = _fix(total_propio_pos_min), _fix(total_propio_pos_max)
+            total_propio_vel_min, total_propio_vel_max = _fix(total_propio_vel_min), _fix(total_propio_vel_max)
+            total_bluebox_locs_min, total_bluebox_locs_max = _fix(total_bluebox_locs_min), _fix(total_bluebox_locs_max)
+
 
         return cls(
             total_state_mean,
@@ -538,8 +572,8 @@ class Normalizer:
 
     @classmethod
     def build_id_normalizer(cls):
-        z = torch.zeros(1)
-        o = torch.ones(1)
+        z = torch.zeros(1, device=torch.device("cuda", 0), dtype=torch.float32)
+        o = torch.ones(1, device=torch.device("cuda", 0), dtype=torch.float32)
         return cls(
             state_mean=z, state_std=o,
             action_mean=z, action_std=o,
@@ -553,8 +587,8 @@ class Normalizer:
             propio_pos_min=z, propio_pos_max=o,
             propio_vel_min=z, propio_vel_max=o,
             bluebox_locs_min=z, bluebox_locs_max=o,
-            normalize_mode="zscore",  # あるいは "minmax"
-            # minmax の出力レンジ（必要なら）
+            normalize_mode="zscore",  # or "minmax"
+            # minmax の出力レンジ
             min_states_val=0.0, max_states_val=1.0,
             min_actions_val=0.0, max_actions_val=1.0,
             min_locations_val=0.0, max_locations_val=1.0,

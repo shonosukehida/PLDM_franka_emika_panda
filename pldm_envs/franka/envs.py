@@ -53,6 +53,8 @@ class FrankaSimEnv:
         self.max_episode_steps = 100
         self.start_pos = None
         self.goal_pos = None
+        
+        self.MAX_DQ = 1000_000_000
 
     def calc_inverse_kinematic(self, target_xyz, target_rotmat=None, rot_weight=1.0):
         target_quat = None
@@ -132,8 +134,8 @@ class FrankaSimEnv:
         
         qpos = self.physics.data.qpos[:7].copy()
         
-        MAX_DQ = 0.01 #1step あたりの最大増分rad
-        dq = np.clip(action, -MAX_DQ, MAX_DQ)
+        self.MAX_DQ = 0.01 #1step あたりの最大増分rad
+        dq = np.clip(action - qpos, -self.MAX_DQ, self.MAX_DQ)
         target = qpos + dq
 
 
@@ -159,6 +161,35 @@ class FrankaSimEnv:
         truncated = False
         info = self.get_info()
         return image_obs, reward, done, truncated, info
+
+    def set_xyz(self, target_pos, target_rotmat=None, rot_weight=0.1,
+                settle_steps=10, sync_ctrl=True):
+        result = self.calc_inverse_kinematic(
+            target_pos, target_rotmat=target_rotmat, rot_weight=rot_weight,
+        )
+        if not result.success:
+            raise ValueError("IK failed!")
+
+        q_des = result.qpos[:7].copy()
+
+        self.physics.data.qpos[:7] = q_des
+        self.physics.data.qvel[:7] = 0.0
+        self.physics.forward()
+
+        if sync_ctrl:
+            low, high = self.ctrlrange[:, 0], self.ctrlrange[:, 1]
+            q_des_clip = np.clip(q_des, low, high)
+            self.physics.data.ctrl[:] = 0.0
+            self.physics.data.ctrl[self.arm_actuator_ids] = q_des_clip
+
+
+        for _ in range(settle_steps):
+            self.physics.step()
+
+        ee_pos = self.get_ee_position()
+        return q_des, ee_pos
+
+
 
     # ========== 観測 ==========
     def get_obs(self):
@@ -213,7 +244,7 @@ class FrankaSimEnv:
             self.physics.forward()
 
 
-    # ========== 補助 ==========
+
     def _is_success(self, object_pos):
         return float(np.linalg.norm(object_pos - self.goal_pos) < self.success_thresh)
 

@@ -38,7 +38,6 @@ class FrankaMPCEvaluator(MPCEvaluator):
             pixel_mapper=pixel_mapper
         )
 
-        # ここで Franka の gym 環境を複数生成するコードを書く
         envs_generator = FrankaEnvsGenerator(
             model_path=config.model_path,  
             n_envs=config.n_envs,

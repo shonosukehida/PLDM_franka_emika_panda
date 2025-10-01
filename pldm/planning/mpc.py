@@ -146,13 +146,10 @@ class MPCEvaluator(ABC):
             mpc_data.loss_history.append(loss_history_c)
             mpc_data.qpos_history.append(qpos_history_c)
             mpc_data.propio_history.append(propio_history_c)
-            if object_history_c is not None:                         # ←
+            if object_history_c is not None:                         
                 mpc_data.object_history.append(object_history_c)
             chunk_offset += chunk_size
-            
-            
-            print("[DBG] object_history len:", len(object_history_c),
-                "t0 shape:", getattr(object_history_c[0], "shape", None) if object_history_c else None)
+        
 
         mpc_data.concatenate_chunks()
 
@@ -177,7 +174,105 @@ class MPCEvaluator(ABC):
             loss_history: list of a_T (n_iters,)
         """
 
+        
+        ################################
+        def _get_action_bounds(env):
+            # 最優先: 既にある ctrlrange / n_arm_act を使う
+            if hasattr(env, "ctrlrange") and hasattr(env, "n_arm_act"):
+                low  = env.ctrlrange[:, 0].astype(np.float32)
+                high = env.ctrlrange[:, 1].astype(np.float32)
+                shape = (env.n_arm_act,)
+                return low, high, shape
+
+            # 予備: arm_actuator_ids があるならそこから拾う
+            if hasattr(env, "arm_actuator_ids"):
+                cr = env.physics.model.actuator_ctrlrange[env.arm_actuator_ids]
+                low  = cr[:, 0].astype(np.float32)
+                high = cr[:, 1].astype(np.float32)
+                shape = (len(env.arm_actuator_ids),)
+                return low, high, shape
+
+            # 最終手段: 全アクチュエータの範囲
+            cr = env.physics.model.actuator_ctrlrange
+            low  = cr[:, 0].astype(np.float32)
+            high = cr[:, 1].astype(np.float32)
+            shape = (cr.shape[0],)
+            return low, high, shape
+        
+
+        def pulse_once(env, dim, amp, steps=1):
+            low, high, shape = _get_action_bounds(env)
+
+            info0 = env.get_info()
+            ee0   = np.array(info0.get("location",   [np.nan, np.nan]), dtype=np.float32)
+            obj0  = np.array(info0.get("object_pos", [np.nan, np.nan]), dtype=np.float32)
+            qpos0 = env.physics.data.qpos[:7].copy()
+
+            u = np.zeros(shape, dtype=np.float32)  # ← action_space.shape は使わない
+            u[dim] = amp
+
+            # クリップ判定
+            clipped = np.any((u <= low + 1e-6) | (u >= high - 1e-6))
+
+            for _ in range(steps):
+                obs, rew, done, trunc, info = env.step(u)
+
+            info1 = env.get_info()
+            ee1   = np.array(info1.get("location",   [np.nan, np.nan]), dtype=np.float32)
+            obj1  = np.array(info1.get("object_pos", [np.nan, np.nan]), dtype=np.float32)
+            qpos1 = env.physics.data.qpos[:7].copy()
+
+            dqpos = (qpos1 - qpos0)[:7]
+            dee   = ee1  - ee0
+            dobj  = obj1 - obj0
+
+            print(f"[PULSE] joint={dim} amp={amp:+.4f} steps={steps} clipped={clipped}")
+            print(f"        low/high[{dim}] = {low[dim]:+.3f} / {high[dim]:+.3f}")
+            print(f"        Δqpos[{dim}]={dqpos[dim]:+.5f} | ||Δee||={np.linalg.norm(dee):.5f}  Δee={dee}")
+            print(f"        Δobj={dobj} (||Δobj||={np.linalg.norm(dobj):.5f})")
+
+
+            expected = np.clip(amp, -env.MAX_DQ, env.MAX_DQ) * steps
+            err = dqpos[dim] - expected
+            print(f"expected Δq[{dim}]≈{expected:+.5f}, err={err:+.5f}")
+            print("Δqpos(all) =", np.round((qpos1 - qpos0)[:7], 5))
+            
+            
+
+            return dee, dobj, dqpos
+
+
+        def pulse_sweep(env, dims=None, amps=(+0.05, -0.05, +0.1, -0.1, +0.2), steps_list=(1,5)):
+            if dims is None:
+                # 既定で env.n_arm_act を使うと安全
+                n = getattr(env, "n_arm_act", 7)
+                dims = range(n)
+            rows = []
+            for d in dims:
+                for amp in amps:
+                    for st in steps_list:
+                        env.reset()
+                        dee, dobj, dqpos = pulse_once(env, d, amp, steps=st)
+                        rows.append((d, amp, st, *dee.tolist(), *dobj.tolist(), dqpos[d]))
+            return rows
+
+
+
+        for env in envs:
+            env.reset()
+            rows = pulse_sweep(env)
+            rows = np.array(rows, dtype=np.float32)
+            print("[SUMMARY] mean |Δee/(amp*steps)| by joint:")
+            for j in range(getattr(env, "n_arm_act", 7)):
+                m = rows[rows[:,0]==j]
+                g = np.mean(np.linalg.norm(m[:,3:5], axis=1) / (np.abs(m[:,1]) * m[:,2]))
+                print(f"  joint{j}: {g:.4f}  (per-step gain)")
+        ################################
+        
+
+
         for e in envs: e.reset()
+        
             
         #ゴール位置
         targets = [e.get_target() for e in envs]
