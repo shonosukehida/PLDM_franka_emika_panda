@@ -22,7 +22,7 @@ SUCCESS_TOL = 0.01              # EE到達判定 (m)
 STEP_SUBSTEPS = 50              # env.__init__(substeps=...) と同一が無難
 MAX_STEPS_PER_WAYPOINT = 300    # 各目標に対して許容する最大ステップ数
 HOLD_STEPS_AT_TARGET = 10       # 収束後に少し保持して撮影
-SAVE_EVERY = 5                  # フレーム保存間隔
+SAVE_EVERY = 1                # フレーム保存間隔
 SEED = 0
 
 # あなたの作業机の矩形領域（少しマージンを引いてIK失敗を避ける）
@@ -110,12 +110,18 @@ def run_follow(env, traj_xyz, name="rectangle"):
     steps_used = []
     total_frames = 0
 
+    #フレームごと
+    frame_ee_xy = []
+    frame_tgt_xy = []
+
     t0 = time.time()
 
     # 初期化：最初の点近傍に寄せる（IKでワープ→安定化）
     env.reset()
     env.set_xyz(traj_xyz[0])
     for _ in range(50): env.physics.step()
+    frame_ee_xy.append(env.get_ee_position()[:2].copy())
+    frame_tgt_xy.append(traj_xyz[0][:2].copy())
 
     for i, target in enumerate(traj_xyz):
         # IKで目標関節角（q_des）を得る
@@ -134,6 +140,11 @@ def run_follow(env, traj_xyz, name="rectangle"):
                 rgb = render_rgb(env)
                 plt.imsave(OUTDIR / "frames" / f"{name}_{i:03d}_{step_cnt:04d}.png", rgb)
                 total_frames += 1
+                
+            #毎フレームのEE/targetをログ（XY）
+            frame_ee_xy.append(cur[:2].copy())
+            frame_tgt_xy.append(target[:2].copy())
+                
 
             if err < SUCCESS_TOL:
                 # 少し保持してから次へ
@@ -195,6 +206,24 @@ def run_follow(env, traj_xyz, name="rectangle"):
     with open(OUTDIR / f"metrics_{name}.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
+
+    # ③ フレーム連続の実軌跡 可視化 & CSV
+    frame_ee_xy = np.array(frame_ee_xy, dtype=np.float32)
+    frame_tgt_xy = np.array(frame_tgt_xy, dtype=np.float32)
+
+    # 連続軌跡のXY図
+    plt.figure(figsize=(5,5))
+    plt.plot(frame_tgt_xy[:,0], frame_tgt_xy[:,1], 'g--', lw=1, label='target XY (per frame)')
+    plt.plot(frame_ee_xy[:,0],  frame_ee_xy[:,1],  'r-',  lw=1, label='executed XY (per frame)')
+    plt.xlabel("X [m]"); plt.ylabel("Y [m]")
+    plt.title(f"Frame-wise trajectory: {name}")
+    plt.axis("equal"); plt.grid(True, alpha=0.3); plt.legend()
+    plt.tight_layout()
+    plt.savefig(OUTDIR / f"ee_traj_plot_framewise_{name}.png", dpi=150)
+    plt.close()
+    print(f"[SAVE] framewise plot -> ee_traj_plot_framewise_{name}.png")
+    
+
     print(f"[DONE] {name} reached={metrics['reached_ratio']:.3f}, mean_err={metrics['mean_err_m']:.4f} m")
     return metrics
 
@@ -213,23 +242,27 @@ def maybe_make_gif():
     print("[SAVE] GIF ->", OUTDIR / "preview.gif")
 
 
-def make_gifs_per_traj(max_frames=300, duration=0.05):
+def make_gifs_per_traj(duration=0.05):
     try:
         import imageio.v2 as imageio
     except Exception:
         print("[INFO] imageio not available; skip GIF")
         return
-    frames = sorted((OUTDIR / "frames").glob("*.png"))
+
+    frames = sorted((OUTDIR / "frames").glob("*.png"))  # 0埋めなので辞書順で時系列OK
     groups = {}
     for p in frames:
-        name = p.stem.split("_", 1)[0]  # 先頭の prefix が軌跡名
+        name = p.stem.split("_", 1)[0]  # 先頭プレフィックス=軌跡名
         groups.setdefault(name, []).append(p)
-    print("[DBG] groups.keys()", groups.keys())
+
     for name, fps in groups.items():
-        sel = fps[:max_frames]
-        imgs = [imageio.imread(str(p)) for p in sel]
+        fps = sorted(fps)  # 念のため
+        if not fps:
+            continue
+        imgs = [imageio.imread(str(p)) for p in fps]   # ★上限なし
         imageio.mimsave(OUTDIR / f"{name}.gif", imgs, duration=duration)
-        print(f"[SAVE] {name}.gif  ({len(sel)} frames)")
+        print(f"[SAVE] {name}.gif  ({len(fps)} frames, full span)")
+
 
 
 def main():
