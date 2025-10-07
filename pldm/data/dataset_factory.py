@@ -234,6 +234,7 @@ class DatasetFactory:
         val_ds = make_dataloader(
             ds=val_ds, 
             loader_config=self.config, 
+            train=False,
             )
 
         probe_ds = FrankaDataset(
@@ -272,6 +273,7 @@ class DatasetFactory:
             loader_config=self.config,
             # normalizer=ds.normalizer,
             suffix="probe_val",
+            train=False,
         )
         return Datasets(
             ds=ds, 

@@ -7,3 +7,4 @@ class FrankaMPCConfig(MPCConfig):
     goal_pos_noise: float = 0.01
     use_ik: bool = True
     model_path: str = "mujoco_menagerie/franka_emika_panda/scene.xml"
+    fps: float = 2.5

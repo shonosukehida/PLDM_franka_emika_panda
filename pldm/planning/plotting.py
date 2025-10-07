@@ -208,6 +208,7 @@ def log_planning_plots_split(
     plot_failure_only=False,
     world_xlim=None, world_ylim=None,
     use_pixel_mapper=False, pixel_mapper=None,
+    env = None, #運動学計算用
 ):
 
     if idxs is None:
@@ -260,10 +261,24 @@ def log_planning_plots_split(
         T_pred = len(result.pred_locations)    # 各ステップ → T
         t_term = getattr(report, "terminations", [T_loc-1])[idx]
         t_max = min(T_pred, T_loc - 1, t_term + 1)
+        
+        env.reset()
         for t in range(t_max):
             if t > report.terminations[idx]: break
-            preds.append(result.pred_locations[t][:, idx, :].detach().cpu())  # (H,2)
-
+            # preds.append(result.pred_locations[t][:, idx, :].detach().cpu())  # (H,2)
+            
+            # print("[DBG: log_planning_plots_split/pldm/planning/plotting.py] action_history.len: ",  len(result.action_history)) #200 = T
+            # print("[DBG: log_planning_plots_split/pldm/planning/plotting.py] action_history[0].shape: ",  result.action_history[0].shape) #(10, 100, 7)=(num_envs, H, dim)
+            
+            
+            #運動学によるMPPI予測軌跡
+            act = result.action_history[t][idx].detach().cpu().numpy() 
+            pred_locs_kinematics = []
+            for a in act:
+                env.set_joint(a)
+                pred_locs_kinematics.append(env.get_ee_position()[:2])
+            pred_locs_kinematics = torch.from_numpy(np.asarray(pred_locs_kinematics, dtype=np.float32))
+            preds.append(pred_locs_kinematics)
 
         obj_traj = None
         if getattr(result, "object_history", None):  

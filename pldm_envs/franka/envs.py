@@ -188,6 +188,17 @@ class FrankaSimEnv:
 
         ee_pos = self.get_ee_position()
         return q_des, ee_pos
+    
+    def set_joint(self, joint_angle):
+
+        q = np.asarray(joint_angle, dtype=np.float32).reshape(-1)
+        if q.shape[0] != 7:
+            raise ValueError(f"expected (7,) but got {q.shape}")
+        self.physics.data.qpos[:7] = q
+        self.physics.data.qvel[:7] = 0.0
+        self.physics.forward()
+        
+        return 
 
 
 

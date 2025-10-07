@@ -1,15 +1,17 @@
 # evaluate_trajectory_following.py
+import os
+os.environ["MUJOCO_GL"] = "egl"
+os.environ.pop("DISPLAY", None)
 from pathlib import Path
 import numpy as np
 import json, time
 import matplotlib
-matplotlib.use("Agg")  # 画面なしで保存
+matplotlib.use("Agg") 
 import matplotlib.pyplot as plt
 
-# ==== あなたのプロジェクトの import に合わせて調整 ====
-# 例: from pldm_envs.franka.envs import FrankaSimEnv
+from dm_control import mujoco as dm_mj
 from pldm_envs.franka.envs import FrankaSimEnv
-# ========================================================
+
 
 OUTDIR = Path("./robot_task_sim/traj_eval_out")
 OUTDIR.mkdir(parents=True, exist_ok=True)
@@ -25,11 +27,78 @@ HOLD_STEPS_AT_TARGET = 10       # 収束後に少し保持して撮影
 SAVE_EVERY = 1                # フレーム保存間隔
 SEED = 0
 
+Franka_FPS = 2.5
+
 # あなたの作業机の矩形領域（少しマージンを引いてIK失敗を避ける）
 x_min, x_max = 0.315, 0.715
 y_min, y_max = -0.2, 0.2
 z_fixed = 0.10
 MARGIN = 0.01
+
+# ロボットパラメータ
+
+
+def patch_franka_runtime(
+    env,
+    kp=None,                 # 位置アクチュエータの比例ゲイン（pos actuator想定）
+    dof_damping=None,        # DOFダンピング（振動抑制）
+    dof_armature=None,       # DOFアーマチュア（慣性付加）
+    ctrl_low=None,           # アーム用ctrl下限（7要素）
+    ctrl_high=None,          # アーム用ctrl上限（7要素）
+    solver_iters=None,       # ソルバ反復
+    ls_iters=None,           # ラインサーチ反復
+):
+    m = env.physics.model
+    d = env.physics.data
+    print("kp before:", m.actuator_gainprm[env.arm_actuator_ids, 0])
+
+    # --- 比例ゲイン（pos actuator の kp）---
+    if kp is not None:
+        for aid in env.arm_actuator_ids:
+            m.actuator_gainprm[aid, 0] = float(kp)
+
+    # --- ダンピング／アーマチュア ---
+    if dof_damping is not None:
+        arr = np.asarray(dof_damping, np.float32)
+        assert arr.shape[0] == m.nv, "dof_damping の長さが nv と一致していません"
+        m.dof_damping[:] = arr
+
+    if dof_armature is not None:
+        arr = np.asarray(dof_armature, np.float32)
+        assert arr.shape[0] == m.nv, "dof_armature の長さが nv と一致していません"
+        m.dof_armature[:] = arr
+
+    # --- アームのctrl範囲 ---
+    if (ctrl_low is not None) or (ctrl_high is not None):
+        lo = np.asarray(ctrl_low if ctrl_low is not None
+                        else m.actuator_ctrlrange[env.arm_actuator_ids, 0], np.float32)
+        hi = np.asarray(ctrl_high if ctrl_high is not None
+                        else m.actuator_ctrlrange[env.arm_actuator_ids, 1], np.float32)
+        assert lo.shape[0] == len(env.arm_actuator_ids)
+        assert hi.shape[0] == len(env.arm_actuator_ids)
+        m.actuator_ctrlrange[env.arm_actuator_ids, 0] = lo
+        m.actuator_ctrlrange[env.arm_actuator_ids, 1] = hi
+        # 重要：FrankaSimEnv は ctrlrange を copy で保持しているので更新
+        env.ctrlrange = m.actuator_ctrlrange[env.arm_actuator_ids].copy()
+
+    # --- ソルバ強化（接触安定が欲しいとき）---
+    if solver_iters is not None:
+        m.opt.iterations = int(solver_iters)
+    if ls_iters is not None:
+        m.opt.ls_iterations = int(ls_iters)
+
+    # 物理量の整合
+    env.physics.forward()
+    print("kp after :", m.actuator_gainprm[env.arm_actuator_ids, 0])
+
+def set_control_frequency_by_substeps(env, control_hz: float):
+    m = env.physics.model
+    dt = float(m.opt.timestep)           
+    sub = max(1, int(round((1.0 / control_hz) / dt)))
+    env.substeps = sub
+    actual_hz = 1.0 / (sub * dt)
+    print(f"[CTRL FREQ] target={control_hz:.3f} Hz -> substeps={sub}, actual≈{actual_hz:.3f} Hz")
+    return actual_hz
 
 # === 軌跡プリセット ===
 def make_trajectory(kind="rectangle", n_points=60, shuffle=False, seed=0):
@@ -187,6 +256,11 @@ def run_follow(env, traj_xyz, name="rectangle"):
     plt.figure(figsize=(5,5))
     plt.plot(tgt_traj[:,0], tgt_traj[:,1], linestyle="--", marker="o", markersize=2, label="target XY")
     plt.plot(ee_traj[:,0],  ee_traj[:,1],  linestyle="-",  marker=".", markersize=2, label="executed XY")
+
+    
+    plt.text(ee_traj[0,0], ee_traj[0,1], "S", color="orange", fontsize=12, fontweight="bold", ha="center", va="center")
+    plt.text(ee_traj[-1,0], ee_traj[-1,1], "G", color="orange", fontsize=12, fontweight="bold", ha="center", va="center")
+
     plt.xlabel("X [m]"); plt.ylabel("Y [m]"); plt.title(f"Trajectory: {name}")
     plt.axis("equal"); plt.legend()
     plt.grid(True, alpha=0.3)
@@ -215,6 +289,10 @@ def run_follow(env, traj_xyz, name="rectangle"):
     plt.figure(figsize=(5,5))
     plt.plot(frame_tgt_xy[:,0], frame_tgt_xy[:,1], 'g--', lw=1, label='target XY (per frame)')
     plt.plot(frame_ee_xy[:,0],  frame_ee_xy[:,1],  'r-',  lw=1, label='executed XY (per frame)')
+
+    plt.text(frame_ee_xy[0,0], frame_ee_xy[0,1], "S", color="red", fontsize=12, fontweight="bold", ha="center", va="center")
+    plt.text(frame_ee_xy[-1,0], frame_ee_xy[-1,1], "G", color="red", fontsize=12, fontweight="bold", ha="center", va="center")
+
     plt.xlabel("X [m]"); plt.ylabel("Y [m]")
     plt.title(f"Frame-wise trajectory: {name}")
     plt.axis("equal"); plt.grid(True, alpha=0.3); plt.legend()
@@ -275,6 +353,22 @@ def main():
         substeps=STEP_SUBSTEPS,
         normalizer=None,   # ここは学習時に合わせてもOK
     )
+    
+    
+    
+    nv = env.physics.model.nv
+    patch_franka_runtime(
+        env,
+        kp=None,                                  # 追従速度アップ（上げすぎ注意）
+        dof_damping=None,   # 振動を抑える
+        dof_armature=None,
+        ctrl_low=None, 
+        ctrl_high=None,       # 明示的に範囲を締める
+        solver_iters=None, 
+        ls_iters=None,                # 接触や剛性が強い時に
+    )
+    set_control_frequency_by_substeps(env, control_hz = Franka_FPS)
+    
 
     # 軌跡をいくつか評価
     todo = [

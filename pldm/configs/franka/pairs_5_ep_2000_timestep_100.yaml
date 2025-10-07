@@ -76,14 +76,14 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20250924_165801/epoch=10_sample_step=3410000.ckpt #pldm/checkpoints/franka_20250913_125623/epoch=10_sample_step=110000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt #pldm/checkpoints/franka_20250913_125623/epoch=10_sample_step=110000.ckpt
 load_l1_only: false
 
 use_closed_loss_func: &use_closed_loss_func false #現在はopen_objectives を共通の損失関数として使用
 objectives_l1:
   idm:
     action_dim: 7
-    coeff: 10.0 #5.3964
+    coeff: 5.3964 #5.3964
     arch: 'conv'
     use_pred: false
     arch_subclass: a
@@ -180,6 +180,7 @@ eval_cfg:
     image_obs: true
     stack_states: 1
     data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/'
+    fps: 2.5 #FPS指定
     level1:
       planner_type: PlannerType.MPPI
       min_step: 0

@@ -180,6 +180,7 @@ eval_cfg:
     image_obs: true
     stack_states: 1
     data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/'
+    fps: 2.5 #FPS指定
     level1:
       planner_type: PlannerType.MPPI
       min_step: 0

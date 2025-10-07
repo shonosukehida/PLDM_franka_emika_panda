@@ -98,7 +98,8 @@ class FrankaMPCEvaluator(MPCEvaluator):
                 world_xlim = [0.315, 0.715],
                 world_ylim = [-0.2, 0.2],
                 use_pixel_mapper=False,           
-                pixel_mapper=self.pixel_mapper,   
+                pixel_mapper=self.pixel_mapper, 
+                env = self.envs[0],
             )
 
             

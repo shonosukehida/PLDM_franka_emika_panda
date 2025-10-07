@@ -173,6 +173,21 @@ class MPCEvaluator(ABC):
             targets: (bs, 4)
             loss_history: list of a_T (n_iters,)
         """
+        
+        physic_timestep = envs[0].physics.model.opt.timestep
+        substeps = envs[0].substeps
+        desired_freq = self.config.fps
+        dt_target = 1.0 / desired_freq
+        per_step_dt = physic_timestep * substeps
+        
+        repeat = max(1, round(dt_target / per_step_dt))
+        envs = [ActionRepeatWrapper(e, repeat=repeat) for e in envs]
+        
+        effective_dt = per_step_dt * repeat
+        print(f"[MPC] timestep={physic_timestep:.6f}s  substeps={substeps}  "
+            f"repeat={repeat}  → effective_dt={effective_dt:.3f}s "
+            f"({1.0/effective_dt:.2f} Hz)")
+        
 
         
         ################################
@@ -434,3 +449,25 @@ class MPCEvaluator(ABC):
             propio_history=[torch.from_numpy(x) for x in propio_history],
             object_history=[torch.from_numpy(x) for x in object_history],
         )
+
+
+class ActionRepeatWrapper:
+    def __init__(self, env, repeat):
+        self.env = env
+        self.repeat = int(repeat)
+        # 物理dt
+        self.dt = float(env.physics.model.opt.timestep) * getattr(env, "substeps", 1) * self.repeat
+    def reset(self, *a, **kw): return self.env.reset(*a, **kw)
+    def get_info(self): return self.env.get_info()
+    def get_obs(self): return self.env.get_obs()
+    def step(self, action):
+        total_r, done, trunc, info = 0.0, False, False, None
+        obs = None
+        for _ in range(self.repeat):
+            obs, r, done, trunc, info = self.env.step(action)
+            total_r += r
+            if done or trunc:
+                break
+        return obs, total_r, done, trunc, info
+    def __getattr__(self, name):  # 既存属性に委譲
+        return getattr(self.env, name)

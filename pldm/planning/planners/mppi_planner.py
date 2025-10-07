@@ -260,7 +260,7 @@ class MPPIPlanner:
             pred_encs=pred_encs,
             pred_obs=pred_obs,
             actions=actions,
-            locations=unnormed_locations,
+            locations=unnormed_locations, #dynamics model出力潜在表現列 + prober によって計算したもの
             losses=losses,
         )
 
