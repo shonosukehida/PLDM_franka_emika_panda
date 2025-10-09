@@ -41,6 +41,7 @@ from matplotlib import cm
 from typing import Optional, List
 
 import hashlib
+from torch.utils.data import Subset, DataLoader
 
 
 @dataclass
@@ -698,13 +699,47 @@ class ProbingEvaluator:
             print("[VAL] done. wrote images under vis_debug/val_batches/")
             # ===================================================================
 
-            #指定idx のバッチを使って可視化
-            vis_batch_idx = 19
-            itr = iter(val_ds)
+
+            # === 可視化入力btc の作成 === 
+            from torch.utils.data import Subset, DataLoader
+
+            def _unwrap_loader(x):
+                return getattr(x, "dataloader", x)  
+
+            inner_loader = _unwrap_loader(val_ds)
+            root_ds = inner_loader.dataset          
+            B = inner_loader.batch_size
+            N = len(root_ds)
+
+
+            head_indices = np.arange(0, (N // B) * B, B, dtype=np.int64)
+            os.makedirs("vis_debug", exist_ok=True)
+            np.save("vis_debug/vis_indices_heads.npy", head_indices)
+            print("[VIS] head_indices sha:", hashlib.sha256(head_indices.tobytes()).hexdigest()[:16])
+
+
+            vis_subset = Subset(root_ds, head_indices.tolist())
+            vis_loader_raw = DataLoader(
+                vis_subset,
+                batch_size=B,
+                shuffle=False,     
+                num_workers=0,
+                drop_last=True,    
+            )
+            # 既存と同じ正規化を適用（NormalizedDataLoaderでラップ）
+            from pldm.data.utils import NormalizedDataLoader
+            vis_loader = NormalizedDataLoader(vis_loader_raw, val_ds.normalizer)
+
+
+            vis_batch_idx = 0  
+            itr = iter(vis_loader)
             for _ in range(vis_batch_idx + 1):
                 btc = next(itr)
-                
+
+
             np.save("vis_debug/vis_indices_used.npy", btc.indices.detach().cpu().numpy().astype(int))
+            print("[VIS] used_idx sha:", hashlib.sha256(btc.indices.detach().cpu().numpy().astype(np.int64).tobytes()).hexdigest()[:16])
+            
 
             self.plot_prober_predictions(
                 btc,
