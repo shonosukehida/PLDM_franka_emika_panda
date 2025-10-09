@@ -123,7 +123,7 @@ eval_cfg:
     exe_probing: true
     l1_depth: *n_steps
     train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/images.npy 
-    train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/data.p
+    train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/data.p 
     val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/images.npy 
     val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/data.p
     probe_targets: 'locations,propio_vel,bluebox_locs' 

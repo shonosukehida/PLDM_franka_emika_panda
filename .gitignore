@@ -19,3 +19,7 @@ robot_sim/data_value
 *.zip
 pldm_envs/franka/presaved_datasets/
 */traj_eval_out/
+/vis_debug
+audit_out_first_batch_indices.npy
+audit_out_first_batch_pairs.json
+audit_out_flattened_sha.txt

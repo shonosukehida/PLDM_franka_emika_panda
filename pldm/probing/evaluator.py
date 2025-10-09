@@ -40,6 +40,9 @@ from sklearn.cross_decomposition import CCA
 from matplotlib import cm
 from typing import Optional, List
 
+import hashlib
+
+
 @dataclass
 class ProbeTargetConfig(ConfigBase):
     arch: Optional[str] = None
@@ -621,23 +624,88 @@ class ProbingEvaluator:
 
         # right now, we only visualize location predictions
         if self.config.visualize_probing and visualize:
-            
-            # from torch.utils.data import DataLoader, Subset
-            # original_dataset = val_ds.dataset 
-            # t0_indices = [
-            #     i for i, (ep_idx, t) in enumerate(original_dataset.flattened_indices) if t == 0
-            # ]
-            # t0_dataset = Subset(original_dataset, t0_indices)
-            
-            # t0_loader = DataLoader(
-            #     t0_dataset, 
-            #     batch_size=64, 
-            #     shuffle=False, 
-            #     num_workers=0,
-            #     )
-            # btc = next(iter(t0_loader))
-            
-            btc = next(iter(val_ds))
+
+            # =======================================================================
+            # === 可視化直前の“probe_valチェック”を安全に ===
+            from torch.utils.data import RandomSampler
+            import types
+
+            def _unwrap_loader(x):
+                # NormalizedDataLoader → .dataloader が本物の DataLoader
+                return getattr(x, "dataloader", x)
+
+            inner = _unwrap_loader(val_ds)
+
+            # PyTorchの版によって sampler の場所が違うことがあるので両対応
+            sampler = getattr(inner, "sampler", None)
+            if sampler is None and hasattr(inner, "batch_sampler"):
+                sampler = getattr(inner.batch_sampler, "sampler", None)
+
+            sampler_name = type(sampler).__name__ if sampler is not None else "<none>"
+            print(f"[VIS] sampler: {sampler_name}")  # 期待: SequentialSampler
+
+            assert not isinstance(sampler, RandomSampler), \
+                "可視化で shuffle=True のローダ（probe_ds）を掴んでます！probe_val_ds を渡してください。"
+
+
+            # ================= 可視化：各バッチの先頭GTをプロット =================
+
+
+            os.makedirs("vis_debug/val_batches", exist_ok=True)
+
+            # どれくらい見るか（全部なら None に）
+            MAX_BATCHES = None
+
+            def _sha(x: np.ndarray, n=16):
+                return hashlib.sha256(x.tobytes()).hexdigest()[:n]
+
+            # NOTE:
+            #   すでに btc = next(iter(val_ds)) していますが、
+            #   for ループは「新しいイテレータ」を作るので**先頭から**始まります👌
+            for b_idx, batch in enumerate(itertools.islice(val_ds, 0, MAX_BATCHES)):
+                # このバッチの indices をメモ（先頭サンプルの index も）
+                idx_np = batch.indices.detach().cpu().numpy().astype(np.int64)
+                print(f"[VAL][{b_idx:04d}] head_idx={idx_np[0]}  idx_sha={_sha(idx_np)}")
+
+                # 逆正規化した GT （B, T, 2）想定
+                gt_locations = val_ds.normalizer.unnormalize_location(batch.locations).cpu().numpy()
+
+                # 先頭サンプルの軌跡（T,2）
+                traj = gt_locations[0]  # 先頭だけ
+                x, y = traj[:, 0], traj[:, 1]
+
+                # プロット
+                fig = plt.figure(figsize=(5, 5), dpi=160)
+                ax = plt.gca()
+                ax.plot(x, y, marker="o", markersize=2.5, linewidth=1.0)
+                # 始点/終点にマーク
+                ax.text(x[0],  y[0],  "S", color="C0", fontsize=10, ha="center", va="center")
+                ax.text(x[-1], y[-1], "G", color="C1", fontsize=10, ha="center", va="center")
+                ax.set_title(f"val batch {b_idx:04d}  (first sample idx={idx_np[0]})")
+                ax.set_xlim(0.315, 0.715)
+                ax.set_ylim(-0.2, 0.2)
+                ax.set_xlabel("X (meters)")
+                ax.set_ylabel("Y (meters)")
+                ax.set_aspect("equal")
+                ax.grid(True, alpha=0.3)
+
+                out_path = f"vis_debug/val_batches/val_batch_{b_idx:04d}.png"
+                plt.tight_layout()
+                plt.savefig(out_path)
+                plt.close(fig)
+                print(f"[VAL][{b_idx:04d}] saved -> {out_path}")
+
+            print("[VAL] done. wrote images under vis_debug/val_batches/")
+            # ===================================================================
+
+            #指定idx のバッチを使って可視化
+            vis_batch_idx = 19
+            itr = iter(val_ds)
+            for _ in range(vis_batch_idx + 1):
+                btc = next(itr)
+                
+            np.save("vis_debug/vis_indices_used.npy", btc.indices.detach().cpu().numpy().astype(int))
+
             self.plot_prober_predictions(
                 btc,
                 model,
