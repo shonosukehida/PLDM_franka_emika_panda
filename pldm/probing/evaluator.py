@@ -726,6 +726,7 @@ class ProbingEvaluator:
                 num_workers=0,
                 drop_last=True,    
             )
+            vis_loader_raw.config = inner_loader.config
             # 既存と同じ正規化を適用（NormalizedDataLoaderでラップ）
             from pldm.data.utils import NormalizedDataLoader
             vis_loader = NormalizedDataLoader(vis_loader_raw, val_ds.normalizer)
