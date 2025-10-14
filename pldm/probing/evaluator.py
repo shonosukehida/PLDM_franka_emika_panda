@@ -1047,6 +1047,8 @@ class ProbingEvaluator:
         save_path=None,
         ):
         
+        import PIL.GifImagePlugin
+        
         T, C, H, W = feature_maps.shape 
         n_rows = 4 
         n_cols = (C + n_rows - 1) // n_rows
