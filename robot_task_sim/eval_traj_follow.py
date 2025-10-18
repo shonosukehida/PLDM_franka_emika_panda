@@ -16,6 +16,9 @@ import logging
 import sys
 from tqdm import tqdm
 
+import collections.abc as cabc
+
+
 
 logging.basicConfig(
     level=logging.INFO, 
@@ -28,6 +31,9 @@ log = logging.getLogger("traj_eval")
 OUTDIR = Path("./robot_task_sim/traj_eval_out")
 OUTDIR.mkdir(parents=True, exist_ok=True)
 (OUTDIR / "frames").mkdir(parents=True, exist_ok=True)
+
+#SETTING
+################################################################################################################################
 
 #評価パラメータ
 IMAGE_SIZE = (128, 128)         # 保存フレーム解像度
@@ -59,13 +65,16 @@ SOLVER_ITERS=None          # ソルバ反復                  (接触解決制�
 LS_ITERS=None            # ラインサーチ反復             (大抵は solver_iters に比べ影響小. 接触剛性が高い場合のみ確認)
 
 
+
 ROT_WEIGHT = 0.0
 TARGET_ROTMAT = None #np.stack([np.array([1, 0, 0]), np.array([0, -1, 0]), np.array([0, 0, -1])], axis=1)
 
 MAX_DQ = 0.03
 
+################################################################################################################################
 
-import collections.abc as cabc
+
+
 
 
 def set_kp_per_joint(env, kp):
@@ -284,6 +293,31 @@ def render_rgb(env, size=IMAGE_SIZE, camera=CAMERA):
         rgb = np.clip(rgb, 0.0, 1.0).astype(np.float32)
     return rgb
 
+
+P_TASK_GAIN_FOR_PLOT = 1.0   # 距離誤差に掛ける可視化スケール
+K_TASK_GAIN_FOR_PLOT = 1.0   # 速度に掛ける可視化スケール
+
+def get_control_dt(env):
+    """高レベル1ステップあたりの実時間 [sec] を返す"""
+    m = env.physics.model
+    return float(m.opt.timestep) * int(getattr(env, "substeps", 1))
+
+def get_joint_pd_gains_from_model(env):
+    """
+    MuJoCoでは一般的なPDは actuator_gainprm[:,0] に Kp,
+    actuator_biasprm[:,2] に -Kd（※負符号で格納）として入っているケースが多いです。
+    既存の set_kd_per_joint のコメントとも整合します。
+    """
+    m = env.physics.model
+    arm_ids = list(env.arm_actuator_ids)
+    
+    kp_vec = m.actuator_gainprm[arm_ids, 0].astype(np.float32).copy()     # Kp
+    kd_vec = (-m.actuator_biasprm[arm_ids, 2]).astype(np.float32).copy()  # Kd（負符号を戻す）
+    return kp_vec, kd_vec  # shape: (7,), (7,)
+
+
+
+
 def run_follow(env, traj_xyz, name="rectangle"):
     ee_traj = []
     tgt_traj = []
@@ -293,6 +327,26 @@ def run_follow(env, traj_xyz, name="rectangle"):
 
     frame_ee_xy = []
     frame_tgt_xy = []
+
+    times = []
+    dist_errs = []
+    vel_mag = []
+    vel_xyz = []
+
+
+    dt_step = get_control_dt(env)
+    t_accum = 0.0
+    prev_cur = None
+
+    kp_vec, kd_vec = get_joint_pd_gains_from_model(env)  # XML由来のPDゲイン
+    pd_p_hist = []     # list of (7,) arrays   -> Kp*(q_des - q)
+    pd_d_hist = []     # list of (7,) arrays   -> Kd*(qd_des - qd)  (qd_des=0)
+    pd_tot_hist = []   # list of (7,) arrays   -> p + d
+
+    q_err_hist = []    # q_des - q         [rad]
+    qd_err_hist = []   # qd_des - qd (= -qd) [rad/s]
+    qd_hist = []       # qd                [rad/s]
+
 
     log.info(f"[run] >>> start '{name}' | waypoints={len(traj_xyz)} tol={SUCCESS_TOL} substeps={STEP_SUBSTEPS}")
     t0 = time.time()
@@ -321,6 +375,46 @@ def run_follow(env, traj_xyz, name="rectangle"):
             cur = ee(env)
             err = float(np.linalg.norm(cur - target))
 
+            #dist_errs, vel_mag, vec_xyz ログ収集
+            ##########################################
+            if prev_cur is None:
+                v = np.zeros(3, dtype=np.float32)
+            else:
+                v = (cur - prev_cur) / dt_step  # [m/s]
+            prev_cur = cur.copy()
+
+            times.append(t_accum)
+            dist_errs.append(err)
+            vel_mag.append(float(np.linalg.norm(v)))
+            vel_xyz.append(v.copy())
+            t_accum += dt_step
+
+
+            q  = env.physics.data.qpos[:7].astype(np.float32).copy()
+            qd = env.physics.data.qvel[:7].astype(np.float32).copy()
+
+            qd_des = np.zeros_like(qd, dtype=np.float32)
+
+            tau_p = kp_vec * (q_des - q)
+            tau_d = kd_vec * (qd_des - qd)
+            tau_tot = tau_p + tau_d
+
+            pd_p_hist.append(tau_p.copy())
+            pd_d_hist.append(tau_d.copy())
+            pd_tot_hist.append(tau_tot.copy())
+
+
+
+            q_err = (q_des - q)                  # [rad]
+            qd_des = np.zeros_like(qd, dtype=np.float32)  # 目標速度は0とする
+            qd_err = (qd_des - qd)               # [rad/s]
+
+            q_err_hist.append(q_err.copy())
+            qd_err_hist.append(qd_err.copy())
+            qd_hist.append(qd.copy())
+            ##########################################
+
+
             # if step_cnt % SAVE_EVERY == 0:
             #     rgb = render_rgb(env)
             #     plt.imsave(OUTDIR / "frames" / f"{name}_{i:03d}_{step_cnt:04d}.png", rgb)
@@ -344,6 +438,34 @@ def run_follow(env, traj_xyz, name="rectangle"):
 
                 for _ in range(HOLD_STEPS_AT_TARGET):
                     env.step(q_des, MAX_DQ)
+                    
+                    cur_hold = ee(env)
+                    v_hold = (cur_hold - prev_cur) / dt_step
+                    prev_cur = cur_hold.copy()
+                    t_accum += dt_step
+
+                    times.append(t_accum)
+                    dist_errs.append(float(np.linalg.norm(cur_hold - target)))
+                    vel_mag.append(float(np.linalg.norm(v_hold)))
+                    vel_xyz.append(v_hold.copy())
+
+                    q  = env.physics.data.qpos[:7].astype(np.float32).copy()
+                    qd = env.physics.data.qvel[:7].astype(np.float32).copy()
+                    tau_p = kp_vec * (q_des - q)
+                    tau_d = kd_vec * (qd_des - qd)
+                    tau_tot = tau_p + tau_d
+                    pd_p_hist.append(tau_p.copy())
+                    pd_d_hist.append(tau_d.copy())
+                    pd_tot_hist.append(tau_tot.copy())
+
+                    q_err = (q_des - q)                  # [rad]
+                    qd_des = np.zeros_like(qd, dtype=np.float32)  # 目標速度は0とする
+                    qd_err = (qd_des - qd)               # [rad/s]
+
+                    q_err_hist.append(q_err.copy())
+                    qd_err_hist.append(qd_err.copy())
+                    qd_hist.append(qd.copy())
+                    
                 reached.append(True)
                 steps_used.append(step_cnt+HOLD_STEPS_AT_TARGET)
                 break
@@ -431,11 +553,42 @@ def run_follow(env, traj_xyz, name="rectangle"):
     plt.savefig(OUTDIR / f"ee_traj_plot_framewise_{name}.png", dpi=150)
     plt.close()
     print(f"[SAVE] framewise plot -> ee_traj_plot_framewise_{name}.png")
-    
+
+    vel_xyz_arr = np.stack(vel_xyz, axis=0) if len(vel_xyz) > 0 else np.zeros((0,3), dtype=np.float32)
+    plot_controller_diagnostics(
+        times=times,
+        dist_errs=dist_errs,
+        vel_mag=vel_mag,
+        vel_xyz=vel_xyz_arr,
+        name=name,
+        outdir=OUTDIR,
+    )
+    pd_p = np.stack(pd_p_hist, axis=0) if len(pd_p_hist)>0 else np.zeros((0,7), dtype=np.float32)
+    pd_d = np.stack(pd_d_hist, axis=0) if len(pd_d_hist)>0 else np.zeros((0,7), dtype=np.float32)
+    pd_tot = np.stack(pd_tot_hist, axis=0) if len(pd_tot_hist)>0 else np.zeros((0,7), dtype=np.float32)
+
+    plot_joint_pd_time_series(times, pd_p,   title="Joint-wise P-term (Kp*(qdes - q))",        ylabel="P-term [~Nm]",         fname_prefix="joint_p_term",   name=name, outdir=OUTDIR)
+    plot_joint_pd_time_series(times, pd_d,   title="Joint-wise D-term (Kd*(qd_des - qd))",     ylabel="D-term [~Nm]",         fname_prefix="joint_d_term",   name=name, outdir=OUTDIR)
+    plot_joint_pd_time_series(times, pd_tot, title="Joint-wise Total torque (P + D, approx.)", ylabel="Total torque [~Nm]",   fname_prefix="joint_total",    name=name, outdir=OUTDIR)
+
+    save_joint_pd_csv(times, pd_p, pd_d, pd_tot, name=name, outdir=OUTDIR)
+
+    q_err_arr   = np.stack(q_err_hist, axis=0) if q_err_hist   else np.zeros((0,7), np.float32)
+    qd_err_arr  = np.stack(qd_err_hist, axis=0) if qd_err_hist else np.zeros((0,7), np.float32)
+    qd_arr      = np.stack(qd_hist, axis=0)    if qd_hist      else np.zeros((0,7), np.float32)
+
+    plot_joint_series(times, q_err_arr,  title="Joint Position Error (q_des - q)",   ylabel="Δq [rad]",     fname_prefix="joint_pos_error",  name=name, outdir=OUTDIR)
+    plot_joint_series(times, qd_err_arr, title="Joint Velocity Error (qd_des - qd)", ylabel="Δqd [rad/s]",  fname_prefix="joint_vel_error",  name=name, outdir=OUTDIR)
+    plot_joint_series(times, qd_arr,     title="Joint Velocity (qd)",                ylabel="qd [rad/s]",   fname_prefix="joint_velocity",   name=name, outdir=OUTDIR)
+
+    save_joint_series_csv(times, q_err_arr, qd_err_arr, qd_arr, name=name, outdir=OUTDIR)
 
     print(f"[DONE] {name} reached={metrics['reached_ratio']:.3f}, mean_err={metrics['mean_err_m']:.4f} m")
     return metrics
 
+
+#plotting
+#####################################################################
 def maybe_make_gif():
     try:
         import imageio.v2 as imageio
@@ -470,6 +623,168 @@ def make_gifs_per_traj(duration=0.05):
         imgs = [imageio.imread(str(p)) for p in fps]  
         imageio.mimsave(OUTDIR / f"{name}.gif", imgs, duration=duration)
         print(f"[SAVE] {name}.gif  ({len(fps)} frames, full span)")
+
+
+def plot_controller_diagnostics(
+    times, dist_errs, vel_mag, vel_xyz, name="run", outdir=OUTDIR
+):
+    times = np.asarray(times, dtype=np.float32)
+    dist_errs = np.asarray(dist_errs, dtype=np.float32)
+    vel_mag = np.asarray(vel_mag, dtype=np.float32)
+    vel_xyz = np.asarray(vel_xyz, dtype=np.float32)  # shape [T,3]
+
+    # --- 保存パス ---
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    # 1) 距離誤差
+    plt.figure(figsize=(7,3))
+    plt.plot(times, dist_errs)
+    plt.xlabel("time [s]"); plt.ylabel("||EE - target|| [m]")
+    plt.title(f"Distance Error vs Time ({name})")
+    plt.grid(True, alpha=0.3); plt.tight_layout()
+    plt.savefig(outdir / f"dist_error_vs_time_{name}.png", dpi=150)
+    plt.close()
+
+    # 2) 速度 |v|
+    plt.figure(figsize=(7,3))
+    plt.plot(times, vel_mag)
+    plt.xlabel("time [s]"); plt.ylabel("|v| [m/s]")
+    plt.title(f"EE Speed vs Time ({name})")
+    plt.grid(True, alpha=0.3); plt.tight_layout()
+    plt.savefig(outdir / f"speed_vs_time_{name}.png", dpi=150)
+    plt.close()
+
+    # 3) 速度の各成分 vx, vy, vz
+    plt.figure(figsize=(7,4))
+    plt.plot(times, vel_xyz[:,0], label="vx")
+    plt.plot(times, vel_xyz[:,1], label="vy")
+    plt.plot(times, vel_xyz[:,2], label="vz")
+    plt.xlabel("time [s]"); plt.ylabel("v component [m/s]")
+    plt.title(f"EE Velocity Components ({name})")
+    plt.grid(True, alpha=0.3); plt.legend(); plt.tight_layout()
+    plt.savefig(outdir / f"velocity_components_{name}.png", dpi=150)
+    plt.close()
+
+
+    # 5) CSV 保存（共有・再解析用）
+    import csv
+    csv_path = outdir / f"controller_timeseries_{name}.csv"
+    with open(csv_path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["t_sec","dist_err_m","speed_mps","vx","vy","vz","P_term","D_term"])
+        for t, de, sp, (vx,vy,vz) in zip(times, dist_errs, vel_mag, vel_xyz):
+            w.writerow([float(t), float(de), float(sp), float(vx), float(vy), float(vz)])
+    print(f"[SAVE] controller timeseries CSV -> {csv_path}")
+
+
+
+
+def plot_joint_pd_time_series(times, values_Tx7, title, ylabel, fname_prefix, name="run", outdir=OUTDIR):
+    """
+    values_Tx7: shape [T, 7] の時系列
+    7関節を7行のサブプロットで縦積み表示し、PNG保存します。
+    """
+    times = np.asarray(times, dtype=np.float32)
+    vals = np.asarray(values_Tx7, dtype=np.float32)  # [T,7]
+
+    fig, axes = plt.subplots(7, 1, figsize=(9, 12), sharex=True)
+    for j in range(7):
+        ax = axes[j]
+        if vals.shape[0] > 0:
+            ax.plot(times, vals[:, j])
+        ax.set_ylabel(f"{ylabel}\n[joint {j}]")
+        ax.grid(True, alpha=0.3)
+    axes[-1].set_xlabel("time [s]")
+    fig.suptitle(f"{title} ({name})")
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
+    outpath = Path(outdir) / f"{fname_prefix}_{name}.png"
+    fig.savefig(outpath, dpi=150)
+    plt.close(fig)
+    print(f"[SAVE] {title} -> {outpath}")
+
+
+
+
+def save_joint_pd_csv(times, p_Tx7, d_Tx7, total_Tx7, name="run", outdir=OUTDIR):
+    """
+    1ファイルに times, 各関節の p,d,total をまとめて保存します。
+    列名: t_sec, p_j0..p_j6, d_j0..d_j6, tot_j0..tot_j6
+    """
+    import csv
+    times = np.asarray(times, dtype=np.float32)
+    p = np.asarray(p_Tx7, dtype=np.float32)
+    d = np.asarray(d_Tx7, dtype=np.float32)
+    tot = np.asarray(total_Tx7, dtype=np.float32)
+
+    outpath = Path(outdir) / f"joint_pd_terms_{name}.csv"
+    with open(outpath, "w", newline="") as f:
+        w = csv.writer(f)
+        header = ["t_sec"] + [f"p_j{j}" for j in range(7)] + [f"d_j{j}" for j in range(7)] + [f"tot_j{j}" for j in range(7)]
+        w.writerow(header)
+        T = len(times)
+        for i in range(T):
+            row = [float(times[i])]
+            row += [float(p[i, j]) for j in range(7)]
+            row += [float(d[i, j]) for j in range(7)]
+            row += [float(tot[i, j]) for j in range(7)]
+            w.writerow(row)
+    print(f"[SAVE] joint PD terms CSV -> {outpath}")
+
+def plot_joint_series(times, values_Tx7, title, ylabel, fname_prefix, name="run", outdir=OUTDIR):
+    """
+    values_Tx7: shape [T, 7]
+    7関節を7行の縦積みプロットで保存します。
+    """
+    times = np.asarray(times, dtype=np.float32)
+    vals = np.asarray(values_Tx7, dtype=np.float32)
+
+    fig, axes = plt.subplots(7, 1, figsize=(9, 12), sharex=True)
+    for j in range(7):
+        ax = axes[j]
+        if vals.shape[0] > 0:
+            ax.plot(times, vals[:, j])
+        ax.set_ylabel(f"{ylabel}\n[joint {j}]")
+        ax.grid(True, alpha=0.3)
+    axes[-1].set_xlabel("time [s]")
+    fig.suptitle(f"{title} ({name})")
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
+    outpath = Path(outdir) / f"{fname_prefix}_{name}.png"
+    fig.savefig(outpath, dpi=150)
+    plt.close(fig)
+    print(f"[SAVE] {title} -> {outpath}")
+
+
+def save_joint_series_csv(times, q_err_Tx7, qd_err_Tx7, qd_Tx7, name="run", outdir=OUTDIR):
+    """
+    times と関節ごとの位置誤差, 速度誤差, 実速度を1ファイルに保存。
+    列: t_sec, qerr_j0..6, qderr_j0..6, qd_j0..6
+    """
+    import csv
+    times = np.asarray(times, dtype=np.float32)
+    q_err = np.asarray(q_err_Tx7, dtype=np.float32)
+    qd_err = np.asarray(qd_err_Tx7, dtype=np.float32)
+    qd = np.asarray(qd_Tx7, dtype=np.float32)
+
+    outpath = Path(outdir) / f"joint_errors_and_velocity_{name}.csv"
+    with open(outpath, "w", newline="") as f:
+        w = csv.writer(f)
+        header = (["t_sec"]
+                  + [f"qerr_j{j}" for j in range(7)]
+                  + [f"qderr_j{j}" for j in range(7)]
+                  + [f"qd_j{j}" for j in range(7)])
+        w.writerow(header)
+        T = len(times)
+        for i in range(T):
+            row = [float(times[i])]
+            row += [float(q_err[i, j]) for j in range(7)]
+            row += [float(qd_err[i, j]) for j in range(7)]
+            row += [float(qd[i, j]) for j in range(7)]
+            w.writerow(row)
+    print(f"[SAVE] joint errors & velocity CSV -> {outpath}")
+#####################################################################
+
+
 
 
 
@@ -536,3 +851,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
