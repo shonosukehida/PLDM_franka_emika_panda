@@ -91,7 +91,7 @@ class ProbingConfig(ConfigBase):
     
     vis_dynamics_closed_featuremap: bool = True
     vis_dynamics_open_featuremap: bool = True
-    vis_encoder_featruemap: bool = True
+    vis_encoder_featuremap: bool = True
 
 
 class ProbeResult(NamedTuple):
@@ -484,7 +484,7 @@ class ProbingEvaluator:
         enc_probers=None,
         vis_dynamics_closed_featuremap: bool = True,
         vis_dynamics_open_featuremap: bool = True,
-        vis_encoder_featruemap: bool = True,
+        vis_encoder_featuremap: bool = True,
     ):
         """
         Evaluates on all the different validation datasets
@@ -505,7 +505,7 @@ class ProbingEvaluator:
                 enc_probers=enc_probers,
                 vis_dynamics_closed_featuremap = vis_dynamics_closed_featuremap,
                 vis_dynamics_open_featuremap = vis_dynamics_open_featuremap,
-                vis_encoder_featruemap = vis_encoder_featruemap, 
+                vis_encoder_featuremap = vis_encoder_featuremap, 
             )
 
     @torch.no_grad()
@@ -520,7 +520,7 @@ class ProbingEvaluator:
         enc_probers=None,
         vis_dynamics_closed_featuremap: bool = True,
         vis_dynamics_open_featuremap: bool = True,
-        vis_encoder_featruemap: bool = True,
+        vis_encoder_featuremap: bool = True,
     ):
         level = "l1"
 
@@ -757,7 +757,7 @@ class ProbingEvaluator:
                 pixel_mapper=pixel_mapper,
                 vis_dynamics_closed_featuremap = vis_dynamics_closed_featuremap,
                 vis_dynamics_open_featuremap = vis_dynamics_open_featuremap,
-                vis_encoder_featruemap = vis_encoder_featruemap,
+                vis_encoder_featuremap = vis_encoder_featuremap,
             )
             self.plot_prober_predictions_by_encprober(
                 btc,
@@ -774,7 +774,7 @@ class ProbingEvaluator:
                 pixel_mapper=pixel_mapper,
                 vis_dynamics_closed_featuremap = vis_dynamics_closed_featuremap,
                 vis_dynamics_open_featuremap = vis_dynamics_open_featuremap,
-                vis_encoder_featruemap = vis_encoder_featruemap,
+                vis_encoder_featuremap = vis_encoder_featuremap,
             )
             
             self.plot_prober_predictions_by_encprober_FOR_POSTER(
@@ -792,7 +792,7 @@ class ProbingEvaluator:
                 pixel_mapper=pixel_mapper,
                 vis_dynamics_closed_featuremap = False,
                 vis_dynamics_open_featuremap = False,
-                vis_encoder_featruemap = False,     
+                vis_encoder_featuremap = False,     
             )
             
             self.plot_cca(
@@ -811,7 +811,7 @@ class ProbingEvaluator:
                 pixel_mapper = None,
                 vis_dynamics_closed_featuremap = False,
                 vis_dynamics_open_featuremap = False,
-                vis_encoder_featruemap = False,
+                vis_encoder_featuremap = False,
             )
 
         return
@@ -1199,7 +1199,7 @@ class ProbingEvaluator:
         pixel_mapper = None,
         vis_dynamics_closed_featuremap: bool = True,
         vis_dynamics_open_featuremap: bool = True,
-        vis_encoder_featruemap: bool = True,
+        vis_encoder_featuremap: bool = True,
         
     ):
 
@@ -1814,7 +1814,7 @@ class ProbingEvaluator:
                     )
                 
             #エンコーダ出力の特徴マップ
-            if vis_encoder_featruemap:
+            if vis_encoder_featuremap:
                 feature_maps = encoder_encs[:, i].detach().cpu() 
                 filename = f"{name_prefix}-encoder-featuremap_{i}"
                 ft_maps_gif_path, fig_width, fig_height = self.animate_feature_map_sequence(
@@ -1851,7 +1851,7 @@ class ProbingEvaluator:
                     Logger.run().log_video(dynamics_closed_ft_maps_and_obs_gif_path, f"{name_prefix}-closed_dynamics_ftmaps_{i}")
                 if vis_dynamics_open_featuremap:
                     Logger.run().log_video(dynamics_open_ft_maps_and_obs_gif_path, f"{name_prefix}-open_dynamics_ftmaps_{i}")
-                if vis_encoder_featruemap:
+                if vis_encoder_featuremap:
                     Logger.run().log_video(encoder_ft_maps_and_obs_gif_path, f"{name_prefix}-encoder_ftmaps_{i}")
 
                 plt.close(fig)
@@ -1922,7 +1922,7 @@ class ProbingEvaluator:
         pixel_mapper = None,
         vis_dynamics_closed_featuremap: bool = True,
         vis_dynamics_open_featuremap: bool = True,
-        vis_encoder_featruemap: bool = True,
+        vis_encoder_featuremap: bool = True,
         
     ):
         assert enc_prober is not None, "enc_prober is required"
@@ -2694,7 +2694,7 @@ class ProbingEvaluator:
         pixel_mapper = None,
         vis_dynamics_closed_featuremap: bool = False,
         vis_dynamics_open_featuremap: bool = False,
-        vis_encoder_featruemap: bool = False,
+        vis_encoder_featuremap: bool = False,
     ):
         """
         encoder の潜在列と closed-forward の潜在列を CCA で共通空間に射影し、
@@ -2820,13 +2820,13 @@ class ProbingEvaluator:
         V_bt = V.reshape(B, T, k_eff)
 
 
-        # t_colors = np.linspace(0.3, 1.0, T) 
-        cmap_e = cm.Blues 
-        cmap_c = cm.Reds
         
         if idxs is None:
-            idxs = list(range(min(B, 8)))  
+            idxs = list(range(B))  
 
+
+        color_u = "navy"      # Encoder (U)
+        color_v = "firebrick" # Closed (V)
 
         # --- 2D (CC1-CC2) per-trajectory ---
         if k_eff >= 2:
@@ -2835,9 +2835,6 @@ class ProbingEvaluator:
             lim = float(max(abs(U2).max(), abs(V2).max()))  
 
 
-            norm = mpl.colors.Normalize(vmin=0.3, vmax=1.0)
-            cmap_e = cm.Blues
-            cmap_c = cm.Reds
 
             for i in idxs:
                 fig2d, ax2d = plt.subplots(1, 1, figsize=(6, 6), dpi=140)
@@ -2847,17 +2844,17 @@ class ProbingEvaluator:
 
 
                 for t in range(T - 1):
-                    ax2d.plot(u2d[t:t+2, 0], u2d[t:t+2, 1], color=cmap_e(norm(0.3 + 0.7 * t / (T-1))), alpha=0.95)
-                    ax2d.plot(v2d[t:t+2, 0], v2d[t:t+2, 1], color=cmap_c(norm(0.3 + 0.7 * t / (T-1))), alpha=0.95)
+                    ax2d.plot(u2d[t:t+2, 0], u2d[t:t+2, 1], color=color_u, alpha=0.95)
+                    ax2d.plot(v2d[t:t+2, 0], v2d[t:t+2, 1], color=color_v, alpha=0.95)
 
                 # 始点・終点
-                ax2d.scatter(u2d[0, 0], u2d[0, 1], s=12, c=cmap_e(norm(0.3)), label="Encoder (U)")
-                ax2d.text(u2d[0, 0], u2d[0, 1], "S", fontsize=9, ha="center", va="center", color=cmap_e(norm(0.3)))
-                ax2d.text(u2d[-1, 0], u2d[-1, 1], "G", fontsize=9, ha="center", va="center", color=cmap_e(norm(1.0)))
+                ax2d.scatter(u2d[0, 0], u2d[0, 1], s=12, c=color_u, label="Encoder (U)")
+                ax2d.text(u2d[0, 0], u2d[0, 1], "S", fontsize=9, ha="center", va="center", color=color_u)
+                ax2d.text(u2d[-1, 0], u2d[-1, 1], "G", fontsize=9, ha="center", va="center", color=color_u)
                 
-                ax2d.scatter(v2d[0, 0], v2d[0, 1], s=12, c=cmap_c(norm(0.3)), label="Closed (V)")
-                ax2d.text(v2d[0,0],  v2d[0,1],  "S", fontsize=9, ha="center", va="center", color=cmap_c(norm(0.3)),   zorder=4)
-                ax2d.text(v2d[-1,0], v2d[-1,1], "G", fontsize=9, ha="center", va="center", color=cmap_c(norm(1.0)), zorder=4)
+                ax2d.scatter(v2d[0, 0], v2d[0, 1], s=12, c=color_v, label="Closed (V)")
+                ax2d.text(v2d[0,0],  v2d[0,1],  "S", fontsize=9, ha="center", va="center", color=color_v,   zorder=4)
+                ax2d.text(v2d[-1,0], v2d[-1,1], "G", fontsize=9, ha="center", va="center", color=color_v, zorder=4)
 
                 ax2d.set_xlim(-lim, lim)
                 ax2d.set_ylim(-lim, lim)
@@ -2867,16 +2864,16 @@ class ProbingEvaluator:
                 ax2d.set_title(f"{name_prefix} | idx={i} | mean corr={mean_corr:.3f}")
 
                 handles = [
-                    Line2D([0], [0], color=cmap_e(norm(1.0)), lw=2, label="Encoder (U)"),
-                    Line2D([0], [0], color=cmap_c(norm(1.0)), lw=2, label="Closed (V)")
+                    Line2D([0], [0], color=color_u, lw=2, label="Encoder (U)"),
+                    Line2D([0], [0], color=color_v, lw=2, label="Closed (V)")
                 ]
                 ax2d.legend(handles=handles, loc="best", frameon=True)
 
-                sm = mpl.cm.ScalarMappable(cmap=cmap_e, norm=norm)
-                sm.set_array([])
-                cbar = fig2d.colorbar(sm, ax=ax2d, fraction=0.046, pad=0.04)
-                cbar.set_label("Time step", fontsize=10)
-                cbar.ax.tick_params(labelsize=8)
+                # sm = mpl.cm.ScalarMappable(cmap=cmap_e, norm=norm)
+                # sm.set_array([])
+                # cbar = fig2d.colorbar(sm, ax=ax2d, fraction=0.046, pad=0.04)
+                # cbar.set_label("Time step", fontsize=10)
+                # cbar.ax.tick_params(labelsize=8)
                 
                 if not notebook:
                     Logger.run().log_figure(fig2d, f"{name_prefix}-cca-2d-i{i}", dir_name="cca/cca2d_pertraj")
@@ -2890,9 +2887,6 @@ class ProbingEvaluator:
         # --- 3D (CC1-CC2-CC3) ---
         if k_eff >= 3:
             from mpl_toolkits.mplot3d import Axes3D  # noqa
-            norm = mpl.colors.Normalize(vmin=0.3, vmax=1.0)
-            cmap_e = cm.Blues
-            cmap_c = cm.Reds
 
             for i in idxs:
                 fig3d = plt.figure(figsize=(8, 8), dpi=140)
@@ -2902,8 +2896,8 @@ class ProbingEvaluator:
                 v3d = V_bt[i, :, :3]
 
                 for t in range(T - 1):
-                    ax3d.plot(u3d[t:t+2, 0], u3d[t:t+2, 1], u3d[t:t+2, 2], color=cmap_e(norm(0.3 + 0.7 * t / (T-1))), alpha=0.95)
-                    ax3d.plot(v3d[t:t+2, 0], v3d[t:t+2, 1], v3d[t:t+2, 2], color=cmap_c(norm(0.3 + 0.7 * t / (T-1))), alpha=0.95)
+                    ax3d.plot(u3d[t:t+2, 0], u3d[t:t+2, 1], u3d[t:t+2, 2], color=color_u, alpha=0.95)
+                    ax3d.plot(v3d[t:t+2, 0], v3d[t:t+2, 1], v3d[t:t+2, 2], color=color_v, alpha=0.95)
 
                 # --- Start/Goal markers for 3D (U=Encoder, V=Closed) ---
                 # 目印サイズとオフセット（重なり回避用）
@@ -2911,20 +2905,20 @@ class ProbingEvaluator:
                 off = 0.02 * float(max(abs(U_bt[:, :, :3]).max(), abs(V_bt[:, :, :3]).max()))
 
                 # U (青)
-                ax3d.scatter(u3d[0,0],  u3d[0,1],  u3d[0,2],  s=s_size, c=cmap_e(norm(0.3)),   depthshade=False, zorder=5)
-                ax3d.scatter(u3d[-1,0], u3d[-1,1], u3d[-1,2], s=s_size, c=cmap_e(norm(1.0)), depthshade=False, zorder=5)
+                ax3d.scatter(u3d[0,0],  u3d[0,1],  u3d[0,2],  s=s_size, c=color_u,   depthshade=False, zorder=5)
+                ax3d.scatter(u3d[-1,0], u3d[-1,1], u3d[-1,2], s=s_size, c=color_u, depthshade=False, zorder=5)
                 ax3d.text(u3d[0,0]+off,  u3d[0,1]+off,  u3d[0,2]+off,  "S",
-                        color=cmap_e(norm(0.3)),   fontsize=9, zorder=6)
+                        color=color_u,   fontsize=9, zorder=6)
                 ax3d.text(u3d[-1,0]+off, u3d[-1,1]+off, u3d[-1,2]+off, "G",
-                        color=cmap_e(norm(1.0)), fontsize=9, zorder=6)
+                        color=color_u, fontsize=9, zorder=6)
 
                 # V (赤)
-                ax3d.scatter(v3d[0,0],  v3d[0,1],  v3d[0,2],  s=s_size, c=cmap_c(norm(0.3)),   depthshade=False, zorder=5)
-                ax3d.scatter(v3d[-1,0], v3d[-1,1], v3d[-1,2], s=s_size, c=cmap_c(norm(1.0)), depthshade=False, zorder=5)
+                ax3d.scatter(v3d[0,0],  v3d[0,1],  v3d[0,2],  s=s_size, c=color_v,   depthshade=False, zorder=5)
+                ax3d.scatter(v3d[-1,0], v3d[-1,1], v3d[-1,2], s=s_size, c=color_v, depthshade=False, zorder=5)
                 ax3d.text(v3d[0,0]+off,  v3d[0,1]+off,  v3d[0,2]+off,  "S",
-                        color=cmap_c(norm(0.3)),   fontsize=9, zorder=6)
+                        color=color_v,   fontsize=9, zorder=6)
                 ax3d.text(v3d[-1,0]+off, v3d[-1,1]+off, v3d[-1,2]+off, "G",
-                        color=cmap_c(norm(1.0)), fontsize=9, zorder=6)
+                        color=color_v, fontsize=9, zorder=6)
 
 
 
@@ -2939,19 +2933,12 @@ class ProbingEvaluator:
                 )
                 
                 handles = [
-                    Line2D([0], [0], color=cmap_e(norm(1.0)), lw=2, label="Encoder (U)"),
-                    Line2D([0], [0], color=cmap_c(norm(1.0)), lw=2, label="Closed (V)")
+                    Line2D([0], [0], color=color_u, lw=2, label="Encoder (U)"),
+                    Line2D([0], [0], color=color_v, lw=2, label="Closed (V)")
                 ]
                 ax3d.legend(handles=handles, loc="upper left", frameon=True)
 
-                # カラーバー追加
-                sm = mpl.cm.ScalarMappable(cmap=cmap_e, norm=norm)
-                sm.set_array([])
-                cbar = fig3d.colorbar(sm, ax=ax3d, fraction=0.046, pad=0.1)
-                cbar.set_label("Time step", fontsize=10)
-                cbar.ax.tick_params(labelsize=8)
 
-                # 保存
                 if not notebook:
                     Logger.run().log_figure(fig3d, f"{name_prefix}-cca-3d-i{i}", dir_name="cca/cca3d_pertraj")
                     plt.close(fig3d)
@@ -3039,7 +3026,7 @@ class ProbingEvaluator:
         pixel_mapper = None,
         vis_dynamics_closed_featuremap: bool = True,
         vis_dynamics_open_featuremap: bool = True,
-        vis_encoder_featruemap: bool = True,
+        vis_encoder_featuremap: bool = True,
         
     ):
         assert enc_prober is not None, "enc_prober is required"

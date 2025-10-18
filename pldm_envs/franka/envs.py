@@ -54,7 +54,7 @@ class FrankaSimEnv:
         self.start_pos = None
         self.goal_pos = None
         
-        self.MAX_DQ = 1000_000_000
+        self.MAX_DQ = 1000_000_000.0
 
     def calc_inverse_kinematic(self, target_xyz, target_rotmat=None, rot_weight=1.0):
         target_quat = None
@@ -75,22 +75,20 @@ class FrankaSimEnv:
         return result
 
     # ========== 基本I/O ==========
-    def reset(self, start_pos=None, goal_pos=None):
+    def reset(self, start_pos=None, goal_pos=None, robot_only = False):
         self.physics.reset()
         self.t = 0
         
         
         target_rotmat = None
-        # 姿勢制御: hand を下に向けたい
         x = np.array([1, 0, 0])         
         y = np.array([0, -1, 0])
         z = np.array([0, 0, -1])        
-
-        # 回転行列を構成（各軸を列に並べる）
         target_rotmat = np.stack([x, y, z], axis=1)
+        target_rot_weight = 0.1
         
         init_xyz = np.array([0.515, 0.0, 0.1])
-        result = self.calc_inverse_kinematic(init_xyz, target_rotmat=target_rotmat)
+        result = self.calc_inverse_kinematic(init_xyz, target_rotmat=target_rotmat, rot_weight = target_rot_weight)
         init_joint = result.qpos[:7]
         self.physics.forward()
         
@@ -114,17 +112,27 @@ class FrankaSimEnv:
         self.goal_pos = goal_pos
 
         # 青箱を start に置く
-        self.physics.data.qpos[self.start_idx:self.start_idx+3] = start_pos
-        self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0])
-        self.physics.data.qvel[self.start_idx:self.start_idx+6] = 0
-        self.physics.forward()
+        if not robot_only:
+            self.physics.data.qpos[self.start_idx:self.start_idx+3] = start_pos
+            self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0])
+            self.physics.data.qvel[self.start_idx:self.start_idx+6] = 0
+            self.physics.forward()
+            
+            
+            _ = self._get_goal_obs_vec(goal_pos)
+        else:
+            self.physics.data.qpos[self.start_idx:self.start_idx+3] = np.array([100.0, 100.0, 0.06])
+            self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0])
+            self.physics.data.qvel[self.start_idx:self.start_idx+6] = 0
+            self.physics.forward()
+            
 
-        # 目標の proprio ベクトルを事前計算（使わないなら残してOK）
-        _ = self._get_goal_obs_vec(goal_pos)
+
+        
 
         return self.get_obs()
 
-    def step(self, action):
+    def step(self, action, max_dq = 0.01):
         action = np.asarray(action, dtype=np.float32).reshape(-1)
         if action.shape[0] != self.n_arm_act:
             raise ValueError(f"expected action dim {self.n_arm_act} but got {action.shape}")
@@ -134,7 +142,7 @@ class FrankaSimEnv:
         
         qpos = self.physics.data.qpos[:7].copy()
         
-        self.MAX_DQ = 0.01 #1step あたりの最大増分rad
+        self.MAX_DQ = max_dq #1step あたりの最大増分rad
         dq = np.clip(action - qpos, -self.MAX_DQ, self.MAX_DQ)
         target = qpos + dq
 
@@ -171,20 +179,55 @@ class FrankaSimEnv:
             raise ValueError("IK failed!")
 
         q_des = result.qpos[:7].copy()
+        with self.physics.reset_context():
+            self.physics.data.qpos[:7] = q_des
+            self.physics.data.qvel[:]  = 0.0          #速度ゼロ
+            self.physics.data.act[:]   = 0.0          #アクチュエータゼロ
+            self.physics.data.qacc_warmstart[:] = 0.0 #ソルば初期化
+            self.physics.forward()
 
-        self.physics.data.qpos[:7] = q_des
-        self.physics.data.qvel[:7] = 0.0
-        self.physics.forward()
+            # self.physics.data.qpos[:7] = q_des
+            # self.physics.data.qvel[:7] = 0.0
+            # self.physics.forward()
+        
+        #デバッグ
+        sid = self.physics.model.name2id("ee_target", "site")
+        ee_ik = self.physics.data.site_xpos[sid].copy()
+        err_ik = float(np.linalg.norm(ee_ik - target_pos))
+        print("[IK only] pos:", ee_ik, "err:", err_ik)
+        #######
+
+        #接触判定
+        print("ncon BEFORE =", int(self.physics.data.ncon))
+        for i in range(int(self.physics.data.ncon)):
+            c = self.physics.data.contact[i]
+            g1 = self.physics.model.id2name(c.geom1, 'geom')
+            g2 = self.physics.model.id2name(c.geom2, 'geom')
+            print(i, g1, g2, "dist=", c.dist)  # dist<0 ならめり込み
+        
+        #関節限界チェック
+        q = self.physics.data.qpos[:7].copy()
+        lo = self.physics.model.jnt_range[:7,0]
+        hi = self.physics.model.jnt_range[:7,1]
+        print("near_limit joints:", np.where((q<lo+1e-3)|(q>hi-1e-3))[0])
+
+
+        
 
         if sync_ctrl:
             low, high = self.ctrlrange[:, 0], self.ctrlrange[:, 1]
-            q_des_clip = np.clip(q_des, low, high)
             self.physics.data.ctrl[:] = 0.0
-            self.physics.data.ctrl[self.arm_actuator_ids] = q_des_clip
+            self.physics.data.ctrl[self.arm_actuator_ids] = q_des
 
 
-        for _ in range(settle_steps):
-            self.physics.step()
+        # for _ in range(settle_steps):
+        #     self.physics.step()
+            
+        #デバッグ
+        ee_after = self.physics.data.site_xpos[sid].copy()
+        err_after = float(np.linalg.norm(ee_after - target_pos))
+        print("[after step] pos:", ee_after, "err:", err_after)
+        #############
 
         ee_pos = self.get_ee_position()
         return q_des, ee_pos

@@ -144,7 +144,7 @@ eval_cfg:
     use_closed_loss_func: *use_closed_loss_func
     vis_dynamics_closed_featuremap: true
     vis_dynamics_open_featuremap: true
-    vis_encoder_featruemap: true
+    vis_encoder_featuremap: true
     epochs: 1 #5
     epochs_enc: 1 #5
     epochs_latent: 1 #5

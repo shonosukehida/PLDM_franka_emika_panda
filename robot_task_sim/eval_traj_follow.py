@@ -14,10 +14,11 @@ from pldm_envs.franka.envs import FrankaSimEnv
 
 import logging
 import sys
+from tqdm import tqdm
 
-# ---- ログ設定（INFO以上を標準出力へ）----
+
 logging.basicConfig(
-    level=logging.INFO,  # 煩ければ INFO→WARNING に
+    level=logging.INFO, 
     format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
@@ -28,26 +29,26 @@ OUTDIR = Path("./robot_task_sim/traj_eval_out")
 OUTDIR.mkdir(parents=True, exist_ok=True)
 (OUTDIR / "frames").mkdir(parents=True, exist_ok=True)
 
-# === 評価パラメータ ===
+#評価パラメータ
 IMAGE_SIZE = (128, 128)         # 保存フレーム解像度
 CAMERA = "top_view"
-SUCCESS_TOL = 0.1             # EE到達判定 (m)
+SUCCESS_TOL = 0.005             # EE到達判定 (m)
 STEP_SUBSTEPS = 50              
 MAX_STEPS_PER_WAYPOINT = 300    # 各目標に対して許容する最大ステップ数
 HOLD_STEPS_AT_TARGET = 10       # 収束後に少し保持して撮影
 SAVE_EVERY = 1                # フレーム保存間隔
 SEED = 0
 
-NUM_PNTS = 200 #軌跡の分割ポイント数
+NUM_PNTS = 640 #軌跡の分割ポイント数: 80
 
-# あなたの作業机の矩形領域（少しマージンを引いてIK失敗を避ける）
+
 x_min, x_max = 0.315, 0.715
 y_min, y_max = -0.2, 0.2
 z_fixed = 0.10
 MARGIN = 0.01
 
 # ロボットパラメータ
-Franka_FPS = 2.5 #2.5
+Franka_FREQ = 50 #2.5
 KP=[None, None, None, None, None, None, None]#[4500, 4500, 3500, 3500, 2000, 2000, 2000] # 位置アクチュエータの比例ゲイン  (値を上げるほど追従が速くなるが、振動が起きやすい)
 KD=[None, None, None, None, None, None, None]#[450, 450, 350, 350, 200, 200, 200]
 DOF_DAMPING=None           # DOFダンピング（振動抑制）      (高いとブレーキがかかるよう動作する. 過剰だと応答が鈍くなる)
@@ -56,6 +57,13 @@ CTRL_LOW=None              # アーム用ctrl下限（7要素）     (学習時�
 CTRL_HIGH=None            # アーム用ctrl上限（7要素）     (学習時や制御ポリシー設計と一致しているか確認)
 SOLVER_ITERS=None          # ソルバ反復                  (接触解決制度. 上げると接触安定性up, 速度down. デフォルトでは十分なことが多い)
 LS_ITERS=None            # ラインサーチ反復             (大抵は solver_iters に比べ影響小. 接触剛性が高い場合のみ確認)
+
+
+ROT_WEIGHT = 0.0
+TARGET_ROTMAT = None #np.stack([np.array([1, 0, 0]), np.array([0, -1, 0]), np.array([0, 0, -1])], axis=1)
+
+MAX_DQ = 0.03
+
 
 import collections.abc as cabc
 
@@ -118,14 +126,14 @@ def set_kd_per_joint(env, kd):
             raise TypeError("kd は float か、長さが関節数のシーケンスで指定してください")
         assert len(kd_list) == n, f"kd の長さは {n} 要素（関節数）にしてください"
 
-    # before（人が読みやすいように kd 値 = -biasprm[:,2] で表示）
+    
     before = -m.actuator_biasprm[arm_ids, 2].copy()
     print("kd before:", before)
 
     for aid, v in zip(arm_ids, kd_list):
         if v is None:
             continue
-        # kd = -biasprm[2] なので、biasprm[2] に -kd を入れる
+        
         m.actuator_biasprm[aid, 2] = -float(v)
 
     env.physics.forward()
@@ -138,22 +146,29 @@ def patch_franka_runtime(env, kp=None, kd=None, dof_damping=None, dof_armature=N
                          ctrl_low=None, ctrl_high=None, solver_iters=None, ls_iters=None):
     m = env.physics.model
 
-    # --- kp（スカラー or 7次元ベクトル両対応）---
     if kp is not None:
         set_kp_per_joint(env, kp)
-    if kd is not None:              
-        set_kd_per_joint(env, kd) 
+    if kd is not None:
+        set_kd_per_joint(env, kd)
 
-    # --- 以下はあなたの既存コードどおり ---
+
     if dof_damping is not None:
         arr = np.asarray(dof_damping, np.float32)
         assert arr.shape[0] == m.nv, "dof_damping の長さが nv と一致していません"
+        print("\n[DEBUG] dof_damping before:", np.round(m.dof_damping[:10], 6), "...")
         m.dof_damping[:] = arr
+        print("[DEBUG] dof_damping after :", np.round(m.dof_damping[:10], 6), "...")
+        print("[DEBUG] total nv =", m.nv)
+
 
     if dof_armature is not None:
         arr = np.asarray(dof_armature, np.float32)
         assert arr.shape[0] == m.nv, "dof_armature の長さが nv と一致していません"
+        print("\n[DEBUG] dof_armature before:", np.round(m.dof_armature[:10], 6), "...")
         m.dof_armature[:] = arr
+        print("[DEBUG] dof_armature after :", np.round(m.dof_armature[:10], 6), "...")
+        print("[DEBUG] total nv =", m.nv)
+
 
     if (ctrl_low is not None) or (ctrl_high is not None):
         lo = np.asarray(ctrl_low if ctrl_low is not None
@@ -162,16 +177,33 @@ def patch_franka_runtime(env, kp=None, kd=None, dof_damping=None, dof_armature=N
                         else m.actuator_ctrlrange[env.arm_actuator_ids, 1], np.float32)
         assert lo.shape[0] == len(env.arm_actuator_ids)
         assert hi.shape[0] == len(env.arm_actuator_ids)
+
+        print("\n[DEBUG] ctrlrange before:")
+        print("  low :", np.round(m.actuator_ctrlrange[env.arm_actuator_ids, 0], 6))
+        print("  high:", np.round(m.actuator_ctrlrange[env.arm_actuator_ids, 1], 6))
+
         m.actuator_ctrlrange[env.arm_actuator_ids, 0] = lo
         m.actuator_ctrlrange[env.arm_actuator_ids, 1] = hi
         env.ctrlrange = m.actuator_ctrlrange[env.arm_actuator_ids].copy()
 
+        print("[DEBUG] ctrlrange after:")
+        print("  low :", np.round(env.ctrlrange[:, 0], 6))
+        print("  high:", np.round(env.ctrlrange[:, 1], 6))
+
+
     if solver_iters is not None:
+        print(f"\n[DEBUG] solver_iters before: {m.opt.iterations}")
         m.opt.iterations = int(solver_iters)
+        print(f"[DEBUG] solver_iters after : {m.opt.iterations}")
+
     if ls_iters is not None:
+        print(f"\n[DEBUG] ls_iters before: {m.opt.ls_iterations}")
         m.opt.ls_iterations = int(ls_iters)
+        print(f"[DEBUG] ls_iters after : {m.opt.ls_iterations}")
 
     env.physics.forward()
+    print("\n[DEBUG] patch_franka_runtime complete ✅\n")
+
 
 
 def set_control_frequency_by_substeps(env, control_hz: float):
@@ -190,7 +222,6 @@ def make_trajectory(kind="rectangle", n_points=60, shuffle=False, seed=0):
     y_lo, y_hi = y_min + MARGIN, y_max - MARGIN
 
     if kind == "rectangle":
-        # 長方形の外周をぐるっと回る
         xs_top = np.linspace(x_lo, x_hi, n_points//4, endpoint=False)
         ys_top = np.full_like(xs_top, y_lo)
         xs_right = np.full(n_points//4, x_hi)
@@ -204,7 +235,6 @@ def make_trajectory(kind="rectangle", n_points=60, shuffle=False, seed=0):
         zs = np.full_like(xs, z_fixed)
 
     elif kind == "lawnmower":
-        # 往復スキャン（芝刈り軌跡）
         rows = int(np.sqrt(n_points))
         cols = max(2, n_points // rows)
         xs = np.linspace(x_lo, x_hi, cols)
@@ -245,7 +275,6 @@ def ee(env):
     return env.get_ee_position().astype(np.float32)
 
 def render_rgb(env, size=IMAGE_SIZE, camera=CAMERA):
-    # 直接dm_controlレンダを使って [H,W,3] (0..1 float) で返す
     rgb = env.physics.render(height=size[0], width=size[1],
                              camera_id=env.camera_id if camera!="default" else -1)
 
@@ -262,30 +291,33 @@ def run_follow(env, traj_xyz, name="rectangle"):
     steps_used = []
     total_frames = 0
 
-    #フレームごと
     frame_ee_xy = []
     frame_tgt_xy = []
 
     log.info(f"[run] >>> start '{name}' | waypoints={len(traj_xyz)} tol={SUCCESS_TOL} substeps={STEP_SUBSTEPS}")
     t0 = time.time()
 
-    # 初期化：最初の点近傍に寄せる（IKでワープ→安定化）
-    env.reset()
-    env.set_xyz(traj_xyz[0])
-    for _ in range(50): env.physics.step()
+
+    env.reset(robot_only = True)
+    q_des, ee_after_set = env.set_xyz(traj_xyz[0], target_rotmat=TARGET_ROTMAT, rot_weight = ROT_WEIGHT)
+    print("EE after set:", ee_after_set, " target:", traj_xyz[0], " err:", np.linalg.norm(ee_after_set-traj_xyz[0]))
     frame_ee_xy.append(env.get_ee_position()[:2].copy())
     frame_tgt_xy.append(traj_xyz[0][:2].copy())
 
-    for i, target in enumerate(traj_xyz):
+    for i, target in enumerate(tqdm(traj_xyz[1:], desc="Waypoints")):
         log.info(f"[run] wp[{i+1}/{len(traj_xyz)}] target={np.round(target,4)}")
-        # IKで目標関節角（q_des）を得る
-        ik = env.calc_inverse_kinematic(target)
+
+
+        target_rot_weight = ROT_WEIGHT
+        target_rotmat = TARGET_ROTMAT
+
+        ik = env.calc_inverse_kinematic(target, target_rotmat = target_rotmat, rot_weight = target_rot_weight)
         q_des = ik.qpos[:7].copy()
 
-        # 収束ループ
+
         step_cnt = 0
         while step_cnt < MAX_STEPS_PER_WAYPOINT:
-            obs, reward, done, truncated, info = env.step(q_des)
+            obs, reward, done, truncated, info = env.step(q_des, max_dq = MAX_DQ)
             cur = ee(env)
             err = float(np.linalg.norm(cur - target))
 
@@ -293,27 +325,33 @@ def run_follow(env, traj_xyz, name="rectangle"):
             #     rgb = render_rgb(env)
             #     plt.imsave(OUTDIR / "frames" / f"{name}_{i:03d}_{step_cnt:04d}.png", rgb)
             #     total_frames += 1
+            
+            
+            ##########トルク可視化###########
+            # torques = env.physics.data.qfrc_actuator[env.arm_actuator_ids].copy()
+            # tqdm.write(f"[torque] step={step_cnt:4d} | {np.round(torques, 3)} Nm")
+            #############################
+            
                 
             #毎フレームのEE/targetをログ（XY）
             frame_ee_xy.append(cur[:2].copy())
             frame_tgt_xy.append(target[:2].copy())
 
-            # 進捗ログ（25ステップ毎 or 初回）
             if step_cnt == 0 or (step_cnt % 25 == 0):
                 log.info(f"[run]   step={step_cnt:4d}  err={err:.4f} m")
 
             if err < SUCCESS_TOL:
-                # 少し保持してから次へ
+
                 for _ in range(HOLD_STEPS_AT_TARGET):
-                    env.step(q_des)
-                reached.append((i, True))
+                    env.step(q_des, MAX_DQ)
+                reached.append(True)
                 steps_used.append(step_cnt+HOLD_STEPS_AT_TARGET)
                 break
 
             step_cnt += 1
 
         if step_cnt >= MAX_STEPS_PER_WAYPOINT:
-            reached.append((i, False))
+            reached.append(False)
             steps_used.append(step_cnt)
 
         ee_traj.append(cur)
@@ -342,11 +380,13 @@ def run_follow(env, traj_xyz, name="rectangle"):
     log.info(f"[run] <<< done '{name}' | reached={metrics['reached_ratio']:.3f} "
              f"mean_err={metrics['mean_err_m']:.4f} p90={metrics['p90_err_m']:.4f} "
              f"avg_steps={metrics['mean_steps_per_wp']:.1f} elapsed={dt:.2f}s")
-    # 可視化（XY投影）
+
     plt.figure(figsize=(5,5))
     plt.plot(tgt_traj[:,0], tgt_traj[:,1], linestyle="--", marker="o", markersize=10, label="target XY")
     plt.plot(ee_traj[:,0],  ee_traj[:,1],  linestyle="-",  marker=".", markersize=10, label="executed XY")
 
+    plt.text(tgt_traj[0,0], tgt_traj[0,1], "S", color="blue", fontsize=12, fontweight="bold", ha="center", va="center")
+    plt.text(tgt_traj[-1,0], tgt_traj[-1,1], "G", color="blue", fontsize=12, fontweight="bold", ha="center", va="center")
     
     plt.text(ee_traj[0,0], ee_traj[0,1], "S", color="orange", fontsize=12, fontweight="bold", ha="center", va="center")
     plt.text(ee_traj[-1,0], ee_traj[-1,1], "G", color="orange", fontsize=12, fontweight="bold", ha="center", va="center")
@@ -358,7 +398,7 @@ def run_follow(env, traj_xyz, name="rectangle"):
     plt.savefig(OUTDIR / f"ee_traj_plot_{name}.png", dpi=150)
     plt.close()
 
-    # エラー推移
+
     plt.figure(figsize=(6,3))
     plt.plot(err_vec)
     plt.xlabel("waypoint idx"); plt.ylabel("||EE - target|| [m]"); plt.title("Waypoint errors")
@@ -373,10 +413,13 @@ def run_follow(env, traj_xyz, name="rectangle"):
     frame_ee_xy = np.array(frame_ee_xy, dtype=np.float32)
     frame_tgt_xy = np.array(frame_tgt_xy, dtype=np.float32)
 
-    # 連続軌跡のXY図
+
     plt.figure(figsize=(5,5))
     plt.plot(frame_tgt_xy[:,0], frame_tgt_xy[:,1], 'g--', lw=1, marker="o",markersize=5, label='target XY (per frame)')
     plt.plot(frame_ee_xy[:,0],  frame_ee_xy[:,1],  'r-',  lw=1, marker="o",markersize=1,label='executed XY (per frame)')
+
+    plt.text(frame_tgt_xy[0,0], frame_tgt_xy[0,1], "S", color="blue", fontsize=12, fontweight="bold", ha="center", va="center")
+    plt.text(frame_tgt_xy[-1,0], frame_tgt_xy[-1,1], "G", color="blue", fontsize=12, fontweight="bold", ha="center", va="center")
 
     plt.text(frame_ee_xy[0,0], frame_ee_xy[0,1], "S", color="red", fontsize=12, fontweight="bold", ha="center", va="center")
     plt.text(frame_ee_xy[-1,0], frame_ee_xy[-1,1], "G", color="red", fontsize=12, fontweight="bold", ha="center", va="center")
@@ -414,10 +457,10 @@ def make_gifs_per_traj(duration=0.05):
         print("[INFO] imageio not available; skip GIF")
         return
 
-    frames = sorted((OUTDIR / "frames").glob("*.png"))  # 0埋めなので辞書順で時系列OK
+    frames = sorted((OUTDIR / "frames").glob("*.png"))  
     groups = {}
     for p in frames:
-        name = p.stem.split("_", 1)[0]  # 先頭プレフィックス=軌跡名
+        name = p.stem.split("_", 1)[0]  
         groups.setdefault(name, []).append(p)
 
     for name, fps in groups.items():
@@ -440,6 +483,19 @@ def main():
         normalizer=None,  
     )
     
+
+    sid = env.physics.model.name2id('ee_target', 'site')
+    site_body_id = env.physics.model.site_bodyid[sid]
+    site_body_name = env.physics.model.id2name(site_body_id, 'body')
+    print("ee_target is attached to body:", site_body_name)
+
+
+    parent_bid = env.physics.model.body_parentid[site_body_id]  # root は -1
+    parent_name = 'ROOT' if parent_bid == -1 else env.physics.model.id2name(parent_bid, 'body')
+    print("parent body:", parent_name)
+
+
+    
     
     
     nv = env.physics.model.nv
@@ -454,10 +510,10 @@ def main():
         solver_iters=SOLVER_ITERS, 
         ls_iters=LS_ITERS,    
     )
-    set_control_frequency_by_substeps(env, control_hz = Franka_FPS)
+    set_control_frequency_by_substeps(env, control_hz = Franka_FREQ)
     
 
-    # 軌跡をいくつか評価
+
     todo = [
         ("rectangle", NUM_PNTS, False),
         # ("lawnmower", NUM_PNTS, False),
