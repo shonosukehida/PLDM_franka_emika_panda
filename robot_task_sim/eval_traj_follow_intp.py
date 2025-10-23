@@ -36,16 +36,16 @@ OUTDIR.mkdir(parents=True, exist_ok=True)
 ################################################################################################################################
 
 #評価パラメータ
-IMAGE_SIZE = (128, 128)         # 保存フレーム解像度
+# IMAGE_SIZE = (128, 128)         # 保存フレーム解像度
+IMAGE_SIZE = (256, 256) 
 CAMERA = "top_view"
-SUCCESS_TOL = 0.005             # EE到達判定 (m)
+SUCCESS_TOL = 0.05             # EE到達判定 (m)
 STEP_SUBSTEPS = 50              
-MAX_STEPS_PER_WAYPOINT = 300    # 各目標に対して許容する最大ステップ数
+MAX_STEPS_PER_WAYPOINT = 500    # 各目標に対して許容する最大ステップ数
 HOLD_STEPS_AT_TARGET = 10       # 収束後に少し保持して撮影
 SAVE_EVERY = 1                # フレーム保存間隔
 SEED = 0
 
-NUM_PNTS = 640 #軌跡の分割ポイント数: 80
 
 
 x_min, x_max = 0.315, 0.715
@@ -54,7 +54,7 @@ z_fixed = 0.10
 MARGIN = 0.01
 
 # ロボットパラメータ
-Franka_FREQ = 50 #2.5
+Franka_FREQ = 500 #2.5
 KP=[None, None, None, None, None, None, None]#[4500, 4500, 3500, 3500, 2000, 2000, 2000] # 位置アクチュエータの比例ゲイン  (値を上げるほど追従が速くなるが、振動が起きやすい)
 KD=[None, None, None, None, None, None, None]#[450, 450, 350, 350, 200, 200, 200]
 DOF_DAMPING=None           # DOFダンピング（振動抑制）      (高いとブレーキがかかるよう動作する. 過剰だと応答が鈍くなる)
@@ -69,7 +69,9 @@ LS_ITERS=None            # ラインサーチ反復             (大抵は solve
 ROT_WEIGHT = 0.0
 TARGET_ROTMAT = None #np.stack([np.array([1, 0, 0]), np.array([0, -1, 0]), np.array([0, 0, -1])], axis=1)
 
-MAX_DQ = 0.03
+NUM_PNTS = 640        #軌跡の分割ポイント数: 80
+MAX_DQ = 0.1       # max joint increment per step (rad)
+N_INTERP = 50      # 10–20 gives smooth motion
 
 ################################################################################################################################
 
@@ -77,77 +79,77 @@ MAX_DQ = 0.03
 
 
 
-def set_kp_per_joint(env, kp):
-    """
-    kp: 
-      - float（全関節を同一値に）
-      - 長さ=len(env.arm_actuator_ids) のシーケンス
-        その中に None を含めると、その関節は現状値を維持します
-    """
+# def set_kp_per_joint(env, kp):
+#     """
+#     kp: 
+#       - float（全関節を同一値に）
+#       - 長さ=len(env.arm_actuator_ids) のシーケンス
+#         その中に None を含めると、その関節は現状値を維持します
+#     """
     
-    m = env.physics.model
-    arm_ids = list(env.arm_actuator_ids)
-    n = len(arm_ids)
+#     m = env.physics.model
+#     arm_ids = list(env.arm_actuator_ids)
+#     n = len(arm_ids)
 
 
-    if isinstance(kp, (int, float, np.floating)):
-        kp_list = [float(kp)] * n
-    else:
-        try:
-            kp_list = list(kp)
-        except TypeError:
-            raise TypeError("kp は float か、長さが関節数のシーケンスで指定してください")
-        assert len(kp_list) == n, f"kp の長さは {n} 要素（関節数）にしてください"
+#     if isinstance(kp, (int, float, np.floating)):
+#         kp_list = [float(kp)] * n
+#     else:
+#         try:
+#             kp_list = list(kp)
+#         except TypeError:
+#             raise TypeError("kp は float か、長さが関節数のシーケンスで指定してください")
+#         assert len(kp_list) == n, f"kp の長さは {n} 要素（関節数）にしてください"
 
 
-    before = m.actuator_gainprm[arm_ids, 0].copy()
-    print("kp before:", before)
+#     before = m.actuator_gainprm[arm_ids, 0].copy()
+#     print("kp before:", before)
 
 
-    for aid, v in zip(arm_ids, kp_list):
-        if v is None:
-            continue
-        m.actuator_gainprm[aid, 0] = float(v)
+#     for aid, v in zip(arm_ids, kp_list):
+#         if v is None:
+#             continue
+#         m.actuator_gainprm[aid, 0] = float(v)
 
-    env.physics.forward()
-    after = m.actuator_gainprm[arm_ids, 0]
-    print("kp after :", after)
+#     env.physics.forward()
+#     after = m.actuator_gainprm[arm_ids, 0]
+#     print("kp after :", after)
 
 
-def set_kd_per_joint(env, kd):
-    """
-    kd:
-      - float（全関節を同一値に）
-      - 長さ=len(env.arm_actuator_ids) のシーケンス
-        その中に None を含めると、その関節は現状値を維持
-    備考: MuJoCoの一般アクチュエータ(affine)では kd = -biasprm[2]
-    """
-    m = env.physics.model
-    arm_ids = list(env.arm_actuator_ids)
-    n = len(arm_ids)
+# def set_kd_per_joint(env, kd):
+#     """
+#     kd:
+#       - float（全関節を同一値に）
+#       - 長さ=len(env.arm_actuator_ids) のシーケンス
+#         その中に None を含めると、その関節は現状値を維持
+#     備考: MuJoCoの一般アクチュエータ(affine)では kd = -biasprm[2]
+#     """
+#     m = env.physics.model
+#     arm_ids = list(env.arm_actuator_ids)
+#     n = len(arm_ids)
 
-    if isinstance(kd, (int, float, np.floating)):
-        kd_list = [float(kd)] * n
-    else:
-        try:
-            kd_list = list(kd)
-        except TypeError:
-            raise TypeError("kd は float か、長さが関節数のシーケンスで指定してください")
-        assert len(kd_list) == n, f"kd の長さは {n} 要素（関節数）にしてください"
+#     if isinstance(kd, (int, float, np.floating)):
+#         kd_list = [float(kd)] * n
+#     else:
+#         try:
+#             kd_list = list(kd)
+#         except TypeError:
+#             raise TypeError("kd は float か、長さが関節数のシーケンスで指定してください")
+#         assert len(kd_list) == n, f"kd の長さは {n} 要素（関節数）にしてください"
 
     
-    before = -m.actuator_biasprm[arm_ids, 2].copy()
-    print("kd before:", before)
+#     before = -m.actuator_biasprm[arm_ids, 2].copy()
+#     print("kd before:", before)
 
-    for aid, v in zip(arm_ids, kd_list):
-        if v is None:
-            continue
+#     for aid, v in zip(arm_ids, kd_list):
+#         if v is None:
+#             continue
         
-        m.actuator_biasprm[aid, 2] = -float(v)
+#         m.actuator_biasprm[aid, 2] = -float(v)
 
-    env.physics.forward()
-    after = -m.actuator_biasprm[arm_ids, 2]
-    print("kd after :", after)
+#     env.physics.forward()
+#     after = -m.actuator_biasprm[arm_ids, 2]
+#     print("kd after :", after)
 
 
 
@@ -155,10 +157,10 @@ def patch_franka_runtime(env, kp=None, kd=None, dof_damping=None, dof_armature=N
                          ctrl_low=None, ctrl_high=None, solver_iters=None, ls_iters=None):
     m = env.physics.model
 
-    if kp is not None:
-        set_kp_per_joint(env, kp)
-    if kd is not None:
-        set_kd_per_joint(env, kd)
+    # if kp is not None:
+    #     set_kp_per_joint(env, kp)
+    # if kd is not None:
+    #     set_kd_per_joint(env, kd)
 
 
     if dof_damping is not None:
@@ -321,6 +323,7 @@ def get_joint_pd_gains_from_model(env):
 def run_follow(env, traj_xyz, name="rectangle"):
     ee_traj = []
     tgt_traj = []
+    ee_traj_interp = []
     reached = []
     steps_used = []
     total_frames = 0
@@ -358,20 +361,29 @@ def run_follow(env, traj_xyz, name="rectangle"):
     frame_ee_xy.append(env.get_ee_position()[:2].copy())
     frame_tgt_xy.append(traj_xyz[0][:2].copy())
 
+
+##############
     for i, target in enumerate(tqdm(traj_xyz[1:], desc="Waypoints")):
         log.info(f"[run] wp[{i+1}/{len(traj_xyz)}] target={np.round(target,4)}")
-
 
         target_rot_weight = ROT_WEIGHT
         target_rotmat = TARGET_ROTMAT
 
         ik = env.calc_inverse_kinematic(target, target_rotmat = target_rotmat, rot_weight = target_rot_weight)
         q_des = ik.qpos[:7].copy()
+        q_cur = env.physics.data.qpos[:7].copy()
 
+        # step_cnt = 0
+        # while step_cnt < MAX_STEPS_PER_WAYPOINT:
 
-        step_cnt = 0
-        while step_cnt < MAX_STEPS_PER_WAYPOINT:
-            obs, reward, done, truncated, info = env.step(q_des, max_dq = MAX_DQ)
+        for j, alpha in enumerate(np.linspace(0, 1, N_INTERP, endpoint=False)):
+            q_interp = q_cur + alpha * (q_des - q_cur)
+
+            q_cur2 = env.physics.data.qpos[:7].copy()
+
+            # print(f"[DEBUG] Waypoint {i}, Interpolation alpha={alpha:.3f}, q_interp={np.round(q_interp, 4)}, current_pose={np.round(q_cur2, 4)}")
+
+            obs, reward, done, truncated, info = env.step(q_interp, max_dq = MAX_DQ)
             cur = ee(env)
             err = float(np.linalg.norm(cur - target))
 
@@ -395,7 +407,7 @@ def run_follow(env, traj_xyz, name="rectangle"):
 
             qd_des = np.zeros_like(qd, dtype=np.float32)
 
-            tau_p = kp_vec * (q_des - q)
+            tau_p = kp_vec * (q_interp - q)
             tau_d = kd_vec * (qd_des - qd)
             tau_tot = tau_p + tau_d
 
@@ -403,78 +415,43 @@ def run_follow(env, traj_xyz, name="rectangle"):
             pd_d_hist.append(tau_d.copy())
             pd_tot_hist.append(tau_tot.copy())
 
-
-
-            q_err = (q_des - q)                  # [rad]
+            q_err = (q_interp - q)                  # [rad]
             qd_des = np.zeros_like(qd, dtype=np.float32)  # 目標速度は0とする
             qd_err = (qd_des - qd)               # [rad/s]
 
             q_err_hist.append(q_err.copy())
             qd_err_hist.append(qd_err.copy())
             qd_hist.append(qd.copy())
-            ##########################################
-
-
-            # if step_cnt % SAVE_EVERY == 0:
-            #     rgb = render_rgb(env)
-            #     plt.imsave(OUTDIR / "frames" / f"{name}_{i:03d}_{step_cnt:04d}.png", rgb)
-            #     total_frames += 1
-            
-            
-            ##########トルク可視化###########
-            # torques = env.physics.data.qfrc_actuator[env.arm_actuator_ids].copy()
-            # tqdm.write(f"[torque] step={step_cnt:4d} | {np.round(torques, 3)} Nm")
-            #############################
             
                 
             #毎フレームのEE/targetをログ（XY）
             frame_ee_xy.append(cur[:2].copy())
             frame_tgt_xy.append(target[:2].copy())
 
-            if step_cnt == 0 or (step_cnt % 25 == 0):
-                log.info(f"[run]   step={step_cnt:4d}  err={err:.4f} m")
+            # env.physics.data.qpos[:7] = q_interp
+            # env.physics.forward()
+            ee_pos_interp = ee(env)    # get end-effector position (3D)
+            ee_traj_interp.append(ee_pos_interp[:2].copy())  # store XY for plotting
 
-            if err < SUCCESS_TOL:
+            #VIDEO
+            # if step_cnt % SAVE_EVERY == 0:
+            if j % 17 == 0:  # Save only every 5th frame
+                rgb = render_rgb(env)
+                plt.imsave(OUTDIR / "frames" / f"{name}_{i:03d}_{j:04d}.png", rgb)
+                total_frames += 1
 
-                for _ in range(HOLD_STEPS_AT_TARGET):
-                    env.step(q_des, MAX_DQ)
-                    
-                    cur_hold = ee(env)
-                    v_hold = (cur_hold - prev_cur) / dt_step
-                    prev_cur = cur_hold.copy()
-                    t_accum += dt_step
+        q_cur = env.physics.data.qpos[:7].copy()
 
-                    times.append(t_accum)
-                    dist_errs.append(float(np.linalg.norm(cur_hold - target)))
-                    vel_mag.append(float(np.linalg.norm(v_hold)))
-                    vel_xyz.append(v_hold.copy())
+        reached.append(True)
+            
+        # steps_used.append(step_cnt+HOLD_STEPS_AT_TARGET)
+            # break
 
-                    q  = env.physics.data.qpos[:7].astype(np.float32).copy()
-                    qd = env.physics.data.qvel[:7].astype(np.float32).copy()
-                    tau_p = kp_vec * (q_des - q)
-                    tau_d = kd_vec * (qd_des - qd)
-                    tau_tot = tau_p + tau_d
-                    pd_p_hist.append(tau_p.copy())
-                    pd_d_hist.append(tau_d.copy())
-                    pd_tot_hist.append(tau_tot.copy())
+            # step_cnt += 1
 
-                    q_err = (q_des - q)                  # [rad]
-                    qd_des = np.zeros_like(qd, dtype=np.float32)  # 目標速度は0とする
-                    qd_err = (qd_des - qd)               # [rad/s]
-
-                    q_err_hist.append(q_err.copy())
-                    qd_err_hist.append(qd_err.copy())
-                    qd_hist.append(qd.copy())
-                    
-                reached.append(True)
-                steps_used.append(step_cnt+HOLD_STEPS_AT_TARGET)
-                break
-
-            step_cnt += 1
-
-        if step_cnt >= MAX_STEPS_PER_WAYPOINT:
-            reached.append(False)
-            steps_used.append(step_cnt)
+        # if step_cnt >= MAX_STEPS_PER_WAYPOINT:
+        #     reached.append(False)
+        #     steps_used.append(step_cnt)
 
         ee_traj.append(cur)
         tgt_traj.append(target)
@@ -482,6 +459,7 @@ def run_follow(env, traj_xyz, name="rectangle"):
     print('reached: ', reached)
     dt = time.time() - t0
     ee_traj = np.array(ee_traj, dtype=np.float32)
+    ee_traj_interp = np.array(ee_traj_interp, dtype=np.float32)
     tgt_traj = np.array(tgt_traj, dtype=np.float32)
     err_vec = np.linalg.norm(ee_traj - tgt_traj, axis=1)
 
@@ -504,8 +482,9 @@ def run_follow(env, traj_xyz, name="rectangle"):
              f"avg_steps={metrics['mean_steps_per_wp']:.1f} elapsed={dt:.2f}s")
 
     plt.figure(figsize=(5,5))
-    plt.plot(tgt_traj[:,0], tgt_traj[:,1], linestyle="--", marker="o", markersize=10, label="target XY")
-    plt.plot(ee_traj[:,0],  ee_traj[:,1],  linestyle="-",  marker=".", markersize=10, label="executed XY")
+    plt.plot(tgt_traj[:,0], tgt_traj[:,1], linestyle="--", marker="o", markersize=8, label="target XY")
+    plt.plot(ee_traj_interp[:,0], ee_traj_interp[:,1], linestyle="--", marker="o", markersize=1, label="interp XY")
+    plt.plot(ee_traj[:,0],  ee_traj[:,1],  linestyle="-",  marker=".", markersize=5, label="executed XY")
 
     plt.text(tgt_traj[0,0], tgt_traj[0,1], "S", color="blue", fontsize=12, fontweight="bold", ha="center", va="center")
     plt.text(tgt_traj[-1,0], tgt_traj[-1,1], "G", color="blue", fontsize=12, fontweight="bold", ha="center", va="center")
@@ -538,6 +517,7 @@ def run_follow(env, traj_xyz, name="rectangle"):
 
     plt.figure(figsize=(5,5))
     plt.plot(frame_tgt_xy[:,0], frame_tgt_xy[:,1], 'g--', lw=1, marker="o",markersize=5, label='target XY (per frame)')
+    plt.plot(ee_traj_interp[:,0], ee_traj_interp[:,1], linestyle="--", marker="o", markersize=1, label="interp XY (per frame)")
     plt.plot(frame_ee_xy[:,0],  frame_ee_xy[:,1],  'r-',  lw=1, marker="o",markersize=1,label='executed XY (per frame)')
 
     plt.text(frame_tgt_xy[0,0], frame_tgt_xy[0,1], "S", color="blue", fontsize=12, fontweight="bold", ha="center", va="center")
@@ -563,15 +543,15 @@ def run_follow(env, traj_xyz, name="rectangle"):
         name=name,
         outdir=OUTDIR,
     )
-    pd_p = np.stack(pd_p_hist, axis=0) if len(pd_p_hist)>0 else np.zeros((0,7), dtype=np.float32)
-    pd_d = np.stack(pd_d_hist, axis=0) if len(pd_d_hist)>0 else np.zeros((0,7), dtype=np.float32)
-    pd_tot = np.stack(pd_tot_hist, axis=0) if len(pd_tot_hist)>0 else np.zeros((0,7), dtype=np.float32)
+    # pd_p = np.stack(pd_p_hist, axis=0) if len(pd_p_hist)>0 else np.zeros((0,7), dtype=np.float32)
+    # pd_d = np.stack(pd_d_hist, axis=0) if len(pd_d_hist)>0 else np.zeros((0,7), dtype=np.float32)
+    # pd_tot = np.stack(pd_tot_hist, axis=0) if len(pd_tot_hist)>0 else np.zeros((0,7), dtype=np.float32)
 
-    plot_joint_pd_time_series(times, pd_p,   title="Joint-wise P-term (Kp*(qdes - q))",        ylabel="P-term [~Nm]",         fname_prefix="joint_p_term",   name=name, outdir=OUTDIR)
-    plot_joint_pd_time_series(times, pd_d,   title="Joint-wise D-term (Kd*(qd_des - qd))",     ylabel="D-term [~Nm]",         fname_prefix="joint_d_term",   name=name, outdir=OUTDIR)
-    plot_joint_pd_time_series(times, pd_tot, title="Joint-wise Total torque (P + D, approx.)", ylabel="Total torque [~Nm]",   fname_prefix="joint_total",    name=name, outdir=OUTDIR)
+    # plot_joint_pd_time_series(times, pd_p,   title="Joint-wise P-term (Kp*(qdes - q))",        ylabel="P-term [~Nm]",         fname_prefix="joint_p_term",   name=name, outdir=OUTDIR)
+    # plot_joint_pd_time_series(times, pd_d,   title="Joint-wise D-term (Kd*(qd_des - qd))",     ylabel="D-term [~Nm]",         fname_prefix="joint_d_term",   name=name, outdir=OUTDIR)
+    # plot_joint_pd_time_series(times, pd_tot, title="Joint-wise Total torque (P + D, approx.)", ylabel="Total torque [~Nm]",   fname_prefix="joint_total",    name=name, outdir=OUTDIR)
 
-    save_joint_pd_csv(times, pd_p, pd_d, pd_tot, name=name, outdir=OUTDIR)
+    # save_joint_pd_csv(times, pd_p, pd_d, pd_tot, name=name, outdir=OUTDIR)
 
     q_err_arr   = np.stack(q_err_hist, axis=0) if q_err_hist   else np.zeros((0,7), np.float32)
     qd_err_arr  = np.stack(qd_err_hist, axis=0) if qd_err_hist else np.zeros((0,7), np.float32)
@@ -602,8 +582,14 @@ def maybe_make_gif():
     imageio.mimsave(OUTDIR / "preview.gif", imgs, duration=0.05)
     print("[SAVE] GIF ->", OUTDIR / "preview.gif")
 
+def numeric_sort_key(p):
+    parts = p.stem.split("_")
+    # parts = ['lawnmower', '000', '45']
+    # fallback if fewer parts exist
+    nums = [int(x) for x in parts[1:] if x.isdigit()]
+    return nums
 
-def make_gifs_per_traj(duration=0.05):
+def make_gifs_per_traj(duration=0.002):
     try:
         import imageio.v2 as imageio
     except Exception:
@@ -617,11 +603,12 @@ def make_gifs_per_traj(duration=0.05):
         groups.setdefault(name, []).append(p)
 
     for name, fps in groups.items():
-        fps = sorted(fps) 
+        fps = sorted(fps, key=numeric_sort_key)
         if not fps:
             continue
         imgs = [imageio.imread(str(p)) for p in fps]  
-        imageio.mimsave(OUTDIR / f"{name}.gif", imgs, duration=duration)
+        imageio.mimsave(OUTDIR / f"{name}.gif", imgs, fps=30)
+        imageio.mimsave(OUTDIR / f"{name}.mp4", imgs, fps=30, quality=8, codec='libx264')
         print(f"[SAVE] {name}.gif  ({len(fps)} frames, full span)")
 
 
@@ -846,7 +833,7 @@ def main():
         json.dump(all_metrics, f, indent=2)
 
     # maybe_make_gif()
-    # make_gifs_per_traj()
+    make_gifs_per_traj()
     print("\n✅ Trajectory evaluation complete. See:", OUTDIR)
 
 if __name__ == "__main__":

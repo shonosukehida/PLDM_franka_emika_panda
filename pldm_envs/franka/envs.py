@@ -55,6 +55,8 @@ class FrankaSimEnv:
         self.goal_pos = None
         
         self.MAX_DQ = 1000_000_000.0
+        
+        self.control_dt = float(self.physics.model.opt.timestep) * int(self.substeps) 
 
     def calc_inverse_kinematic(self, target_xyz, target_rotmat=None, rot_weight=1.0):
         target_quat = None
@@ -144,7 +146,7 @@ class FrankaSimEnv:
         
         self.MAX_DQ = max_dq #1step あたりの最大増分rad
         dq = np.clip(action - qpos, -self.MAX_DQ, self.MAX_DQ)
-        target = qpos + dq
+        target = qpos + dq #qpos + dq 
 
 
         low, high = self.ctrlrange[:, 0], self.ctrlrange[:, 1]

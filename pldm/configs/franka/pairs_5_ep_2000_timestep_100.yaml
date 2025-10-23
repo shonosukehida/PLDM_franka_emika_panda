@@ -45,7 +45,7 @@ eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
 eval_mpcs: 20
-eval_only: false
+eval_only: true
 hjepa:
   l1_n_steps: *n_steps
   train_l1: true
@@ -76,14 +76,14 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: null #pldm/checkpoints/franka_20250913_125623/epoch=10_sample_step=110000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20251014_142552/epoch=10_sample_step=3410000.ckpt #pldm/checkpoints/franka_20250913_125623/epoch=10_sample_step=110000.ckpt
 load_l1_only: false
 
 use_closed_loss_func: &use_closed_loss_func false #現在はopen_objectives を共通の損失関数として使用
 objectives_l1:
   idm:
     action_dim: 7
-    coeff: 5.3964 #5.3964
+    coeff: 500 #5.3964
     arch: 'conv'
     use_pred: false
     arch_subclass: a
@@ -143,9 +143,9 @@ eval_cfg:
     probe_encoder: true
     probe_preds: true
     use_closed_loss_func: *use_closed_loss_func
-    vis_dynamics_closed_featuremap: false
-    vis_dynamics_open_featuremap: false
-    vis_encoder_featuremap: false
+    vis_dynamics_closed_featuremap: true
+    vis_dynamics_open_featuremap: true
+    vis_encoder_featuremap: true
     epochs: 5 #5
     epochs_enc: 5 #5
     epochs_latent: 5 #5
@@ -155,7 +155,7 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: true
-    load_prober: false
+    load_prober: true
   disable_planning: false
   franka_planning:
     n_envs: 4 #85
