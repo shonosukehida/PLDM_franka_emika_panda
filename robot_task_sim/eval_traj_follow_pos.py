@@ -18,6 +18,9 @@ from tqdm import tqdm
 
 import collections.abc as cabc
 
+from box import Box
+import yaml
+
 
 
 logging.basicConfig(
@@ -27,126 +30,148 @@ logging.basicConfig(
 )
 log = logging.getLogger("traj_eval")
 
+def load_config(cfg_path="robot_task_sim/config.yaml") -> Box:
+    with open(cfg_path, "r") as f:
+        raw = yaml.safe_load(f) or {}
 
-OUTDIR = Path("./robot_task_sim/traj_eval_out")
+    return Box(raw, default_box=False, box_dots=True)
+
+config = load_config("robot_task_sim/config.yaml")
+
+
+OUTDIR = Path(config.paths.outdir)
 OUTDIR.mkdir(parents=True, exist_ok=True)
 (OUTDIR / "frames").mkdir(parents=True, exist_ok=True)
+
+import shutil
+frames_dir = OUTDIR / "frames"
+if frames_dir.exists():
+    shutil.rmtree(frames_dir)
+frames_dir.mkdir(parents=True, exist_ok=True)
 
 #SETTING
 ################################################################################################################################
 
 #評価パラメータ
-IMAGE_SIZE = (128, 128)         # 保存フレーム解像度
-CAMERA = "top_view"
-SUCCESS_TOL = 0.005             # EE到達判定 (m)
-STEP_SUBSTEPS = 50              
-MAX_STEPS_PER_WAYPOINT = 300    # 各目標に対して許容する最大ステップ数
-HOLD_STEPS_AT_TARGET = 10       # 収束後に少し保持して撮影
-SAVE_EVERY = 1                # フレーム保存間隔
-SEED = 0
+IMAGE_SIZE = tuple(config.eval.image_size)         # 保存フレーム解像度
+CAMERA = str(config.camera)
+SUCCESS_TOL = float(config.eval.success_tol)             # EE到達判定 (m)
+STEP_SUBSTEPS = int(config.eval.step_substeps)              
+MAX_STEPS_PER_WAYPOINT = int(config.eval.max_steps_per_waypoint)    # 各目標に対して許容する最大ステップ数
+HOLD_STEPS_AT_TARGET = int(config.eval.hold_steps_at_target)       # 収束後に少し保持して撮影
+SAVE_EVERY = int(config.eval.save_every)                # フレーム保存間隔
+SEED = int(config.eval.seed)
 
-NUM_PNTS = 640 #軌跡の分割ポイント数: 80
+NUM_PNTS = int(config.eval.num_points) #軌跡の分割ポイント数: 80
 
 
-x_min, x_max = 0.315, 0.715
-y_min, y_max = -0.2, 0.2
-z_fixed = 0.10
-MARGIN = 0.01
+x_min = float(config.workspace.x_min)
+x_max = float(config.workspace.x_max)
+y_min = float(config.workspace.y_min)
+y_max = float(config.workspace.y_max)
+z_fixed = float(config.workspace.z_fixed) 
+MARGIN = float(config.workspace.margin)
 
 # ロボットパラメータ
-Franka_FREQ = 50 #2.5
-KP=[None, None, None, None, None, None, None]#[4500, 4500, 3500, 3500, 2000, 2000, 2000] # 位置アクチュエータの比例ゲイン  (値を上げるほど追従が速くなるが、振動が起きやすい)
-KD=[None, None, None, None, None, None, None]#[450, 450, 350, 350, 200, 200, 200]
-DOF_DAMPING=None           # DOFダンピング（振動抑制）      (高いとブレーキがかかるよう動作する. 過剰だと応答が鈍くなる)
-DOF_ARMATURE=None          # DOFアーマチュア（慣性付加）    (大きくすると応用が重く安定する)
-CTRL_LOW=None              # アーム用ctrl下限（7要素）     (学習時や制御ポリシー設計と一致しているか確認)
-CTRL_HIGH=None            # アーム用ctrl上限（7要素）     (学習時や制御ポリシー設計と一致しているか確認)
-SOLVER_ITERS=None          # ソルバ反復                  (接触解決制度. 上げると接触安定性up, 速度down. デフォルトでは十分なことが多い)
-LS_ITERS=None            # ラインサーチ反復             (大抵は solver_iters に比べ影響小. 接触剛性が高い場合のみ確認)
+Franka_FREQ = float(config.robot.franka_freq) #2.5
+KP=None if config.robot.kp is None else list(config.robot.kp)#[4500, 4500, 3500, 3500, 2000, 2000, 2000] # 位置アクチュエータの比例ゲイン  (値を上げるほど追従が速くなるが、振動が起きやすい)
+KD=None if config.robot.kd is None else list(config.robot.kd)#[450, 450, 350, 350, 200, 200, 200]
+DOF_DAMPING=config.robot.dof_damping           # DOFダンピング（振動抑制）      (高いとブレーキがかかるよう動作する. 過剰だと応答が鈍くなる)
+DOF_ARMATURE=config.robot.dof_armature          # DOFアーマチュア（慣性付加）    (大きくすると応用が重く安定する)
+CTRL_LOW=config.robot.ctrl_low              # アーム用ctrl下限（7要素）     (学習時や制御ポリシー設計と一致しているか確認)
+CTRL_HIGH=config.robot.ctrl_high            # アーム用ctrl上限（7要素）     (学習時や制御ポリシー設計と一致しているか確認)
+SOLVER_ITERS=config.robot.solver_iters          # ソルバ反復                  (接触解決制度. 上げると接触安定性up, 速度down. デフォルトでは十分なことが多い)
+LS_ITERS=config.robot.ls_iters            # ラインサーチ反復             (大抵は solver_iters に比べ影響小. 接触剛性が高い場合のみ確認)
 
 
 
-ROT_WEIGHT = 0.0
-TARGET_ROTMAT = None #np.stack([np.array([1, 0, 0]), np.array([0, -1, 0]), np.array([0, 0, -1])], axis=1)
+ROT_WEIGHT = float(config.control.rot_weight)
+TARGET_ROTMAT = None
+rot = config.control.target_rotmat  # null → None
+if rot is not None:
+    TARGET_ROTMAT = np.asarray(rot, dtype=np.float32)
+    if TARGET_ROTMAT.shape != (3,3):
+        raise ValueError(f"target_rotmat must be 3x3, got {TARGET_ROTMAT.shape}")
 
-MAX_DQ = 0.03
+
+MAX_DQ = float(config.control.max_dq)
 ################################################################################################################################
 
 
 
 
 
-def set_kp_per_joint(env, kp):
-    """
-    kp: 
-      - float（全関節を同一値に）
-      - 長さ=len(env.arm_actuator_ids) のシーケンス
-        その中に None を含めると、その関節は現状値を維持します
-    """
+# def set_kp_per_joint(env, kp):
+#     """
+#     kp: 
+#       - float（全関節を同一値に）
+#       - 長さ=len(env.arm_actuator_ids) のシーケンス
+#         その中に None を含めると、その関節は現状値を維持します
+#     """
     
-    m = env.physics.model
-    arm_ids = list(env.arm_actuator_ids)
-    n = len(arm_ids)
+#     m = env.physics.model
+#     arm_ids = list(env.arm_actuator_ids)
+#     n = len(arm_ids)
 
 
-    if isinstance(kp, (int, float, np.floating)):
-        kp_list = [float(kp)] * n
-    else:
-        try:
-            kp_list = list(kp)
-        except TypeError:
-            raise TypeError("kp は float か、長さが関節数のシーケンスで指定してください")
-        assert len(kp_list) == n, f"kp の長さは {n} 要素（関節数）にしてください"
+#     if isinstance(kp, (int, float, np.floating)):
+#         kp_list = [float(kp)] * n
+#     else:
+#         try:
+#             kp_list = list(kp)
+#         except TypeError:
+#             raise TypeError("kp は float か、長さが関節数のシーケンスで指定してください")
+#         assert len(kp_list) == n, f"kp の長さは {n} 要素（関節数）にしてください"
 
 
-    before = m.actuator_gainprm[arm_ids, 0].copy()
-    print("kp before:", before)
+#     before = m.actuator_gainprm[arm_ids, 0].copy()
+#     print("kp before:", before)
 
 
-    for aid, v in zip(arm_ids, kp_list):
-        if v is None:
-            continue
-        m.actuator_gainprm[aid, 0] = float(v)
+#     for aid, v in zip(arm_ids, kp_list):
+#         if v is None:
+#             continue
+#         m.actuator_gainprm[aid, 0] = float(v)
 
-    env.physics.forward()
-    after = m.actuator_gainprm[arm_ids, 0]
-    print("kp after :", after)
+#     env.physics.forward()
+#     after = m.actuator_gainprm[arm_ids, 0]
+#     print("kp after :", after)
 
 
-def set_kd_per_joint(env, kd):
-    """
-    kd:
-      - float（全関節を同一値に）
-      - 長さ=len(env.arm_actuator_ids) のシーケンス
-        その中に None を含めると、その関節は現状値を維持
-    備考: MuJoCoの一般アクチュエータ(affine)では kd = -biasprm[2]
-    """
-    m = env.physics.model
-    arm_ids = list(env.arm_actuator_ids)
-    n = len(arm_ids)
+# def set_kd_per_joint(env, kd):
+#     """
+#     kd:
+#       - float（全関節を同一値に）
+#       - 長さ=len(env.arm_actuator_ids) のシーケンス
+#         その中に None を含めると、その関節は現状値を維持
+#     備考: MuJoCoの一般アクチュエータ(affine)では kd = -biasprm[2]
+#     """
+#     m = env.physics.model
+#     arm_ids = list(env.arm_actuator_ids)
+#     n = len(arm_ids)
 
-    if isinstance(kd, (int, float, np.floating)):
-        kd_list = [float(kd)] * n
-    else:
-        try:
-            kd_list = list(kd)
-        except TypeError:
-            raise TypeError("kd は float か、長さが関節数のシーケンスで指定してください")
-        assert len(kd_list) == n, f"kd の長さは {n} 要素（関節数）にしてください"
+#     if isinstance(kd, (int, float, np.floating)):
+#         kd_list = [float(kd)] * n
+#     else:
+#         try:
+#             kd_list = list(kd)
+#         except TypeError:
+#             raise TypeError("kd は float か、長さが関節数のシーケンスで指定してください")
+#         assert len(kd_list) == n, f"kd の長さは {n} 要素（関節数）にしてください"
 
     
-    before = -m.actuator_biasprm[arm_ids, 2].copy()
-    print("kd before:", before)
+#     before = -m.actuator_biasprm[arm_ids, 2].copy()
+#     print("kd before:", before)
 
-    for aid, v in zip(arm_ids, kd_list):
-        if v is None:
-            continue
+#     for aid, v in zip(arm_ids, kd_list):
+#         if v is None:
+#             continue
         
-        m.actuator_biasprm[aid, 2] = -float(v)
+#         m.actuator_biasprm[aid, 2] = -float(v)
 
-    env.physics.forward()
-    after = -m.actuator_biasprm[arm_ids, 2]
-    print("kd after :", after)
+#     env.physics.forward()
+#     after = -m.actuator_biasprm[arm_ids, 2]
+#     print("kd after :", after)
 
 
 
@@ -154,10 +179,10 @@ def patch_franka_runtime(env, kp=None, kd=None, dof_damping=None, dof_armature=N
                          ctrl_low=None, ctrl_high=None, solver_iters=None, ls_iters=None):
     m = env.physics.model
 
-    if kp is not None:
-        set_kp_per_joint(env, kp)
-    if kd is not None:
-        set_kd_per_joint(env, kd)
+    # if kp is not None:
+    #     set_kp_per_joint(env, kp)
+    # if kd is not None:
+    #     set_kd_per_joint(env, kd)
 
 
     if dof_damping is not None:
@@ -277,6 +302,16 @@ def make_trajectory(kind="rectangle", n_points=60, shuffle=False, seed=0):
     traj = np.stack([xs, ys, zs], axis=1).astype(np.float32)
     if shuffle:
         rng.shuffle(traj)
+
+    diffs = traj[1:] - traj[:-1]          # 各点の差分ベクトル
+    dists = np.linalg.norm(diffs, axis=1) # ユークリッド距離（各区間の長さ）
+
+
+    print(f"--- Trajectory '{kind}' ---")
+    print(f"Total points: {len(traj)}")
+    print(f"Segment distances (mean={dists.mean():.4f} m, std={dists.std():.4f} m):")
+    # print(np.round(dists, 4))
+    
     return traj
 
 def ee(env):
@@ -416,10 +451,10 @@ def run_follow(env, traj_xyz, name="rectangle"):
             ##########################################
 
 
-            # if step_cnt % SAVE_EVERY == 0:
-            #     rgb = render_rgb(env)
-            #     plt.imsave(OUTDIR / "frames" / f"{name}_{i:03d}_{step_cnt:04d}.png", rgb)
-            #     total_frames += 1
+            if step_cnt % SAVE_EVERY == 0:
+                rgb = render_rgb(env)
+                plt.imsave(OUTDIR / "frames" / f"{name}_{i:03d}_{step_cnt:04d}.png", rgb)
+                total_frames += 1
             
             
             ##########トルク可視化###########
@@ -629,7 +664,18 @@ def make_gifs_per_traj(duration=0.05):
             continue
         imgs = [imageio.imread(str(p)) for p in fps]  
         imageio.mimsave(OUTDIR / f"{name}.gif", imgs, duration=duration)
+        
         print(f"[SAVE] {name}.gif  ({len(fps)} frames, full span)")
+
+        mp4_path = OUTDIR / f"{name}.mp4"
+        imageio.mimsave(
+            mp4_path,
+            imgs,
+            fps=int(1 / duration),  
+            codec="libx264",
+            quality=8
+        )
+        print(f"[SAVE] {mp4_path}  ({len(fps)} frames, MP4)")
 
 
 def plot_controller_diagnostics(
@@ -832,7 +878,10 @@ def main():
         solver_iters=SOLVER_ITERS, 
         ls_iters=LS_ITERS,    
     )
+    
+    print("before env.substeps:" ,env.substeps)
     set_control_frequency_by_substeps(env, control_hz = Franka_FREQ)
+    print("after env.substeps:" ,env.substeps)
     
 
 

@@ -1,0 +1,45 @@
+paths:
+  outdir: ./robot_task_sim/traj_eval_out
+
+camera: "top_view"
+
+eval:
+  image_size: [128, 128]
+  success_tol: 0.005
+  step_substeps: 100000000000000 #dont use
+  max_steps_per_waypoint: 300
+  hold_steps_at_target: 10
+  save_every: 25
+  seed: 0
+  num_points: 640
+
+
+workspace:
+  x_min: 0.315
+  x_max: 0.715
+  y_min: -0.2
+  y_max: 0.2
+  z_fixed: 0.10
+  margin: 0.01
+
+
+robot:
+  franka_freq: 50
+  kp: [null, null, null, null, null, null, null] #dont use
+  kd: [null, null, null, null, null, null, null] #dont use
+  dof_damping: null
+  dof_armature: null
+  ctrl_low: null
+  ctrl_high: null
+  solver_iters: null
+  ls_iters: null
+
+control:
+  rot_weight: 0.0
+  target_rotmat: null   # [[1,0,0],[0,-1,0],[0,0,-1]]
+  max_dq: 0.03
+  n_interp: 50
+
+render:
+  mujoco_gl: egl
+  display: false

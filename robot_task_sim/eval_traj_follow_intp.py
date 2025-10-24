@@ -18,6 +18,9 @@ from tqdm import tqdm
 
 import collections.abc as cabc
 
+from box import Box
+import yaml
+
 
 
 logging.basicConfig(
@@ -27,51 +30,75 @@ logging.basicConfig(
 )
 log = logging.getLogger("traj_eval")
 
+def load_config(cfg_path="robot_task_sim/config.yaml") -> Box:
+    with open(cfg_path, "r") as f:
+        raw = yaml.safe_load(f) or {}
 
-OUTDIR = Path("./robot_task_sim/traj_eval_out")
+    return Box(raw, default_box=False, box_dots=True)
+
+config = load_config("robot_task_sim/config.yaml")
+
+
+OUTDIR = Path(config.paths.outdir)
 OUTDIR.mkdir(parents=True, exist_ok=True)
 (OUTDIR / "frames").mkdir(parents=True, exist_ok=True)
+
+
+import shutil
+frames_dir = OUTDIR / "frames"
+if frames_dir.exists():
+    shutil.rmtree(frames_dir)
+frames_dir.mkdir(parents=True, exist_ok=True)
+
 
 #SETTING
 ################################################################################################################################
 
 #評価パラメータ
-# IMAGE_SIZE = (128, 128)         # 保存フレーム解像度
-IMAGE_SIZE = (256, 256) 
-CAMERA = "top_view"
-SUCCESS_TOL = 0.05             # EE到達判定 (m)
-STEP_SUBSTEPS = 50              
-MAX_STEPS_PER_WAYPOINT = 500    # 各目標に対して許容する最大ステップ数
-HOLD_STEPS_AT_TARGET = 10       # 収束後に少し保持して撮影
-SAVE_EVERY = 1                # フレーム保存間隔
-SEED = 0
+IMAGE_SIZE = tuple(config.eval.image_size)         # 保存フレーム解像度
+CAMERA = str(config.camera)
+SUCCESS_TOL = float(config.eval.success_tol)             # EE到達判定 (m)
+STEP_SUBSTEPS = int(config.eval.step_substeps)              
+MAX_STEPS_PER_WAYPOINT = int(config.eval.max_steps_per_waypoint)    # 各目標に対して許容する最大ステップ数
+HOLD_STEPS_AT_TARGET = int(config.eval.hold_steps_at_target)       # 収束後に少し保持して撮影
+SAVE_EVERY = int(config.eval.save_every)                # フレーム保存間隔
+SEED = int(config.eval.seed)
+
+NUM_PNTS = int(config.eval.num_points) #軌跡の分割ポイント数: 80
 
 
-
-x_min, x_max = 0.315, 0.715
-y_min, y_max = -0.2, 0.2
-z_fixed = 0.10
-MARGIN = 0.01
+x_min = float(config.workspace.x_min)
+x_max = float(config.workspace.x_max)
+y_min = float(config.workspace.y_min)
+y_max = float(config.workspace.y_max)
+z_fixed = float(config.workspace.z_fixed) 
+MARGIN = float(config.workspace.margin)
 
 # ロボットパラメータ
-Franka_FREQ = 500 #2.5
-KP=[None, None, None, None, None, None, None]#[4500, 4500, 3500, 3500, 2000, 2000, 2000] # 位置アクチュエータの比例ゲイン  (値を上げるほど追従が速くなるが、振動が起きやすい)
-KD=[None, None, None, None, None, None, None]#[450, 450, 350, 350, 200, 200, 200]
-DOF_DAMPING=None           # DOFダンピング（振動抑制）      (高いとブレーキがかかるよう動作する. 過剰だと応答が鈍くなる)
-DOF_ARMATURE=None          # DOFアーマチュア（慣性付加）    (大きくすると応用が重く安定する)
-CTRL_LOW=None              # アーム用ctrl下限（7要素）     (学習時や制御ポリシー設計と一致しているか確認)
-CTRL_HIGH=None            # アーム用ctrl上限（7要素）     (学習時や制御ポリシー設計と一致しているか確認)
-SOLVER_ITERS=None          # ソルバ反復                  (接触解決制度. 上げると接触安定性up, 速度down. デフォルトでは十分なことが多い)
-LS_ITERS=None            # ラインサーチ反復             (大抵は solver_iters に比べ影響小. 接触剛性が高い場合のみ確認)
+Franka_FREQ = float(config.robot.franka_freq) #2.5
+KP=None if config.robot.kp is None else list(config.robot.kp)#[4500, 4500, 3500, 3500, 2000, 2000, 2000] # 位置アクチュエータの比例ゲイン  (値を上げるほど追従が速くなるが、振動が起きやすい)
+KD=None if config.robot.kd is None else list(config.robot.kd)#[450, 450, 350, 350, 200, 200, 200]
+DOF_DAMPING=config.robot.dof_damping           # DOFダンピング（振動抑制）      (高いとブレーキがかかるよう動作する. 過剰だと応答が鈍くなる)
+DOF_ARMATURE=config.robot.dof_armature          # DOFアーマチュア（慣性付加）    (大きくすると応用が重く安定する)
+CTRL_LOW=config.robot.ctrl_low              # アーム用ctrl下限（7要素）     (学習時や制御ポリシー設計と一致しているか確認)
+CTRL_HIGH=config.robot.ctrl_high            # アーム用ctrl上限（7要素）     (学習時や制御ポリシー設計と一致しているか確認)
+SOLVER_ITERS=config.robot.solver_iters          # ソルバ反復                  (接触解決制度. 上げると接触安定性up, 速度down. デフォルトでは十分なことが多い)
+LS_ITERS=config.robot.ls_iters            # ラインサーチ反復             (大抵は solver_iters に比べ影響小. 接触剛性が高い場合のみ確認)
 
 
 
-ROT_WEIGHT = 0.0
-TARGET_ROTMAT = None #np.stack([np.array([1, 0, 0]), np.array([0, -1, 0]), np.array([0, 0, -1])], axis=1)
+ROT_WEIGHT = float(config.control.rot_weight)
+TARGET_ROTMAT = None
+rot = config.control.target_rotmat  # null → None
+if rot is not None:
+    TARGET_ROTMAT = np.asarray(rot, dtype=np.float32)
+    if TARGET_ROTMAT.shape != (3,3):
+        raise ValueError(f"target_rotmat must be 3x3, got {TARGET_ROTMAT.shape}")
 
-NUM_PNTS = 640        #軌跡の分割ポイント数: 80
-MAX_DQ = 0.1       # max joint increment per step (rad)
-N_INTERP = 50      # 10–20 gives smooth motion
+
+MAX_DQ = float(config.control.max_dq)
+
+N_INTERP = config.control.n_interp      # 10–20 gives smooth motion
 
 ################################################################################################################################
 
@@ -280,6 +307,15 @@ def make_trajectory(kind="rectangle", n_points=60, shuffle=False, seed=0):
     traj = np.stack([xs, ys, zs], axis=1).astype(np.float32)
     if shuffle:
         rng.shuffle(traj)
+
+    diffs = traj[1:] - traj[:-1]          # 各点の差分ベクトル
+    dists = np.linalg.norm(diffs, axis=1) # ユークリッド距離（各区間の長さ）
+
+
+    print(f"--- Trajectory '{kind}' ---")
+    print(f"Total points: {len(traj)}")
+    print(f"Segment distances (mean={dists.mean():.4f} m, std={dists.std():.4f} m):")
+    
     return traj
 
 def ee(env):
@@ -435,7 +471,7 @@ def run_follow(env, traj_xyz, name="rectangle"):
 
             #VIDEO
             # if step_cnt % SAVE_EVERY == 0:
-            if j % 17 == 0:  # Save only every 5th frame
+            if j % SAVE_EVERY == 0:  
                 rgb = render_rgb(env)
                 plt.imsave(OUTDIR / "frames" / f"{name}_{i:03d}_{j:04d}.png", rgb)
                 total_frames += 1
@@ -792,7 +828,7 @@ def main():
     print("ee_target is attached to body:", site_body_name)
 
 
-    parent_bid = env.physics.model.body_parentid[site_body_id]  # root は -1
+    parent_bid = env.physics.model.body_parentid[site_body_id]  
     parent_name = 'ROOT' if parent_bid == -1 else env.physics.model.id2name(parent_bid, 'body')
     print("parent body:", parent_name)
 
