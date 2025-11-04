@@ -296,6 +296,14 @@ def make_trajectory(kind="rectangle", n_points=60, shuffle=False, seed=0):
         ys = rng.uniform(y_lo, y_hi, size=n_points)
         zs = np.full_like(xs, z_fixed)
 
+    elif kind == "stationary":
+        x_center = (x_lo + x_hi) / 2
+        y_center = (y_lo + y_hi) / 2
+        z_center = z_fixed
+        xs = np.full(n_points, x_center)
+        ys = np.full(n_points, y_center)
+        zs = np.full(n_points, z_center)
+
     else:
         raise ValueError("unknown trajectory kind")
 
@@ -517,7 +525,6 @@ def run_follow(env, traj_xyz, name="rectangle"):
         ee_traj.append(cur)
         tgt_traj.append(target)
         
-    print('reached: ', reached)
     dt = time.time() - t0
     ee_traj = np.array(ee_traj, dtype=np.float32)
     tgt_traj = np.array(tgt_traj, dtype=np.float32)
@@ -627,6 +634,190 @@ def run_follow(env, traj_xyz, name="rectangle"):
 
     print(f"[DONE] {name} reached={metrics['reached_ratio']:.3f}, mean_err={metrics['mean_err_m']:.4f} m")
     return metrics
+
+
+
+def evaluate_initial_settling(env, target_xyz, timestep = 100, target_rotmat=None, rot_weight=1.0,
+                              save_name="initial_settling", outdir=OUTDIR, save_frames_every=0,
+                              mode="raw", gravity = None, hold_type = None):  # "passive" | "hold" | "raw"
+    env.reset(robot_only=True)
+    
+
+    
+    print("[DBG] hold_type: ", hold_type)
+    
+    #重力変更
+    if gravity is not None:
+        env.physics.model.opt.gravity[:] = 0.0
+        env.physics.forward()
+    print("[DBG] gravity: ", env.physics.model.opt.gravity[:])
+    
+    
+    q_des, ee_after_set = env.set_xyz(target_xyz, target_rotmat=target_rotmat, rot_weight=rot_weight)
+    print(f"[INIT] EE after set: {ee_after_set} | target: {target_xyz} | err={np.linalg.norm(ee_after_set - target_xyz):.6f} m")
+    
+
+    m, d = env.physics.model, env.physics.data
+    arm = list(getattr(env, "arm_actuator_ids", []))
+
+    # 位置サーボの目標値がサーボ入力範囲内か（ctrlrange vs ctrl）
+    ctrl_now = d.ctrl[arm]  
+    lo_c, hi_c = m.actuator_ctrlrange[arm, 0], m.actuator_ctrlrange[arm, 1]
+    bad_ctrl = np.where((ctrl_now < lo_c) | (ctrl_now > hi_c))[0]
+    print("actuator ctrlrange violated actuators:", bad_ctrl)
+    ####
+    
+    ## ik 計算自体にオフセットがある？
+    sid_ik = m.name2id("ee_target", "site")
+    pos_ik = d.site_xpos[sid_ik].copy()
+    err_ik = float(np.linalg.norm(pos_ik - np.asarray(target_xyz)))
+    print("[CHK-1] IK-site vs target  | pos_ik:", pos_ik, " target:", target_xyz, "  err:", err_ik)
+    # 参考ボディ：手先系のボディ名を全部拾う（手、指、末端リンクなど）
+    hand_like_bodies = []
+    for bid in range(m.nbody):
+        name = m.id2name(bid, "body") or ""
+        if any(k in name.lower() for k in ["hand", "gripper", "finger", "link8", "panda_hand"]):
+            hand_like_bodies.append((bid, name))
+
+    # すべてのサイトから "手先系ボディに付いているサイト" を抽出して、ee_targetとの距離を並べる
+    cands = []
+    for sid in range(m.nsite):
+        b = m.site_bodyid[sid]
+        if any(b == hb[0] for hb in hand_like_bodies):
+            name = m.id2name(sid, "site")
+            p = d.site_xpos[sid].copy()
+            cands.append((name, float(np.linalg.norm(p - pos_ik))))
+
+    cands.sort(key=lambda x: x[1])
+    print("[CHK-2] candidate sites near ee_target (name, dist[m]) :")
+    for nm, dist in cands[:10]:
+        print("   ", f"{nm:25s}", f"{dist: .5f}")
+    ################################################################
+
+
+    
+    dt_low = float(m.opt.timestep)
+    n_steps = timestep
+    print("[DBG] timesteps:", n_steps)
+    target_np = np.array(target_xyz, dtype=np.float32, copy=True)
+
+    # --- Actuation mode control -------------------------------------------
+    saved_kp = m.actuator_gainprm[arm, 0].copy() if arm else None
+    saved_kd = (-m.actuator_biasprm[arm, 2]).copy() if arm else None
+    
+    env.physics.forward()
+
+    if mode == "passive":
+        # 真の無励磁: Kp=Kd=0 に一時的にする
+        if arm:
+            m.actuator_gainprm[arm, 0] = 0.0
+            m.actuator_biasprm[arm, 2] = 0.0   # kdは -biasprm[2]
+            env.physics.forward()
+        
+        print("[DBG passive] Kp:", m.actuator_gainprm[arm, 0])       
+        print("[DBG passive] Kd:", -m.actuator_biasprm[arm, 2]) 
+        print("[MODE] passive: PD gains temporarily zeroed.")
+        
+    elif mode == "hold":
+        # 現在姿勢を目標に同期して保持（position actuatorなら ctrl = qpos）
+        if arm:
+            init_joint = d.qpos[:len(arm)].copy()
+            d.ctrl[arm] = d.qpos[:len(arm)]
+        print("[MODE] hold: ctrl synced to current qpos.")
+    else:
+        print("[MODE] raw: no change (ctrl remains as-is).")
+
+    # --- Logging buffers ---------------------------------------------------
+    ee_trace, tgt_trace, times, vel_mag, vel_xyz = [], [], [], [], []
+    prev = None; t = 0.0
+    frames_dir = outdir / "frames"; frames_dir.mkdir(parents=True, exist_ok=True)
+
+    # print("[DBG] d.qfrc_applied[:7]:", d.qfrc_applied[:7])
+    for step in range(n_steps):
+
+        if mode == "hold" and arm and hold_type == "strict":
+            d.ctrl[arm] = init_joint
+
+            
+        env.physics.step()  # no env.step()
+
+        cur = env.get_ee_position().astype(np.float32, copy=True)
+        ee_trace.append(cur); tgt_trace.append(target_np.copy()); times.append(t)
+        v = np.zeros(3, np.float32) if prev is None else (cur - prev) / dt_low
+        prev = cur.copy(); vel_xyz.append(v); vel_mag.append(float(np.linalg.norm(v)))
+
+        if save_frames_every and (step % int(save_frames_every) == 0):
+            rgb = render_rgb(env); plt.imsave(frames_dir / f"{save_name}_{step:05d}.png", rgb)
+        t += dt_low
+        
+    d.qfrc_applied[:7] = 0.0
+        
+    print("ctrl(arm):", d.ctrl[arm])                    # おそらく 0 付近
+    print("qfrc_actuator(arm):", d.qfrc_actuator[:7])   # 非ゼロ → 0へ戻す力
+    print("Kp:", m.actuator_gainprm[arm,0])
+    print("Kd:", -m.actuator_biasprm[arm,2])
+
+    # --- restore gains if needed ------------------------------------------
+    if mode == "passive" and arm:
+        m.actuator_gainprm[arm, 0] = saved_kp
+        m.actuator_biasprm[arm, 2] = -saved_kd
+        env.physics.forward()
+
+
+    ee_trace  = np.asarray(ee_trace,  np.float32)
+    tgt_trace = np.asarray(tgt_trace, np.float32)
+    vel_xyz   = np.asarray(vel_xyz,   np.float32)
+    times     = np.asarray(times,     np.float32)
+    err = np.linalg.norm(ee_trace - tgt_trace, axis=1)
+    metrics = {
+        "name": str(save_name), "mode": mode, "timestep": timestep,
+        "lowlevel_dt": float(dt_low), "steps": int(n_steps),
+        "mean_err_m": float(err.mean()), "max_err_m": float(err.max()),
+        "p90_err_m": float(np.percentile(err, 90)),
+        "mean_speed_mps": float(np.mean(vel_mag)), "max_speed_mps": float(np.max(vel_mag)),
+    }
+    print("[CHK] target unique XY rows:", np.unique(tgt_trace[:, :2], axis=0).shape[0])
+    print("[CHK] max |tgt - first| [m]:", np.max(np.abs(tgt_trace - tgt_trace[0]), axis=0))
+    print("[CHK] allclose(tgt, ee)?   ", np.allclose(tgt_trace, ee_trace))
+    with open(outdir / f"metrics_{save_name}.json", "w") as f: json.dump(metrics, f, indent=2)
+
+    # --- XY with step markers ---------------------------------------------
+    plt.figure(figsize=(5,5))
+    # plt.scatter(target_np[0], target_np[1], s=120, marker='X', zorder=5,
+    #             label='target XY')
+    plt.plot(ee_trace[:,0], ee_trace[:,1], lw=1.2, color='red', label=f'executed XY ({mode})')
+    plt.scatter(ee_trace[:,0], ee_trace[:,1], s=9, alpha=0.9, color='red', zorder=4)
+
+    plt.scatter(target_np[0], target_np[1],
+                s=10, color='blue', marker='o', label='target XY', zorder=6)
+    plt.text(target_np[0], target_np[1], 'S', color='blue', fontsize=12, fontweight='bold',
+            ha='center', va='center')
+    plt.text(ee_trace[0,0], ee_trace[0,1], 'S', color='red', fontsize=12, fontweight='bold',
+            ha='center', va='center')
+
+    plt.xlabel('X [m]'); plt.ylabel('Y [m]')
+    plt.title(f'Initial settling ({mode}): {save_name}')
+    plt.axis('equal'); plt.grid(alpha=0.3); plt.legend(); plt.tight_layout()
+    plt.savefig(outdir / f'settling_xy_{save_name}.png', dpi=150)
+    plt.close()
+
+
+
+
+    plt.figure(figsize=(6,3)); plt.plot(times, err)
+    plt.xlabel("time [s]"); plt.ylabel("||EE - target|| [m]"); plt.title(f"Distance error vs time ({mode})")
+    plt.grid(True, alpha=0.3); plt.tight_layout(); plt.savefig(outdir / f"settling_error_{save_name}.png", dpi=150); plt.close()
+
+    plt.figure(figsize=(6,3)); plt.plot(times, vel_mag)
+    plt.xlabel("time [s]"); plt.ylabel("|v| [m/s]"); plt.title(f"Speed vs time ({mode})")
+    plt.grid(True, alpha=0.3); plt.tight_layout(); plt.savefig(outdir / f"settling_speed_{save_name}.png", dpi=150); plt.close()
+    
+    if save_frames_every > 0:
+        make_gifs_per_traj()
+
+    return {"times": times, "ee": ee_trace, "target": tgt_trace,
+            "vel_mag": np.asarray(vel_mag, np.float32), "vel_xyz": vel_xyz, "metrics": metrics}
+
 
 
 #plotting
@@ -852,6 +1043,8 @@ def main():
     )
     
 
+
+
     sid = env.physics.model.name2id('ee_target', 'site')
     site_body_id = env.physics.model.site_bodyid[sid]
     site_body_name = env.physics.model.id2name(site_body_id, 'body')
@@ -879,9 +1072,7 @@ def main():
         ls_iters=LS_ITERS,    
     )
     
-    print("before env.substeps:" ,env.substeps)
     set_control_frequency_by_substeps(env, control_hz = Franka_FREQ)
-    print("after env.substeps:" ,env.substeps)
     
 
 
@@ -890,14 +1081,37 @@ def main():
         # ("lawnmower", NUM_PNTS, False),
         # ("lissajous", NUM_PNTS, False),
         # ("random", NUM_PNTS, False),
+        # ("stationary", NUM_PNTS, False),
     ]
     all_metrics = []
     for kind, npts, shuf in todo:
         print(f'making {kind}....')
         traj = make_trajectory(kind=kind, n_points=npts, shuffle=shuf, seed=SEED)
-        m = run_follow(env, traj, name=kind)
-        all_metrics.append(m)
-
+        
+        if config.eval_kind.initial_settling.execute: 
+            if config.eval_kind.initial_settling.use_traj:
+                pos = traj[0]
+            else:
+                pos = np.array(list(config.eval_kind.initial_settling.position))
+            
+            _ = evaluate_initial_settling(
+            env,
+            target_xyz=pos,
+            timestep=config.eval_kind.initial_settling.timestep,
+            target_rotmat=TARGET_ROTMAT,
+            rot_weight=ROT_WEIGHT,
+            save_name="rect_start_free",
+            outdir=OUTDIR,
+            save_frames_every=config.eval_kind.initial_settling.save_frames_every,
+            mode=config.eval_kind.initial_settling.mode,
+            gravity = config.eval_kind.initial_settling.gravity,
+            hold_type = config.eval_kind.initial_settling.hold_type,
+            )
+        
+        if config.eval_kind.run_follow:  
+            m = run_follow(env, traj, name=kind)
+            all_metrics.append(m)
+ 
     with open(OUTDIR / "metrics.json", "w") as f:
         json.dump(all_metrics, f, indent=2)
 

@@ -3,6 +3,20 @@ paths:
 
 camera: "top_view"
 
+eval_kind:
+  run_follow: false
+  initial_settling:
+    execute: true
+    timestep: 1000
+    mode: "hold"  #passive/hold/raw    passive:前フレームの値のまま固定, hold: ctrl[:]=qpos[:], raw: senv.physics.step() を直接呼ぶ
+    save_frames_every: 10 #0:保存なし
+    gravity: null #null:重力加速度, 基本null
+    hold_type: "strict" #mode=hold のとき, 毎ステップ初期姿勢をアクチュエータに入れる: strict, そうでない: null
+    use_traj: true
+    position: null #[0.515, 0.0, 0.10]
+
+
+
 eval:
   image_size: [128, 128]
   success_tol: 0.005

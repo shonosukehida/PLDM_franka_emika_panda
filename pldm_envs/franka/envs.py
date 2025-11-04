@@ -173,7 +173,7 @@ class FrankaSimEnv:
         return image_obs, reward, done, truncated, info
 
     def set_xyz(self, target_pos, target_rotmat=None, rot_weight=0.1,
-                settle_steps=10, sync_ctrl=True):
+                settle_steps=10000, sync_ctrl=True):
         result = self.calc_inverse_kinematic(
             target_pos, target_rotmat=target_rotmat, rot_weight=rot_weight,
         )
@@ -218,12 +218,12 @@ class FrankaSimEnv:
 
         if sync_ctrl:
             low, high = self.ctrlrange[:, 0], self.ctrlrange[:, 1]
-            self.physics.data.ctrl[:] = 0.0
+            # self.physics.data.ctrl[:] = 0.0
             self.physics.data.ctrl[self.arm_actuator_ids] = q_des
 
 
-        # for _ in range(settle_steps):
-        #     self.physics.step()
+        for _ in range(settle_steps):
+            self.physics.step()
             
         #デバッグ
         ee_after = self.physics.data.site_xpos[sid].copy()

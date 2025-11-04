@@ -759,41 +759,41 @@ class ProbingEvaluator:
                 vis_dynamics_open_featuremap = vis_dynamics_open_featuremap,
                 vis_encoder_featuremap = vis_encoder_featuremap,
             )
-            self.plot_prober_predictions_by_encprober(
-                btc,
-                model,
-                prober = probers["locations"],
-                prober_open = probers_open["locations"],
-                prober_bluebox_locs = probers["bluebox_locs"],
-                prober_bluebox_locs_open = probers_open["bluebox_locs"],
-                enc_prober = enc_probers["locations"] if isinstance(enc_probers, dict) else None,
-                enc_prober_bluebox = enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
-                normalizer=val_ds.normalizer,
-                name_prefix=plot_prefix,
-                idxs=None if not quick_debug else list(range(10)),
-                pixel_mapper=pixel_mapper,
-                vis_dynamics_closed_featuremap = vis_dynamics_closed_featuremap,
-                vis_dynamics_open_featuremap = vis_dynamics_open_featuremap,
-                vis_encoder_featuremap = vis_encoder_featuremap,
-            )
+            # self.plot_prober_predictions_by_encprober(
+            #     btc,
+            #     model,
+            #     prober = probers["locations"],
+            #     prober_open = probers_open["locations"],
+            #     prober_bluebox_locs = probers["bluebox_locs"],
+            #     prober_bluebox_locs_open = probers_open["bluebox_locs"],
+            #     enc_prober = enc_probers["locations"] if isinstance(enc_probers, dict) else None,
+            #     enc_prober_bluebox = enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
+            #     normalizer=val_ds.normalizer,
+            #     name_prefix=plot_prefix,
+            #     idxs=None if not quick_debug else list(range(10)),
+            #     pixel_mapper=pixel_mapper,
+            #     vis_dynamics_closed_featuremap = vis_dynamics_closed_featuremap,
+            #     vis_dynamics_open_featuremap = vis_dynamics_open_featuremap,
+            #     vis_encoder_featuremap = vis_encoder_featuremap,
+            # )
             
-            self.plot_prober_predictions_by_encprober_FOR_POSTER(
-                btc,
-                model,
-                prober = probers["locations"],
-                prober_open = probers_open["locations"],
-                prober_bluebox_locs = probers["bluebox_locs"],
-                prober_bluebox_locs_open = probers_open["bluebox_locs"],
-                enc_prober = enc_probers["locations"] if isinstance(enc_probers, dict) else None,
-                enc_prober_bluebox = enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
-                normalizer=val_ds.normalizer,
-                name_prefix=plot_prefix,
-                idxs=None if not quick_debug else list(range(10)),
-                pixel_mapper=pixel_mapper,
-                vis_dynamics_closed_featuremap = False,
-                vis_dynamics_open_featuremap = False,
-                vis_encoder_featuremap = False,     
-            )
+            # self.plot_prober_predictions_by_encprober_FOR_POSTER(
+            #     btc,
+            #     model,
+            #     prober = probers["locations"],
+            #     prober_open = probers_open["locations"],
+            #     prober_bluebox_locs = probers["bluebox_locs"],
+            #     prober_bluebox_locs_open = probers_open["bluebox_locs"],
+            #     enc_prober = enc_probers["locations"] if isinstance(enc_probers, dict) else None,
+            #     enc_prober_bluebox = enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
+            #     normalizer=val_ds.normalizer,
+            #     name_prefix=plot_prefix,
+            #     idxs=None if not quick_debug else list(range(10)),
+            #     pixel_mapper=pixel_mapper,
+            #     vis_dynamics_closed_featuremap = False,
+            #     vis_dynamics_open_featuremap = False,
+            #     vis_encoder_featuremap = False,     
+            # )
             
             self.plot_cca(
                 btc,
@@ -812,6 +812,11 @@ class ProbingEvaluator:
                 vis_dynamics_closed_featuremap = False,
                 vis_dynamics_open_featuremap = False,
                 vis_encoder_featuremap = False,
+            )
+            
+            self.plot_pca(
+                btc,
+                model,     
             )
 
         return
@@ -2997,6 +3002,237 @@ class ProbingEvaluator:
 
 
 
+    @torch.no_grad()
+    def plot_pca(
+        self,
+        batch,
+        jepa: "JEPA",
+        name_prefix: str = "",
+        idxs: Optional[List[int]] = None,
+        notebook: bool = False,
+        pool: str = "gap",              # "gap"/"flat"
+        k: int = 3,                     
+        align_closed: bool = True,     
+    ):
+        """
+        encoder の潜在列で PCA 軸を学習し、同じ PCA 基底へ
+        - encoder 列（基準）
+        - closed-forward 列
+        を射影して 2D/3D 可視化する。
+
+        * 入力:
+            - batch: states/actions を含む
+            - jepa : forward_posterior から encoder/closed の潜在を得る
+        * 出力:
+            - Logger.run().log_figure(...) で 2D/3D 図を保存（notebook=True なら plt.show）
+            - 主成分寄与率や時間方向の cos 類似度も表示
+        """
+        import matplotlib as mpl
+        from matplotlib.lines import Line2D
+        from sklearn.decomposition import PCA
+
+        device = self.device
+        states = batch.states.to(device).transpose(0, 1)  # [T,B,...]
+        actions = batch.actions.to(device).transpose(0, 1)
+        optional_fields = get_optional_fields(batch, device=states.device)
+
+        # --- 予測（closed）とエンコード（encoder）潜在の取得 ---
+        pred_output = jepa.forward_posterior(states, actions, **optional_fields).pred_output
+        if getattr(pred_output, "obs_component", None) is not None:
+            closed_lat_seq = pred_output.obs_component  # [T,B,C,H,W] or [T,B,D]
+        else:
+            closed_lat_seq = pred_output.predictions
+
+        enc_output = jepa.forward_posterior(states, actions, encode_only=True, **optional_fields).backbone_output
+        encoder_lat_seq = enc_output.obs_component  # [T,B,C,H,W] or [T,B,D]
+
+        # --- [B,T,D] に正規化 ---
+        T_ref, B_ref = states.shape[0], states.shape[1]
+
+        def _to_BTD(x, pool="flat"):
+            assert torch.is_tensor(x)
+            if x.dim() == 3:
+                # [T,B,D] or [B,T,D]
+                if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                    x = x.transpose(0, 1).contiguous()
+                return x
+            if x.dim() == 5:
+                # [T,B,C,H,W] or [B,T,C,H,W]
+                if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                    x = x.permute(1, 0, 2, 3, 4).contiguous()
+                elif not (x.shape[0] == B_ref and x.shape[1] == T_ref):
+                    x = x.transpose(0, 1).contiguous()
+                B, T = x.shape[:2]
+                if pool == "gap":
+                    x = x.mean(dim=(-2, -1)).contiguous()     # -> [B,T,C]
+                else:
+                    C, H, W = x.shape[2:]
+                    x = x.reshape(B, T, C*H*W).contiguous()
+                return x
+            # 一般形
+            if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                x = x.transpose(0, 1).contiguous()
+            elif not (x.shape[0] == B_ref and x.shape[1] == T_ref):
+                x = x.transpose(0, 1).contiguous()
+            B, T = x.shape[:2]
+            D = int(np.prod(x.shape[2:]))
+            return x.reshape(B, T, D).contiguous()
+
+        closed_lat_seq  = _to_BTD(closed_lat_seq,  pool=pool)
+        encoder_lat_seq = _to_BTD(encoder_lat_seq, pool=pool)
+
+        B, T, Dc = closed_lat_seq.shape
+        _, _, De = encoder_lat_seq.shape
+        if idxs is None:
+            idxs = list(range(B))
+
+        # --- PCA を encoder で学習（scikit-learn は内部でセンタリングする）---
+        Z_enc = encoder_lat_seq.reshape(B*T, De).detach().cpu().numpy()
+        pca = PCA(n_components=min(k, De))
+        U_enc = pca.fit_transform(Z_enc)  # [B*T, k_eff]
+        expl = pca.explained_variance_ratio_
+        k_eff = U_enc.shape[1]
+
+        # --- closed を同一基底へ射影 ---
+        Z_clo = closed_lat_seq.reshape(B*T, Dc).detach().cpu().numpy()
+        if Dc == De:
+            Z_clo_in_enc_dim = Z_clo
+        else:
+            if not align_closed:
+                raise ValueError(
+                    f"Dc({Dc}) != De({De}). align_closed=False の場合、次元を揃える必要があります。"
+                )
+
+            A, *_ = np.linalg.lstsq(Z_clo, Z_enc, rcond=None)
+            Z_clo_in_enc_dim = Z_clo @ A
+
+        V_clo = pca.transform(Z_clo_in_enc_dim)  # [B*T, k_eff]
+
+        # [B,T,k_eff] へ戻す
+        U_bt = U_enc.reshape(B, T, k_eff)
+        V_bt = V_clo.reshape(B, T, k_eff)
+
+        #2D可視化
+        color_u = "navy"       # Encoder
+        color_v = "firebrick"  # Closed
+        if k_eff >= 2:
+            U2 = U_bt[:, :, :2]
+            V2 = V_bt[:, :, :2]
+            lim = float(max(abs(U2).max(), abs(V2).max()))
+
+            for i in idxs:
+                fig2d, ax2d = plt.subplots(1, 1, figsize=(6, 6), dpi=140)
+                u2d = U_bt[i, :, :2]
+                v2d = V_bt[i, :, :2]
+                for t in range(T - 1):
+                    ax2d.plot(u2d[t:t+2, 0], u2d[t:t+2, 1], color=color_u, alpha=0.95)
+                    ax2d.plot(v2d[t:t+2, 0], v2d[t:t+2, 1], color=color_v, alpha=0.95)
+                ax2d.scatter(u2d[0,0], u2d[0,1], s=12, c=color_u, label="Encoder")
+                ax2d.text(u2d[0,0], u2d[0,1], "S", fontsize=9, ha="center", va="center", color=color_u)
+                ax2d.text(u2d[-1,0], u2d[-1,1], "G", fontsize=9, ha="center", va="center", color=color_u)
+
+                ax2d.scatter(v2d[0,0], v2d[0,1], s=12, c=color_v, label="Closed")
+                ax2d.text(v2d[0,0], v2d[0,1], "S", fontsize=9, ha="center", va="center", color=color_v)
+                ax2d.text(v2d[-1,0], v2d[-1,1], "G", fontsize=9, ha="center", va="center", color=color_v)
+
+                ax2d.set_xlim(-lim, lim); ax2d.set_ylim(-lim, lim)
+                ax2d.set_aspect("equal", adjustable="box")
+                ax2d.set_xlabel("PC1"); ax2d.set_ylabel("PC2")
+                ax2d.set_title(
+                    f"{name_prefix} | idx={i} | PCA (top-{k_eff}): "
+                    + ", ".join(f"{v:.2f}" for v in expl[:k_eff])
+                )
+                handles = [
+                    Line2D([0],[0], color=color_u, lw=2, label="Encoder"),
+                    Line2D([0],[0], color=color_v, lw=2, label="Closed"),
+                ]
+                ax2d.legend(handles=handles, loc="best", frameon=True)
+                if not notebook:
+                    Logger.run().log_figure(fig2d, f"{name_prefix}-pca-2d-i{i}", dir_name="pca/pca2d_pertraj")
+                    plt.close(fig2d)
+                else:
+                    plt.show()
+
+        #3D可視化
+        if k_eff >= 3:
+            from mpl_toolkits.mplot3d import Axes3D  # noqa
+            for i in idxs:
+                fig3d = plt.figure(figsize=(8, 8), dpi=140)
+                ax3d = fig3d.add_subplot(111, projection="3d")
+                u3d = U_bt[i, :, :3]; v3d = V_bt[i, :, :3]
+
+                for t in range(T - 1):
+                    ax3d.plot(u3d[t:t+2,0], u3d[t:t+2,1], u3d[t:t+2,2], color=color_u, alpha=0.95)
+                    ax3d.plot(v3d[t:t+2,0], v3d[t:t+2,1], v3d[t:t+2,2], color=color_v, alpha=0.95)
+
+                s_size = 24
+                off = 0 #0.02 * float(max(abs(U_bt[:, :, :3]).max(), abs(V_bt[:, :, :3]).max()))
+                ax3d.scatter(u3d[0,0], u3d[0,1], u3d[0,2], s=s_size, c=color_u, depthshade=False)
+                ax3d.scatter(u3d[-1,0], u3d[-1,1], u3d[-1,2], s=s_size, c=color_u, depthshade=False)
+                ax3d.text(u3d[0,0]+off,  u3d[0,1]+off,  u3d[0,2]+off,  "S", color=color_u, fontsize=9)
+                ax3d.text(u3d[-1,0]+off, u3d[-1,1]+off, u3d[-1,2]+off, "G", color=color_u, fontsize=9)
+
+                ax3d.scatter(v3d[0,0], v3d[0,1], v3d[0,2], s=s_size, c=color_v, depthshade=False)
+                ax3d.scatter(v3d[-1,0], v3d[-1,1], v3d[-1,2], s=s_size, c=color_v, depthshade=False)
+                ax3d.text(v3d[0,0]+off,  v3d[0,1]+off,  v3d[0,2]+off,  "S", color=color_v, fontsize=9)
+                ax3d.text(v3d[-1,0]+off, v3d[-1,1]+off, v3d[-1,2]+off, "G", color=color_v, fontsize=9)
+
+                ax3d.set_xlabel("PC1"); ax3d.set_ylabel("PC2"); ax3d.set_zlabel("PC3")
+                ax3d.set_title(
+                    f"PCA (3D) — {name_prefix} | var exp: "
+                    + ", ".join(f"{v:.2f}" for v in expl[:3])
+                )
+                handles = [
+                    Line2D([0],[0], color=color_u, lw=2, label="Encoder"),
+                    Line2D([0],[0], color=color_v, lw=2, label="Closed"),
+                ]
+                ax3d.legend(handles=handles, loc="upper left", frameon=True)
+                if not notebook:
+                    Logger.run().log_figure(fig3d, f"{name_prefix}-pca-3d-i{i}", dir_name="pca/pca3d_pertraj")
+                    plt.close(fig3d)
+                else:
+                    plt.show()
+
+
+        try:
+            import torch.nn.functional as F
+            U_t = torch.from_numpy(U_bt)  # [B,T,k_eff]
+            V_t = torch.from_numpy(V_bt)
+            def _cos_mean(a, b, eps=1e-8):
+                a = a / (a.norm(dim=-1, keepdim=True) + eps)
+                b = b / (b.norm(dim=-1, keepdim=True) + eps)
+                return (a * b).sum(-1).mean().item()
+            cos_over_time = []
+            for t in range(T):
+                cos_over_time.append(_cos_mean(U_t[:, t, :k_eff], V_t[:, t, :k_eff]))
+            figc, axc = plt.subplots(1, 1, figsize=(7,3), dpi=140)
+            axc.plot(range(T), cos_over_time, marker='o', linewidth=1.5)
+            axc.set_xlabel("t (horizon)")
+            axc.set_ylabel("cosine in PCA space")
+            axc.set_title(
+                f"Timewise Cosine — mean={np.mean(cos_over_time):.3f} | var exp (top-{k_eff}): "
+                + ", ".join(f"{v:.2f}" for v in expl[:k_eff])
+            )
+            figc.tight_layout()
+            if not notebook:
+                Logger.run().log_figure(figc, f"{name_prefix}-pca-timewise-cosine", dir_name="pca/pca_cos")
+                plt.close(figc)
+            else:
+                plt.show()
+        except Exception:
+            pass
+
+        plt.close('all')
+        try:
+            del U_bt, V_bt, U_enc, V_clo, Z_enc, Z_clo
+        except Exception:
+            pass
+        try:
+            del closed_lat_seq, encoder_lat_seq, pred_output, enc_output, states, actions, optional_fields
+        except Exception:
+            pass
+        gc.collect()
+        torch.cuda.empty_cache()
 
 
 
