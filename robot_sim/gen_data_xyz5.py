@@ -34,7 +34,9 @@ class FrankaDatasetGenerator:
         self.Z_RANGE = tuple(config["z_range"])
         self.CONFIRM_IK = config["confirm_ik_result"]
         self.CONFIRM_DIST = config["confirm_dist"]
-        self.STEPS = config["steps"]
+        # self.STEPS = config["steps"]
+        self.MAX_DQ = config["max_dq"]
+        self.SETTLE_STEPS = config["settle_steps"]
         
         self.SAMPLE_METHOD = config['sample_method']
         self.specify_init_position = config['specify_init_position']
@@ -65,6 +67,12 @@ class FrankaDatasetGenerator:
         else:
             dt = float(self.env.physics.model.opt.timestep)
             self.actual_control_hz = 1.0 / (self.env.substeps * dt)
+        
+        # データセット周波数をセット
+        dataset_hz = config.get("dataset_hz", 5.0)
+        self.actual_dataset_hz = self.set_dataset_frequency_by_steps(
+            self.actual_control_hz, dataset_hz
+        )
 
         self.bluebox_geom_id = self.env.physics.model.name2id("blue_box", mujoco.mjtObj.mjOBJ_GEOM)
         
@@ -103,8 +111,8 @@ class FrankaDatasetGenerator:
         self.data_list = []
         self.data_enums = {'target_pos':[], 'contact_count':[]} #目標直交座標を格納
         
-        self.mjc_steps = config['steps']
-        self.target_sampling_step = config['target_sampling_step']
+        # self.mjc_steps = config['steps']
+        self.target_sampling_step = config.get('target_sampling_step', 1)
         self.rot_weight = config['rot_weight']
         
         self.margin_ratio = self.config['margin_ratio']
@@ -127,12 +135,18 @@ class FrankaDatasetGenerator:
         #ロボットの周波数
         dt = float(self.env.physics.model.opt.timestep)
         control_dt = self.env.substeps * dt           # 1 control-step の時間
-        # target_xyz 更新の周期（何 control-step ごとに変えるか）:
-        period_target = self.STEPS * control_dt * self.target_sampling_step
+
+        # データセット1ステップの時間
+        dataset_dt = self.mjc_steps * control_dt
+
+        # target_xyz 更新の周期（秒）
+        period_target = dataset_dt * self.target_sampling_step
         freq_target = 1.0 / period_target
 
         print(f'control frequency (env.step): {self.actual_control_hz:.3f} Hz')
+        print(f'dataset frequency           : {self.actual_dataset_hz:.3f} Hz')
         print(f'target update frequency      : {freq_target:.3f} Hz')
+
         
         #逆運動学計算の確認
         loop = 100
@@ -255,7 +269,8 @@ class FrankaDatasetGenerator:
                             target_rotmat=self.target_rotmat,
                             steps=self.mjc_steps, 
                             tol=mjc_tol,
-                            rot_weight=self.rot_weight
+                            rot_weight=self.rot_weight,
+                            max_dq=self.MAX_DQ,
                             )
 
                     except Exception as e:
@@ -411,7 +426,10 @@ class FrankaDatasetGenerator:
             
             
             offset = np.array(self.config['goal_offset'])
-            self.env.set_xyz(goal_pos + offset)
+            self.env.set_xyz(
+                target_pos = goal_pos + offset,
+                settle_steps=self.SETTLE_STEPS,
+                )
             self.env.physics.forward() 
             img = self.env.render_image(size=self.IMAGE_SIZE)
             goal_obs = np.concatenate(
@@ -477,10 +495,8 @@ class FrankaDatasetGenerator:
                 return new_pos, cur_yaw
 
         if not flag:
-            #! 何も向きを変えていないことになってしまっている
             # print('max_loop reached in sample_direc_xyz')
             if not self.is_within_bounds(new_pos, self.X_RANGE, self.Y_RANGE):
-                cur_yaw = cur_yaw + np.pi 
                 cur_yaw = (cur_yaw + np.pi) % (2 * np.pi) - np.pi
                 # cur_yaw = np.random.uniform(- np.pi, np.pi)
                 pass
@@ -541,7 +557,7 @@ class FrankaDatasetGenerator:
         df = pd.DataFrame(dist_xyz_log)
         df.to_csv(f'robot_sim/data_value/dist_xyz_value/dist_xyz_log{d_idx}.csv', index=False)
 
-    def set_control_frequency_by_substeps(env, control_hz: float):
+    def set_control_frequency_by_substeps(self, env, control_hz: float):
         m = env.physics.model
         dt = float(m.opt.timestep)           # 物理の基本タイムステップ [s]
         # 制御周期 1/control_hz を dt の整数倍で近似
@@ -552,6 +568,29 @@ class FrankaDatasetGenerator:
         actual_hz = 1.0 / (sub * dt)
         print(f"[CTRL FREQ] target={control_hz:.3f} Hz -> substeps={sub}, actual≈{actual_hz:.3f} Hz")
         return actual_hz
+
+    def set_dataset_frequency_by_steps(self, control_hz: float, dataset_hz: float):
+        """
+        control_hz: Franka の制御周波数 [Hz]
+        dataset_hz: データとして記録したい周波数 [Hz]
+        """
+        if dataset_hz > control_hz:
+            # 制御ループより速くサンプリングはできないので clamp
+            print(f"[WARN] dataset_hz={dataset_hz} > control_hz={control_hz}. "
+                f"Clamping dataset_hz to control_hz.")
+            dataset_hz = control_hz
+
+        # steps = control_hz / dataset_hz
+        raw_steps = control_hz / dataset_hz
+        steps = max(1, int(round(raw_steps)))
+
+        actual_dataset_hz = control_hz / steps
+        print(f"[DATASET FREQ] target={dataset_hz:.3f} Hz -> steps={steps}, "
+            f"actual≈{actual_dataset_hz:.3f} Hz")
+
+        self.mjc_steps = steps  
+        return actual_dataset_hz
+
 
 
 

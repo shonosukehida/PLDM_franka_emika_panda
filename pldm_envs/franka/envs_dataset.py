@@ -9,6 +9,7 @@ import pandas as pd
 import imageio
 from tqdm import tqdm
 from dm_control import mujoco
+# from dm_control.utils.inverse_kinematics import qpos_from_site_pose
 from pldm_envs.franka.ik_with_limits import qpos_from_site_pose
 from scipy.spatial.transform import Rotation as R
 
@@ -22,7 +23,7 @@ class FrankaSimEnv:
 
         self.CONFIRM_IK = config["confirm_ik_result"]
 
-        self.STEPS = config["steps"]
+
         self.TOL = float(config["tol"])
 
 
@@ -34,7 +35,6 @@ class FrankaSimEnv:
         else:
             self.camera_id = self.physics.model.name2id(self.CAMERA_NAME, mujoco.mjtObj.mjOBJ_CAMERA)
         
-        self.sim_steps = config['steps']
         self.target_sampling_step = config['target_sampling_step']
 
 
@@ -88,6 +88,7 @@ class FrankaSimEnv:
             target_pos=target_xyz,
             target_quat=target_quat,
             joint_names=joint_names,
+            tol = 1e-4,
             rot_weight=rot_weight
         )
         return result
@@ -160,6 +161,7 @@ class FrankaSimEnv:
         - sync_ctrl=True なら actuator の ctrl にも q_des をセット
         - settle_steps > 0 なら、その状態で physics.step() を何ステップか回して「落ち着かせる」
         """
+        
         result = self.calc_inverse_kinematic(
             target_pos,
             target_rotmat=target_rotmat,
@@ -214,7 +216,7 @@ class FrankaSimEnv:
         
         if not result.success:
             print("⚠️ IK失敗しました!")
-            return None
+            return False
 
         self.physics.data.qpos[:7] = result.qpos[:7]
         self.physics.data.qvel[:7] = 0
