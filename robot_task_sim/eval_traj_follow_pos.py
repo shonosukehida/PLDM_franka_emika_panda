@@ -63,7 +63,8 @@ SAVE_EVERY = int(config.eval.save_every)                # フレーム保存間�
 SEED = int(config.eval.seed)
 
 NUM_PNTS = int(config.eval.num_points) #軌跡の分割ポイント数: 80
-
+SETTLE_STEPS = int(config.eval.settle_steps)
+print("SETTLE_STEPS:", SETTLE_STEPS)
 
 x_min = float(config.workspace.x_min)
 x_max = float(config.workspace.x_max)
@@ -285,10 +286,13 @@ def make_trajectory(kind="rectangle", n_points=60, shuffle=False, seed=0):
 
     elif kind == "lissajous":
         t = np.linspace(0, 2*np.pi, n_points, endpoint=False)
-        xs = (x_lo+x_hi)/2 + 0.45*(x_hi-x_lo)/2 * np.sin(2*t+0.3)
-        ys = (y_lo+y_hi)/2 + 0.85*(y_hi-y_lo)/2 * np.sin(3*t)
-        xs = np.clip(xs, x_lo, x_hi)
-        ys = np.clip(ys, y_lo, y_hi)
+        x_center = (x_lo + x_hi) / 2.0
+        y_center = (y_lo + y_hi) / 2.0
+        half_x = (x_hi - x_lo) / 2.0
+        half_y = (y_hi - y_lo) / 2.0
+        amp = 0.9 * min(half_x, half_y)   
+        xs = x_center + amp * np.sin(t)
+        ys = y_center + amp * np.sin(2.0 * t)
         zs = np.full_like(xs, z_fixed)
 
     elif kind == "random":
@@ -396,7 +400,7 @@ def run_follow(env, traj_xyz, name="rectangle"):
 
 
     env.reset(robot_only = True)
-    q_des, ee_after_set = env.set_xyz(traj_xyz[0], target_rotmat=TARGET_ROTMAT, rot_weight = ROT_WEIGHT)
+    q_des, ee_after_set = env.set_xyz(traj_xyz[0], target_rotmat=TARGET_ROTMAT, rot_weight = ROT_WEIGHT, settle_steps = SETTLE_STEPS)
     print("EE after set:", ee_after_set, " target:", traj_xyz[0], " err:", np.linalg.norm(ee_after_set-traj_xyz[0]))
     frame_ee_xy.append(env.get_ee_position()[:2].copy())
     frame_tgt_xy.append(traj_xyz[0][:2].copy())
@@ -548,22 +552,22 @@ def run_follow(env, traj_xyz, name="rectangle"):
              f"mean_err={metrics['mean_err_m']:.4f} p90={metrics['p90_err_m']:.4f} "
              f"avg_steps={metrics['mean_steps_per_wp']:.1f} elapsed={dt:.2f}s")
 
-    plt.figure(figsize=(5,5))
-    plt.plot(tgt_traj[:,0], tgt_traj[:,1], linestyle="--", marker="o", markersize=10, label="target XY")
-    plt.plot(ee_traj[:,0],  ee_traj[:,1],  linestyle="-",  marker=".", markersize=10, label="executed XY")
+    # plt.figure(figsize=(5,5))
+    # plt.plot(tgt_traj[:,0], tgt_traj[:,1], linestyle="--", marker="o", markersize=10, label="target XY")
+    # plt.plot(ee_traj[:,0],  ee_traj[:,1],  linestyle="-",  marker=".", markersize=10, label="executed XY")
 
-    plt.text(tgt_traj[0,0], tgt_traj[0,1], "S", color="blue", fontsize=12, fontweight="bold", ha="center", va="center")
-    plt.text(tgt_traj[-1,0], tgt_traj[-1,1], "G", color="blue", fontsize=12, fontweight="bold", ha="center", va="center")
+    # plt.text(tgt_traj[0,0], tgt_traj[0,1], "S", color="blue", fontsize=12, fontweight="bold", ha="center", va="center")
+    # plt.text(tgt_traj[-1,0], tgt_traj[-1,1], "G", color="blue", fontsize=12, fontweight="bold", ha="center", va="center")
     
-    plt.text(ee_traj[0,0], ee_traj[0,1], "S", color="orange", fontsize=12, fontweight="bold", ha="center", va="center")
-    plt.text(ee_traj[-1,0], ee_traj[-1,1], "G", color="orange", fontsize=12, fontweight="bold", ha="center", va="center")
+    # plt.text(ee_traj[0,0], ee_traj[0,1], "S", color="orange", fontsize=12, fontweight="bold", ha="center", va="center")
+    # plt.text(ee_traj[-1,0], ee_traj[-1,1], "G", color="orange", fontsize=12, fontweight="bold", ha="center", va="center")
 
-    plt.xlabel("X [m]"); plt.ylabel("Y [m]"); plt.title(f"Trajectory: {name}")
-    plt.axis("equal"); plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(OUTDIR / f"ee_traj_plot_{name}.png", dpi=150)
-    plt.close()
+    # plt.xlabel("X [m]"); plt.ylabel("Y [m]"); plt.title(f"Trajectory: {name}")
+    # plt.axis("equal"); plt.legend()
+    # plt.grid(True, alpha=0.3)
+    # plt.tight_layout()
+    # plt.savefig(OUTDIR / f"ee_traj_plot_{name}.png", dpi=150)
+    # plt.close()
 
 
     plt.figure(figsize=(6,3))
@@ -653,46 +657,25 @@ def evaluate_initial_settling(env, target_xyz, timestep = 100, target_rotmat=Non
     print("[DBG] gravity: ", env.physics.model.opt.gravity[:])
     
     
-    q_des, ee_after_set = env.set_xyz(target_xyz, target_rotmat=target_rotmat, rot_weight=rot_weight)
-    print(f"[INIT] EE after set: {ee_after_set} | target: {target_xyz} | err={np.linalg.norm(ee_after_set - target_xyz):.6f} m")
+    q_des, ee_after_set = env.set_xyz(target_xyz, target_rotmat=target_rotmat, rot_weight=rot_weight, settle_steps=SETTLE_STEPS)
+    print("just after set_xyz")
+    print_joint_ranges(env)
     
 
     m, d = env.physics.model, env.physics.data
     arm = list(getattr(env, "arm_actuator_ids", []))
 
-    # 位置サーボの目標値がサーボ入力範囲内か（ctrlrange vs ctrl）
-    ctrl_now = d.ctrl[arm]  
-    lo_c, hi_c = m.actuator_ctrlrange[arm, 0], m.actuator_ctrlrange[arm, 1]
-    bad_ctrl = np.where((ctrl_now < lo_c) | (ctrl_now > hi_c))[0]
-    print("actuator ctrlrange violated actuators:", bad_ctrl)
-    ####
-    
-    ## ik 計算自体にオフセットがある？
-    sid_ik = m.name2id("ee_target", "site")
-    pos_ik = d.site_xpos[sid_ik].copy()
-    err_ik = float(np.linalg.norm(pos_ik - np.asarray(target_xyz)))
-    print("[CHK-1] IK-site vs target  | pos_ik:", pos_ik, " target:", target_xyz, "  err:", err_ik)
-    # 参考ボディ：手先系のボディ名を全部拾う（手、指、末端リンクなど）
-    hand_like_bodies = []
-    for bid in range(m.nbody):
-        name = m.id2name(bid, "body") or ""
-        if any(k in name.lower() for k in ["hand", "gripper", "finger", "link8", "panda_hand"]):
-            hand_like_bodies.append((bid, name))
+    #重力トルク確認
+    print("q_des:", q_des)
+    print("qfrc_bias at IK pose:", d.qfrc_bias[:7])   # 重力(+コリオリ)だけ
 
-    # すべてのサイトから "手先系ボディに付いているサイト" を抽出して、ee_targetとの距離を並べる
-    cands = []
-    for sid in range(m.nsite):
-        b = m.site_bodyid[sid]
-        if any(b == hb[0] for hb in hand_like_bodies):
-            name = m.id2name(sid, "site")
-            p = d.site_xpos[sid].copy()
-            cands.append((name, float(np.linalg.norm(p - pos_ik))))
+    # forcerange との比較の確認
+    for a in env.arm_actuator_ids:
+        lo_f, hi_f = m.actuator_forcerange[a]
+        print(m.id2name(a,"actuator"),
+            "bias≈", d.qfrc_bias[a], "range=[", lo_f, ",", hi_f, "]")
+    ###############
 
-    cands.sort(key=lambda x: x[1])
-    print("[CHK-2] candidate sites near ee_target (name, dist[m]) :")
-    for nm, dist in cands[:10]:
-        print("   ", f"{nm:25s}", f"{dist: .5f}")
-    ################################################################
 
 
     
@@ -722,7 +705,7 @@ def evaluate_initial_settling(env, target_xyz, timestep = 100, target_rotmat=Non
         # 現在姿勢を目標に同期して保持（position actuatorなら ctrl = qpos）
         if arm:
             init_joint = d.qpos[:len(arm)].copy()
-            d.ctrl[arm] = d.qpos[:len(arm)]
+            d.ctrl[arm] = init_joint
         print("[MODE] hold: ctrl synced to current qpos.")
     else:
         print("[MODE] raw: no change (ctrl remains as-is).")
@@ -752,10 +735,42 @@ def evaluate_initial_settling(env, target_xyz, timestep = 100, target_rotmat=Non
         
     d.qfrc_applied[:7] = 0.0
         
-    print("ctrl(arm):", d.ctrl[arm])                    # おそらく 0 付近
-    print("qfrc_actuator(arm):", d.qfrc_actuator[:7])   # 非ゼロ → 0へ戻す力
-    print("Kp:", m.actuator_gainprm[arm,0])
-    print("Kd:", -m.actuator_biasprm[arm,2])
+
+    #アクチュエータがfrocerange で飽和しているかどうかの確認
+    print("actuator forcerange:")
+    for a in arm:
+        lo_f, hi_f = m.actuator_forcerange[a]
+        print(f"  {m.id2name(a, 'actuator'):10s}  [{lo_f:.1f}, {hi_f:.1f}]")
+
+    print("qfrc_actuator at final:")
+    print(d.qfrc_actuator[:7])   # or d.qfrc_actuator[arm] でもOK
+    ####
+
+    # --- joint drift の確認 --------------------------------------------
+    # IK が返した関節角 q_des と、評価後の最終関節角 q_after を比較
+    q_after = d.qpos[:7].copy()
+    dq = q_after - q_des
+
+    joint_names = [f"joint{i}" for i in range(1, 8)]
+
+    print("[CHK-q]  joint-wise error after settling")
+    for i, name in enumerate(joint_names):
+        dq_deg = float(np.degrees(dq[i]))
+        print(
+            f"  {name}: "
+            f"q_des={q_des[i]:+.5f} rad, "
+            f"q_after={q_after[i]:+.5f} rad, "
+            f"dq={dq[i]:+.5f} rad ({dq_deg:+.3f} deg)"
+        )
+
+    print("[CHK-q]  ||dq|| (rad):", float(np.linalg.norm(dq)))
+    
+    # 力のつりあい
+    print("[CHK-torque] final torques vs bias")
+    print("  qfrc_actuator:", d.qfrc_actuator[:7])
+    print("  qfrc_bias    :", d.qfrc_bias[:7])
+    print("  sum(act+bias):", d.qfrc_actuator[:7] + d.qfrc_bias[:7])
+    ####
 
     # --- restore gains if needed ------------------------------------------
     if mode == "passive" and arm:
@@ -768,7 +783,8 @@ def evaluate_initial_settling(env, target_xyz, timestep = 100, target_rotmat=Non
     tgt_trace = np.asarray(tgt_trace, np.float32)
     vel_xyz   = np.asarray(vel_xyz,   np.float32)
     times     = np.asarray(times,     np.float32)
-    err = np.linalg.norm(ee_trace - tgt_trace, axis=1)
+    err = np.linalg.norm(ee_trace[:, :2] - tgt_trace[:, :2], axis=1)
+
     metrics = {
         "name": str(save_name), "mode": mode, "timestep": timestep,
         "lowlevel_dt": float(dt_low), "steps": int(n_steps),
@@ -836,7 +852,7 @@ def maybe_make_gif():
     print("[SAVE] GIF ->", OUTDIR / "preview.gif")
 
 
-def make_gifs_per_traj(duration=0.05):
+def make_gifs_per_traj(duration=0.005):
     try:
         import imageio.v2 as imageio
     except Exception:
@@ -1026,6 +1042,24 @@ def save_joint_series_csv(times, q_err_Tx7, qd_err_Tx7, qd_Tx7, name="run", outd
             row += [float(qd[i, j]) for j in range(7)]
             w.writerow(row)
     print(f"[SAVE] joint errors & velocity CSV -> {outpath}")
+
+def print_joint_ranges(env):
+    q = env.physics.data.qpos[:7].copy()
+    lo = env.physics.model.jnt_range[:7, 0]
+    hi = env.physics.model.jnt_range[:7, 1]
+
+    print("[CHK-range]  current joint positions vs limits")
+    for i in range(7):
+        q_deg  = np.degrees(q[i])
+        lo_deg = np.degrees(lo[i])
+        hi_deg = np.degrees(hi[i])
+        print(f"  joint{i}: q={q[i]:+.4f}, "
+              f"range=[{lo[i]:+.4f}, {hi[i]:+.4f}] rad "
+              )
+
+    # どの関節が限界に近いかも表示
+    near = np.where((q < lo + 1e-3) | (q > hi - 1e-3))[0]
+    print(f"near_limit joints: {near}\n")
 #####################################################################
 
 
@@ -1078,8 +1112,8 @@ def main():
 
     todo = [
         ("rectangle", NUM_PNTS, False),
-        # ("lawnmower", NUM_PNTS, False),
-        # ("lissajous", NUM_PNTS, False),
+        ("lawnmower", NUM_PNTS, False),
+        ("lissajous", NUM_PNTS, False),
         # ("random", NUM_PNTS, False),
         # ("stationary", NUM_PNTS, False),
     ]
@@ -1093,6 +1127,7 @@ def main():
                 pos = traj[0]
             else:
                 pos = np.array(list(config.eval_kind.initial_settling.position))
+            print("POS:", pos)
             
             _ = evaluate_initial_settling(
             env,
@@ -1108,15 +1143,16 @@ def main():
             hold_type = config.eval_kind.initial_settling.hold_type,
             )
         
-        if config.eval_kind.run_follow:  
+        if config.eval_kind.run_follow.execute:  
             m = run_follow(env, traj, name=kind)
             all_metrics.append(m)
+            if config.eval_kind.run_follow.make_video:
+                 make_gifs_per_traj()
+            
  
     with open(OUTDIR / "metrics.json", "w") as f:
         json.dump(all_metrics, f, indent=2)
 
-    # maybe_make_gif()
-    # make_gifs_per_traj()
     print("\n✅ Trajectory evaluation complete. See:", OUTDIR)
 
 if __name__ == "__main__":

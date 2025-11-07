@@ -58,14 +58,6 @@ class FrankaDatasetGenerator:
         os.environ["MUJOCO_GL"] = "egl"
         self.env = FrankaSimEnv(config)
 
-        # 制御周波数をセット
-        control_hz = config.get("control_hz", None)
-        if control_hz is not None:
-            self.actual_control_hz = self.set_control_frequency_by_substeps(self.env, control_hz)
-        else:
-            dt = float(self.env.physics.model.opt.timestep)
-            self.actual_control_hz = 1.0 / (self.env.substeps * dt)
-
         self.bluebox_geom_id = self.env.physics.model.name2id("blue_box", mujoco.mjtObj.mjOBJ_GEOM)
         
         self.franka_geom_ids = [
@@ -125,14 +117,9 @@ class FrankaDatasetGenerator:
             self.target_rotmat = np.stack([x, y, z], axis=1)
         
         #ロボットの周波数
-        dt = float(self.env.physics.model.opt.timestep)
-        control_dt = self.env.substeps * dt           # 1 control-step の時間
-        # target_xyz 更新の周期（何 control-step ごとに変えるか）:
-        period_target = self.STEPS * control_dt * self.target_sampling_step
-        freq_target = 1.0 / period_target
-
-        print(f'control frequency (env.step): {self.actual_control_hz:.3f} Hz')
-        print(f'target update frequency      : {freq_target:.3f} Hz')
+        physic_timestep = self.env.physics.model.opt.timestep
+        freq = 1 / (self.STEPS * physic_timestep * self.target_sampling_step)
+        print('robot frequency:', freq)
         
         #逆運動学計算の確認
         loop = 100
@@ -540,19 +527,61 @@ class FrankaDatasetGenerator:
         os.makedirs('robot_sim/data_value/dist_xyz_value', exist_ok=True)
         df = pd.DataFrame(dist_xyz_log)
         df.to_csv(f'robot_sim/data_value/dist_xyz_value/dist_xyz_log{d_idx}.csv', index=False)
+        
+    # def data_save(self):
+    #     torch.save(self.data_list, os.path.join(self.SAVE_PATH, "data.p"))
+    #     np.save(os.path.join(self.SAVE_PATH, "images.npy"), np.array(self.all_images, dtype=np.uint8))
+    #     goal_imgs = np.stack([g[1] for g in self.goal_obs_list])
+    #     np.save(os.path.join(self.SAVE_PATH, "goal_images.npy"), goal_imgs)
+    #     torch.save({"pair_list": self.pair_list}, os.path.join(self.SAVE_PATH, "pair_info.p"))
+    #     print("✅ Done generating dataset!")
+    
+    
 
-    def set_control_frequency_by_substeps(env, control_hz: float):
-        m = env.physics.model
-        dt = float(m.opt.timestep)           # 物理の基本タイムステップ [s]
-        # 制御周期 1/control_hz を dt の整数倍で近似
-        sub = max(1, int(round((1.0 / control_hz) / dt)))
-        env.substeps = sub
-        env.control_dt = sub * dt            # 1 control step あたり時間 [s]
 
-        actual_hz = 1.0 / (sub * dt)
-        print(f"[CTRL FREQ] target={control_hz:.3f} Hz -> substeps={sub}, actual≈{actual_hz:.3f} Hz")
-        return actual_hz
+    # def data_save(self, chunk_size=1000):
+    #     torch.save(self.data_list, os.path.join(self.SAVE_PATH, "data.p"))
 
+    #     # --- chunk 保存 ---
+    #     chunk_dir = os.path.join(self.SAVE_PATH, "image_chunks")
+    #     os.makedirs(chunk_dir, exist_ok=True)
+        
+    #     num_images = len(self.all_images)
+    #     print(f"Saving {num_images} images in chunks...")
+
+    #     for i in range(0, num_images, chunk_size):
+    #         file_path = os.path.join(chunk_dir, f"images_chunk_{i//chunk_size}.npy")
+    #         chunk = self.all_images[i:i+chunk_size]
+    #         chunk_arr = np.array(chunk, dtype=np.uint8)
+    #         np.save(file_path, chunk_arr)
+        
+    #     print("✅ Image chunks saved.")
+
+    #     # goal images
+    #     goal_imgs = np.stack([g[1] for g in self.goal_obs_list])
+    #     np.save(os.path.join(self.SAVE_PATH, "goal_images.npy"), goal_imgs)
+
+    #     torch.save({"pair_list": self.pair_list}, os.path.join(self.SAVE_PATH, "pair_info.p"))
+
+    #     print("✅ Done generating dataset!")
+
+    # def merge_chunks(self):
+        
+    #     chunk_dir = os.path.join(self.SAVE_PATH, "image_chunks")
+    #     chunk_files = sorted(glob.glob(os.path.join(chunk_dir, "images_chunk_*.npy")))
+
+    #     print(f"Found {len(chunk_files)} chunk files.")
+
+    #     arrays = []
+    #     for f in chunk_files:
+    #         arr = np.load(f)
+    #         arrays.append(arr)
+    #         print(f"Loaded {f} with shape {arr.shape}")
+
+    #     images = np.concatenate(arrays, axis=0)
+    #     np.save(os.path.join(self.SAVE_PATH, "images.npy"), images)
+
+    #     print("✅ Merged all chunks into images.npy")
 
 
     def _save_chunk(self):

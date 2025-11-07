@@ -4,9 +4,11 @@ paths:
 camera: "top_view"
 
 eval_kind:
-  run_follow: false
-  initial_settling:
+  run_follow:
     execute: true
+    make_video: true
+  initial_settling:
+    execute: false
     timestep: 1000
     mode: "hold"  #passive/hold/raw    passive:前フレームの値のまま固定, hold: ctrl[:]=qpos[:], raw: senv.physics.step() を直接呼ぶ
     save_frames_every: 10 #0:保存なし
@@ -26,6 +28,7 @@ eval:
   save_every: 25
   seed: 0
   num_points: 640
+  settle_steps: 10000 #set_xyz 内で, ik解をqpos へ代入した後に進めるタイムステップ
 
 
 workspace:
@@ -51,7 +54,7 @@ robot:
 control:
   rot_weight: 0.0
   target_rotmat: null   # [[1,0,0],[0,-1,0],[0,0,-1]]
-  max_dq: 0.03
+  max_dq: 0.03 #0.03
   n_interp: 50
 
 render:

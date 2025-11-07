@@ -60,6 +60,7 @@ steps: 200 #200 #一度のmove_franka_to_xyzで進むmujoco上のステップ数
 tol: 1e-2
 rot_weight: 0.1 #IKの回転ずれ許容量の重み
 alpha: 0.8
+control_hz: 50.0
 
 # chunk_size: 100 #画像を保存するときのchunk_sizeを指定
 episode_chunk_size: 10 #何エピソードを1chunk とするかを指定

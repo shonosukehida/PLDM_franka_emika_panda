@@ -4,7 +4,8 @@ os.environ.pop("DISPLAY", None)
 import numpy as np
 import torch
 from dm_control import mujoco as dm_mj
-from dm_control.utils.inverse_kinematics import qpos_from_site_pose
+# from dm_control.utils.inverse_kinematics import qpos_from_site_pose
+from pldm_envs.franka.ik_with_limits import qpos_from_site_pose
 from scipy.spatial.transform import Rotation as R
 from pldm_envs.utils.normalizer import Normalizer
 
