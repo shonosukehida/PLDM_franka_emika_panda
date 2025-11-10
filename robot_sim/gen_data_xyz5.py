@@ -419,17 +419,27 @@ class FrankaDatasetGenerator:
     def get_goal_obs_list(self):
         print("🎯 Computing goal observations...")
         goal_obs_list = []
-        for start_pos, goal_pos in self.pair_list:
+        for i, (start_pos, goal_pos) in enumerate(self.pair_list):
+            print(f"{i}: start={start_pos}, goal={goal_pos}")
             self.env.reset_and_place_all(box_pos=goal_pos, start_marker_pos=start_pos, goal_marker_pos=goal_pos)
             bluebox_geom_id = self.bluebox_geom_id
             bluebox_pos = self.env.physics.data.geom_xpos[bluebox_geom_id]
-            
-            
-            offset = np.array(self.config['goal_offset'])
-            self.env.set_xyz(
-                target_pos = goal_pos + offset,
-                settle_steps=self.SETTLE_STEPS,
-                )
+            print(i, "goal_pos =", goal_pos, "actual bluebox_pos =", bluebox_pos)
+
+            goal_arm_pos_center = bool(self.config['specify_goal_position'])
+
+            if goal_arm_pos_center:
+                self.env.set_xyz(
+                    target_pos = self._get_center_of_cube(),
+                    settle_steps=self.SETTLE_STEPS,
+                    )
+            else:
+                offset = np.array(self.config['goal_offset'])
+                self.env.set_xyz(
+                    target_pos = goal_pos + offset,
+                    settle_steps=self.SETTLE_STEPS,
+                    )    
+
             self.env.physics.forward() 
             img = self.env.render_image(size=self.IMAGE_SIZE)
             goal_obs = np.concatenate(

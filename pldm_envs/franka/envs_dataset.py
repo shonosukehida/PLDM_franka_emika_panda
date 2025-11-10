@@ -173,12 +173,12 @@ class FrankaSimEnv:
         q_des = result.qpos[:7].copy()
 
 
-        with self.physics.reset_context():
-            self.physics.data.qpos[:7] = q_des
-            self.physics.data.qvel[:]  = 0.0         
-            self.physics.data.act[:]   = 0.0          
-            self.physics.data.qacc_warmstart[:] = 0.0 
-            self.physics.forward()
+
+        self.physics.data.qpos[:7] = q_des
+        self.physics.data.qvel[:]  = 0.0         
+        self.physics.data.act[:]   = 0.0          
+        self.physics.data.qacc_warmstart[:] = 0.0 
+        self.physics.forward()
 
 
         if sync_ctrl:
