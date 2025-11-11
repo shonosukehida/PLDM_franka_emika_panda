@@ -5,10 +5,10 @@ camera: "top_view"
 
 eval_kind:
   run_follow:
-    execute: false
+    execute: true
     make_video: true
   initial_settling:
-    execute: true
+    execute: false
     timestep: 1
     mode: "hold"  #passive/hold/raw    passive:前フレームの値のまま固定, hold: ctrl[:]=qpos[:], raw: senv.physics.step() を直接呼ぶ
     save_frames_every: 10 #0:保存なし
@@ -27,7 +27,7 @@ eval:
   hold_steps_at_target: 10
   save_every: 25
   seed: 0
-  num_points: 320
+  num_points: 160 #640
   settle_steps: 0 #set_xyz 内で, ik解をqpos へ代入した後に進めるタイムステップ
 
 
