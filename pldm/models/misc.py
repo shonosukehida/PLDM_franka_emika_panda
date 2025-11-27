@@ -189,17 +189,34 @@ class Prober(torch.nn.Module):
         self.output_shape = output_shape
         self.arch = arch
 
+        def _dim_to_int(d):
+            import torch
+            from functools import reduce
+            import operator
+
+            if isinstance(d, int):
+                return d
+            if isinstance(d, (list, tuple, torch.Size)):
+                # 例: (16, 26, 26) -> 16 * 26 * 26
+                return int(reduce(operator.mul, d, 1))
+            return int(d)
+
+
         if arch == "conv":
             self.prober = build_conv(
                 PROBER_CONV_LAYERS_CONFIG[arch_subclass], input_dim=input_dim
             )
         else:
+            emb_dim = _dim_to_int(embedding)
+            in_dim = _dim_to_int(input_dim) if input_dim is not None else emb_dim
+            out_dim = _dim_to_int(self.output_shape)
+
             arch_list = list(map(int, arch.split("-"))) if arch != "" else []
-            f = [embedding] + arch_list + [self.output_shape]
+            f = [in_dim] + arch_list + [out_dim]
+
             layers = []
             for i in range(len(f) - 2):
                 layers.append(torch.nn.Linear(f[i], f[i + 1]))
-                # layers.append(torch.nn.BatchNorm1d(f[i + 1]))
                 layers.append(torch.nn.ReLU(True))
             layers.append(torch.nn.Linear(f[-2], f[-1]))
             self.prober = torch.nn.Sequential(*layers)

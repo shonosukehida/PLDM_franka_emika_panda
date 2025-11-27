@@ -193,8 +193,8 @@ class JEPA(torch.nn.Module):
             else:
                 backbone_output = self.backbone.forward_multiple(input_states)
             
-            print("[DBG_PROPIO] backbone_output.propio_component.shape:", backbone_output.propio_component.shape)
-            print("[DBG_STATE] backbone_output.obs_component.shape:", backbone_output.obs_component.shape)
+            # print("[DBG_PROPIO] backbone_output.propio_component.shape:", backbone_output.propio_component.shape)
+            # print("[DBG_STATE] backbone_output.obs_component.shape:", backbone_output.obs_component.shape)
 
             state_encs = backbone_output.encodings
         else:

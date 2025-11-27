@@ -73,6 +73,7 @@ class FrankaSimEnv:
             target_pos=target_xyz,
             target_quat=target_quat,
             joint_names=joint_names,
+            tol=1e-4,
             rot_weight=rot_weight
         )
         return result
@@ -84,10 +85,10 @@ class FrankaSimEnv:
         
         
         target_rotmat = None
-        x = np.array([1, 0, 0])         
-        y = np.array([0, -1, 0])
-        z = np.array([0, 0, -1])        
-        target_rotmat = np.stack([x, y, z], axis=1)
+        # x = np.array([1, 0, 0])         
+        # y = np.array([0, -1, 0])
+        # z = np.array([0, 0, -1])        
+        # target_rotmat = np.stack([x, y, z], axis=1)
         target_rot_weight = 0.1
         
         init_xyz = np.array([0.515, 0.0, 0.1])
@@ -95,21 +96,29 @@ class FrankaSimEnv:
         init_joint = result.qpos[:7]
         self.physics.forward()
         
+        
         self.physics.data.qpos[:7] = init_joint
         self.physics.data.qvel[:7] = 0.0
         self.physics.forward()
         
         self.physics.data.ctrl[:] = 0.0
         self.physics.data.ctrl[self.arm_actuator_ids] = init_joint
-        
-        
-        for _ in range(50):
-            self.physics.step()
+
+        ##### IK計算デバッグ
+        sid = self.physics.model.name2id("ee_target", "site")
+        ee_now = self.physics.data.site_xpos[sid].copy()
+        print("[reset] IK target:", init_xyz, "actual:", ee_now, "err:", np.linalg.norm(ee_now-init_xyz))
+        print("IK success:", result.success)
+        #####
+
+        #時間を回して落ち着かせる
+        # for _ in range(50):
+        #     self.physics.step()
 
         if start_pos is None:
-            start_pos = np.random.uniform(low=[0.365, -0.15, 0.05], high=[0.665, 0.15, 0.05])
+            start_pos = np.random.uniform(low=[0.415, -0.10, 0.05], high=[0.615, 0.10, 0.05])
         if goal_pos is None:
-            goal_pos = np.random.uniform(low=[0.365, -0.15, 0.05], high=[0.665, 0.15, 0.05])
+            goal_pos = np.random.uniform(low=[0.415, -0.10, 0.05], high=[0.615, 0.10, 0.05])
 
         self.start_pos = start_pos
         self.goal_pos = goal_pos

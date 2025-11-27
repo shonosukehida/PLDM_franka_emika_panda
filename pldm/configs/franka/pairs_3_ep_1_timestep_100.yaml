@@ -40,7 +40,7 @@ data:
     train: true
     val_fraction: 0.2
     
-epochs: 10
+epochs: 5
 eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
@@ -78,7 +78,7 @@ hjepa:
   step_skip: 4
 load_checkpoint_path: null #pldm/checkpoints/franka_20250730_112342/epoch=10_sample_step=1584.ckpt
 
-use_closed_loss_func: &use_closed_loss_func false
+use_opn_loss_func: &use_opn_loss_func false
 objectives_l1:
   idm:
     action_dim: 7
@@ -86,12 +86,12 @@ objectives_l1:
     arch: 'conv'
     use_pred: false
     arch_subclass: a
-  open_objectives:
+  clsd_objectives:
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
-  closed_objectives:
+  opn_objectives:
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   - ObjectiveType.IDM
@@ -141,7 +141,7 @@ eval_cfg:
     probe_propio: true
     probe_encoder: true
     probe_preds: true
-    use_closed_loss_func: *use_closed_loss_func
+    use_opn_loss_func: *use_opn_loss_func
     vis_dynamics_closed_featuremap: true
     vis_dynamics_open_featuremap: true
     vis_encoder_featuremap: true
@@ -169,6 +169,8 @@ eval_cfg:
       min_block_radius: 4
       max_block_radius: 9999
       override_config: true
+    visualize_planning: true
+    visualize_planning_videos: true
     log_pred_dist_every: 9999999
     plot_every: 16
     set_start_target_path: null #"../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
@@ -178,7 +180,7 @@ eval_cfg:
     replan_every: 4
     image_obs: true
     stack_states: 1
-    data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/'
+    data_path: './pldm_envs/franka/presaved_datasets/val_pairs_3_ep_1_timestep_100/'
     fps: 2.5 #FPS指定
     level1:
       planner_type: PlannerType.MPPI

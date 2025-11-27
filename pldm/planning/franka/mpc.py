@@ -9,7 +9,7 @@ from pldm.planning.mpc import MPCEvaluator
 from .enums import FrankaMPCConfig
 from pldm.planning.enums import MPCResult, PooledMPCResult
 from pldm.planning.utils import calc_avg_steps_to_goal
-from pldm.planning.plotting import log_planning_plots, log_l1_planning_loss, log_planning_plots_split
+from pldm.planning.plotting import log_planning_plots, log_l1_planning_loss, log_planning_plots_split, log_planning_videos_split, log_planning_obs_plots_split, log_planning_traj_plots_split
 from pldm.planning.d4rl.enums import MPCReport  
 
 
@@ -89,20 +89,82 @@ class FrankaMPCEvaluator(MPCEvaluator):
         
 
         if self.config.visualize_planning:
-            log_planning_plots_split(
+            # log_planning_plots_split(
+            #     result=mpc_data,
+            #     report=report,
+            #     idxs=list(range(self.config.n_envs)) if not self.quick_debug else [0],
+            #     plot_every=self.config.plot_every,
+            #     plot_failure_only=self.config.plot_failure_only,
+            #     world_xlim = [0.315, 0.715],
+            #     world_ylim = [-0.2, 0.2],
+            #     use_pixel_mapper=False,           
+            #     pixel_mapper=self.pixel_mapper, 
+            #     env = self.envs[0],
+            # )
+            log_planning_obs_plots_split(
                 result=mpc_data,
                 report=report,
                 idxs=list(range(self.config.n_envs)) if not self.quick_debug else [0],
                 plot_every=self.config.plot_every,
                 plot_failure_only=self.config.plot_failure_only,
-                world_xlim = [0.315, 0.715],
-                world_ylim = [-0.2, 0.2],
-                use_pixel_mapper=False,           
-                pixel_mapper=self.pixel_mapper, 
-                env = self.envs[0],
+                world_xlim=[0.315, 0.715],
+                world_ylim=[-0.2, 0.2],
+                use_pixel_mapper=False,
+                pixel_mapper=self.pixel_mapper,
+                env=self.envs[0],
             )
 
-            
+            #行動列の出力あり
+            log_planning_traj_plots_split(
+                result=mpc_data,
+                report=report,
+                idxs=list(range(self.config.n_envs)) if not self.quick_debug else [0],
+                plot_every=self.config.plot_every,
+                plot_failure_only=self.config.plot_failure_only,
+                world_xlim=[0.315, 0.715],
+                world_ylim=[-0.2, 0.2],
+                use_pixel_mapper=False,
+                pixel_mapper=self.pixel_mapper,
+                env=self.envs[0],
+                plot_action = True
+            )
+
+            #行動列の出力なし
+            # log_planning_traj_plots_split(
+            #     result=mpc_data,
+            #     report=report,
+            #     idxs=list(range(self.config.n_envs)) if not self.quick_debug else [0],
+            #     plot_every=self.config.plot_every,
+            #     plot_failure_only=self.config.plot_failure_only,
+            #     world_xlim=[0.315, 0.715],
+            #     world_ylim=[-0.2, 0.2],
+            #     use_pixel_mapper=False,
+            #     pixel_mapper=self.pixel_mapper,
+            #     env=self.envs[0],
+            #     plot_action = True
+            # )
+
+            if self.config.visualize_planning_videos:
+                print("visualize_planning_videos!!")
+                log_planning_videos_split(
+                    result=mpc_data,
+                    report=report,
+                    idxs=list(range(self.config.n_envs)) if not self.quick_debug else [0],
+                    plot_every=self.config.plot_every,
+                    plot_failure_only=self.config.plot_failure_only,
+                    world_xlim = [0.315, 0.715],
+                    world_ylim = [-0.2, 0.2],
+                    use_pixel_mapper=False,           
+                    pixel_mapper=self.pixel_mapper, 
+                    env = self.envs[0],
+                )
+
+
+
+
+
+
+
             # log_planning_plots(
             #     result=mpc_data,
             #     report=report,

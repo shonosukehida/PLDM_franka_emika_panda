@@ -94,6 +94,15 @@ class Evaluator:
         probers = {}
 
         if self.config.eval_l1:
+            enc_probers = None
+            if self.config.probing.probe_encoder:
+                Logger.run().log_step = 0
+                enc_probers = self.probing_evaluator.train_encoder_prober(
+                    epoch=self.epoch,
+                    only_obs_component = True,
+                )
+                Logger.run().log_step = 0
+
             Logger.run().log_step = 0  
             probers_open = self.probing_evaluator.train_pred_prober(
                 epoch=self.epoch,
@@ -107,19 +116,8 @@ class Evaluator:
             )
             Logger.run().log_step = 0
 
-            enc_probers = None
-            if self.config.probing.probe_encoder:
-                Logger.run().log_step = 0
-                enc_probers = self.probing_evaluator.train_encoder_prober(
-                    epoch=self.epoch,
-                    only_obs_component = True,
-                )
-                Logger.run().log_step = 0
 
-                # enc_probe_loss = self.probing_evaluator.eval_probe_enc_position(
-                #     probers=enc_probers,
-                #     epoch=self.epoch,
-                # )
+
 
 
             if self.config.probing.probe_preds:

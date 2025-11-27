@@ -27,6 +27,7 @@ class MPCConfig(ConfigBase):
     n_envs_batch_size: int = 4
     n_steps: int = 200  # Number of steps to run the env for
     visualize_planning: bool = True
+    visualize_planning_videos: bool = True
     level1: PlannerConfig = field(default_factory=PlannerConfig)
     plot_failure_only: bool = False
     log_pred_dist_every: int = sys.maxsize

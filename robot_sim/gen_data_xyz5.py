@@ -891,22 +891,18 @@ class FrankaDatasetGenerator:
                 print("⚠️ goal_images.npy not found.", file=logfile)
 
 
-
-
     def confirm_endeffector_trajectory(self, axes: str, visualize_target_trj=True):
         data_path = os.path.join(self.SAVE_PATH, "data.p")
         print(f"Loading saved data from: {data_path}")
         data_list = torch.load(data_path, map_location="cpu", weights_only=False)
-        
-        
-        
-        axes_to_num = {'x':0, 'y':1, 'z':2}
+
+        axes_to_num = {'x': 0, 'y': 1, 'z': 2}
         axis_num = [axes_to_num[axes[0]], axes_to_num[axes[1]]]
 
         ranges = {
-            'x' : self.config['x_range'],
-            'y' : self.config['y_range'],
-            'z' : self.config['z_range'],
+            'x': self.config['x_range'],
+            'y': self.config['y_range'],
+            'z': self.config['z_range'],
         }
 
         xlim = ranges[axes[0]]
@@ -918,93 +914,101 @@ class FrankaDatasetGenerator:
             ylim[0] -= 0.2
             ylim[1] += 0.2
 
-
-
         for ep_idx, episode in enumerate(data_list):
             fig, ax = plt.subplots(figsize=(6, 6))
-            
+
+            # ---- target trajectory (optional) ----
             if visualize_target_trj:
                 target_xyz = self.data_enums['target_pos'][ep_idx]
                 tx = target_xyz[:, axis_num[0]]
                 ty = target_xyz[:, axis_num[1]]
-                M = len(tx)
-                t_norm_target = np.linspace(0, 1, M)
 
                 ax.scatter(
                     tx, ty,
-                    c=t_norm_target,
-                    cmap='Reds', 
+                    color='black',
                     marker='x',
-                    s=2,
+                    s=10,
                     label='Target Positions',
                     alpha=0.8,
-                    zorder=4
+                    zorder=4,
                 )
                 ax.plot(
                     tx, ty,
-                    color='gray',
+                    color='black',
                     linewidth=1,
-                    alpha=0.8,
+                    alpha=0.4,
                     zorder=3,
-                    label='Target Path'
+                    label='Target Path',
                 )
-            
-            
+
             obs = episode["observations"]
             ee_xyz = obs[:, -6:-3]
             bluebox_xyz = obs[:, -3:]
-            
 
             x_ee = ee_xyz[:, axis_num[0]]
             y_ee = ee_xyz[:, axis_num[1]]
-            
+
             x_box = bluebox_xyz[:, axis_num[0]]
             y_box = bluebox_xyz[:, axis_num[1]]
-            
 
-            N = len(x_ee)
-            t_norm = np.linspace(0, 1, N)
-
-            scatter = ax.scatter(
+            # ---- End-effector trajectory (red) ----
+            ax.scatter(
                 x_ee, y_ee,
-                c=t_norm,
-                cmap='viridis',
+                color='red',
                 s=10,
                 alpha=0.8,
-                zorder=2
+                zorder=2,
+                label='End Effector',
             )
-
             ax.plot(
                 x_ee, y_ee,
-                color='gray',
+                color='red',
                 linewidth=1,
                 alpha=0.5,
-                zorder=1
+                zorder=1,
             )
 
+            # S/G markers for end-effector
+            ax.text(
+                x_ee[0], y_ee[0], 'S',
+                color='red', fontsize=10, fontweight='bold',
+                zorder=5,
+            )
+            ax.text(
+                x_ee[-1], y_ee[-1], 'G',
+                color='red', fontsize=10, fontweight='bold',
+                zorder=5,
+            )
 
-
-            # Blue box trajectory
-            scatter_box = ax.scatter(
+            # ---- Blue box trajectory (blue) ----
+            ax.scatter(
                 x_box, y_box,
-                c=t_norm,
-                cmap='plasma',
+                color='blue',
                 s=10,
                 alpha=0.8,
                 zorder=4,
-                label='Blue Box Trajectory'
+                label='Blue Box',
             )
-
             ax.plot(
                 x_box, y_box,
-                color='orange',
+                color='blue',
                 linewidth=1,
                 alpha=0.5,
-                zorder=3
+                zorder=3,
             )
 
-            
-            
+            # S/G markers for blue box
+            ax.text(
+                x_box[0], y_box[0], 'S',
+                color='blue', fontsize=10, fontweight='bold',
+                zorder=5,
+            )
+            ax.text(
+                x_box[-1], y_box[-1], 'G',
+                color='blue', fontsize=10, fontweight='bold',
+                zorder=5,
+            )
+
             # --- 矩形を追加 ---
             from matplotlib.patches import Rectangle
             if axes[0] == 'x':
@@ -1013,14 +1017,14 @@ class FrankaDatasetGenerator:
                 rect_width = self.mgn_y_range[1] - self.mgn_y_range[0]
             elif axes[0] == 'z':
                 rect_width = self.mgn_z_range[1] - self.mgn_z_range[0]
-                
+
             if axes[1] == 'x':
                 rect_height = self.mgn_x_range[1] - self.mgn_x_range[0]
             elif axes[1] == 'y':
                 rect_height = self.mgn_y_range[1] - self.mgn_y_range[0]
             elif axes[1] == 'z':
                 rect_height = self.mgn_z_range[1] - self.mgn_z_range[0]
-                
+
             rect = Rectangle(
                 (self.mgn_x_range[0], self.mgn_y_range[0]),
                 rect_width,
@@ -1030,14 +1034,11 @@ class FrankaDatasetGenerator:
                 facecolor='none',
                 linestyle='--',
                 alpha=0.3,
-                zorder=3
+                zorder=3,
             )
             ax.add_patch(rect)
 
-            # カラーバーを追加
-            sm = plt.cm.ScalarMappable(cmap='viridis', norm=plt.Normalize(0, 1))
-            sm.set_array([])
-            fig.colorbar(sm, ax=ax, label="Time Progress (normalized)")
+            # ※ カラーバーはカラーマップを使わないので削除
 
             ax.set_xlim(xlim)
             ax.set_ylim(ylim)
@@ -1048,6 +1049,7 @@ class FrankaDatasetGenerator:
             ax.set_ylabel(axes[1].upper())
             ax.set_title(f"EE Trajectory - Episode {ep_idx}")
             ax.set_aspect('equal', adjustable='box')
+            ax.legend(loc='best')
 
             SAVE_DIR = f"robot_sim/analyze/endeffector_trajectory/{axes}"
             os.makedirs(SAVE_DIR, exist_ok=True)
@@ -1056,6 +1058,174 @@ class FrankaDatasetGenerator:
             plt.close(fig)
 
         return
+
+
+
+        # def confirm_endeffector_trajectory(self, axes: str, visualize_target_trj=True):
+        #     data_path = os.path.join(self.SAVE_PATH, "data.p")
+        #     print(f"Loading saved data from: {data_path}")
+        #     data_list = torch.load(data_path, map_location="cpu", weights_only=False)
+            
+            
+            
+        #     axes_to_num = {'x':0, 'y':1, 'z':2}
+        #     axis_num = [axes_to_num[axes[0]], axes_to_num[axes[1]]]
+
+        #     ranges = {
+        #         'x' : self.config['x_range'],
+        #         'y' : self.config['y_range'],
+        #         'z' : self.config['z_range'],
+        #     }
+
+        #     xlim = ranges[axes[0]]
+        #     if abs(xlim[0] - xlim[1]) < 1e-3:
+        #         xlim[0] -= 0.2
+        #         xlim[1] += 0.2
+        #     ylim = ranges[axes[1]]
+        #     if abs(ylim[0] - ylim[1]) < 1e-3:
+        #         ylim[0] -= 0.2
+        #         ylim[1] += 0.2
+
+
+
+        #     for ep_idx, episode in enumerate(data_list):
+        #         fig, ax = plt.subplots(figsize=(6, 6))
+                
+        #         if visualize_target_trj:
+        #             target_xyz = self.data_enums['target_pos'][ep_idx]
+        #             tx = target_xyz[:, axis_num[0]]
+        #             ty = target_xyz[:, axis_num[1]]
+        #             M = len(tx)
+        #             t_norm_target = np.linspace(0, 1, M)
+
+        #             ax.scatter(
+        #                 tx, ty,
+        #                 c=t_norm_target,
+        #                 cmap='Reds', 
+        #                 marker='x',
+        #                 s=2,
+        #                 label='Target Positions',
+        #                 alpha=0.8,
+        #                 zorder=4
+        #             )
+        #             ax.plot(
+        #                 tx, ty,
+        #                 color='gray',
+        #                 linewidth=1,
+        #                 alpha=0.8,
+        #                 zorder=3,
+        #                 label='Target Path'
+        #             )
+                
+                
+        #         obs = episode["observations"]
+        #         ee_xyz = obs[:, -6:-3]
+        #         bluebox_xyz = obs[:, -3:]
+                
+
+        #         x_ee = ee_xyz[:, axis_num[0]]
+        #         y_ee = ee_xyz[:, axis_num[1]]
+                
+        #         x_box = bluebox_xyz[:, axis_num[0]]
+        #         y_box = bluebox_xyz[:, axis_num[1]]
+                
+
+        #         N = len(x_ee)
+        #         t_norm = np.linspace(0, 1, N)
+
+        #         scatter = ax.scatter(
+        #             x_ee, y_ee,
+        #             c=t_norm,
+        #             cmap='viridis',
+        #             s=10,
+        #             alpha=0.8,
+        #             zorder=2,
+        #             label='endeffector',
+        #         )
+
+        #         ax.plot(
+        #             x_ee, y_ee,
+        #             color='gray',
+        #             linewidth=1,
+        #             alpha=0.5,
+        #             zorder=1
+        #         )
+
+
+
+        #         # Blue box trajectory
+        #         scatter_box = ax.scatter(
+        #             x_box, y_box,
+        #             c=t_norm,
+        #             cmap='plasma',
+        #             s=10,
+        #             alpha=0.8,
+        #             zorder=4,
+        #             label='bluebox'
+        #         )
+
+        #         ax.plot(
+        #             x_box, y_box,
+        #             color='orange',
+        #             linewidth=1,
+        #             alpha=0.5,
+        #             zorder=3
+        #         )
+
+                
+                
+        #         # --- 矩形を追加 ---
+        #         from matplotlib.patches import Rectangle
+        #         if axes[0] == 'x':
+        #             rect_width = self.mgn_x_range[1] - self.mgn_x_range[0]
+        #         elif axes[0] == 'y':
+        #             rect_width = self.mgn_y_range[1] - self.mgn_y_range[0]
+        #         elif axes[0] == 'z':
+        #             rect_width = self.mgn_z_range[1] - self.mgn_z_range[0]
+                    
+        #         if axes[1] == 'x':
+        #             rect_height = self.mgn_x_range[1] - self.mgn_x_range[0]
+        #         elif axes[1] == 'y':
+        #             rect_height = self.mgn_y_range[1] - self.mgn_y_range[0]
+        #         elif axes[1] == 'z':
+        #             rect_height = self.mgn_z_range[1] - self.mgn_z_range[0]
+                    
+        #         rect = Rectangle(
+        #             (self.mgn_x_range[0], self.mgn_y_range[0]),
+        #             rect_width,
+        #             rect_height,
+        #             linewidth=1,
+        #             edgecolor='red',
+        #             facecolor='none',
+        #             linestyle='--',
+        #             alpha=0.3,
+        #             zorder=3
+        #         )
+        #         ax.add_patch(rect)
+
+        #         # カラーバーを追加
+        #         sm = plt.cm.ScalarMappable(cmap='viridis', norm=plt.Normalize(0, 1))
+        #         sm.set_array([])
+        #         fig.colorbar(sm, ax=ax, label="Time Progress (normalized)")
+
+        #         ax.set_xlim(xlim)
+        #         ax.set_ylim(ylim)
+        #         ax.set_xticks(np.linspace(xlim[0], xlim[1], 5))
+        #         ax.set_yticks(np.linspace(ylim[0], ylim[1], 5))
+
+        #         ax.set_xlabel(axes[0].upper())
+        #         ax.set_ylabel(axes[1].upper())
+        #         ax.set_title(f"EE Trajectory - Episode {ep_idx}")
+        #         ax.set_aspect('equal', adjustable='box')
+        #         ax.legend(loc='best')
+
+        #         SAVE_DIR = f"robot_sim/analyze/endeffector_trajectory/{axes}"
+        #         os.makedirs(SAVE_DIR, exist_ok=True)
+        #         save_path = os.path.join(SAVE_DIR, f"ee_trajectory_ep{ep_idx}.png")
+        #         fig.savefig(save_path, dpi=300)
+        #         plt.close(fig)
+
+        #     return
 
 
 

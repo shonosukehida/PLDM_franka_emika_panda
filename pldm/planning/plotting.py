@@ -8,7 +8,9 @@ import numpy as np
 import torch
 import sys
 import gc
-
+from matplotlib.patches import Rectangle
+from pathlib import Path
+import imageio.v2 as imageio
 default_plot_idxs = list(range(100))
 
 #直交座標 --> ピクセル座標
@@ -202,6 +204,7 @@ def log_l1_planning_loss(result, prefix: str = "wall_"):
 
 
 
+
 def log_planning_plots_split(
     result, report, idxs=None,
     plot_every=1, xy_action=True,
@@ -209,6 +212,7 @@ def log_planning_plots_split(
     world_xlim=None, world_ylim=None,
     use_pixel_mapper=False, pixel_mapper=None,
     env = None, #運動学計算用
+    plot_action = True,
 ):
 
     if idxs is None:
@@ -256,7 +260,7 @@ def log_planning_plots_split(
         traj = torch.stack([result.locations[t][idx] for t in range(T)], dim=0).detach().cpu()  # (T,2)
 
         # 予測列：各tで H 分の予測
-        preds = []
+        single_step_preds = []
         T_loc  = len(result.locations)         # 初期+各ステップ → T+1
         T_pred = len(result.pred_locations)    # 各ステップ → T
         t_term = getattr(report, "terminations", [T_loc-1])[idx]
@@ -272,13 +276,12 @@ def log_planning_plots_split(
             
             
             #運動学によるMPPI予測軌跡
-            act = result.action_history[t][idx].detach().cpu().numpy() 
-            pred_locs_kinematics = []
-            for a in act:
-                env.set_joint(a)
-                pred_locs_kinematics.append(env.get_ee_position()[:2])
-            pred_locs_kinematics = torch.from_numpy(np.asarray(pred_locs_kinematics, dtype=np.float32))
-            preds.append(pred_locs_kinematics)
+            act_seq = result.action_history[t][idx].detach().cpu().numpy()   # (H_t, 7)
+            a0 = act_seq[0]  
+            # print("act.shape: ", act.shape)
+            env.set_joint(a0)
+            ee = env.get_ee_position()[:2]
+            single_step_preds.append(ee)
 
         obj_traj = None
         if getattr(result, "object_history", None):  
@@ -297,15 +300,6 @@ def log_planning_plots_split(
 
 
             
-        #pixel変換(使う予定なし)
-        if use_pixel_mapper and pixel_mapper is not None:
-            starts = pixel_mapper(starts).squeeze().float()
-            targets = pixel_mapper(targets).squeeze().float()
-            traj = pixel_mapper(traj).squeeze().float()
-            preds = [pixel_mapper(p).squeeze().float() for p in preds]
-            if obj_traj is not None:                        
-                obj_traj = pixel_mapper(obj_traj).squeeze().float()
-
         figB = plt.figure(dpi=250)
         ax = plt.gca()
 
@@ -317,17 +311,46 @@ def log_planning_plots_split(
         ax.text(traj[-1, 0], traj[-1, 1], "G", fontsize=10, color="black", ha="center", va="center", fontweight="bold", zorder=7)
 
 
-        if preds:
-            for t, P in enumerate(preds):
-                if t % plot_every:  continue
-                ax.plot(P[:,0], P[:,1], lw=0.6, alpha=0.6, c="red", zorder=2)
-                ax.scatter(P[0, 0], P[0, 1], s=10, c="lime", marker="o", zorder=1)
+        if single_step_preds and plot_action:
+            single_step_preds = np.asarray(single_step_preds, dtype=np.float32)
+
+            for t, ee_pred in enumerate(single_step_preds):
+                if t % plot_every: 
+                    continue
+
+                cur = traj[t]   # 実際の EE 位置 (result.locations[t][idx])
+
+                # 矢印（現在 → 1ステップ後の予測位置）
+                ax.plot([cur[0], ee_pred[0]], [cur[1], ee_pred[1]],
+                        lw=0.5, alpha=0.7, c="red", zorder=2)
+
+                # 1ステップ予測点
+                ax.scatter(ee_pred[0], ee_pred[1], s=10, c="lime",
+                        marker="o", zorder=1)
+
 
 
         if obj_traj is not None and len(obj_traj) > 0:
-            ax.plot(obj_traj[:,0], obj_traj[:,1], lw=1.2, c="tab:blue", label="bluebox", zorder=4)
-            ax.scatter(obj_traj[0,0], obj_traj[0,1], s=14, c="tab:blue", marker="x", label="bluebox_start", zorder=3)
-            
+            ax.plot(obj_traj[:,0], obj_traj[:,1],
+                    lw=1.2, c="tab:blue", label="bluebox_center", zorder=4)
+            ax.scatter(obj_traj[0,0], obj_traj[0,1],
+                    s=14, c="tab:blue", marker="x", label="bluebox_start", zorder=3)
+
+            # ---- bluebox の大きさ（half extent）----
+            hx, hy = 0.05, 0.05  # XML の size と対応
+
+            # 現在（最後）の位置に矩形を描画
+            cx, cy = obj_traj[-1, 0].item(), obj_traj[-1, 1].item()
+            rect = Rectangle(
+                (cx - hx, cy - hy),    # 左下
+                2 * hx, 2 * hy,        # 幅・高さ
+                fill=False,
+                linewidth=1.2,
+                edgecolor="tab:blue",
+                alpha=0.8,
+                zorder=4.5,
+            )
+            ax.add_patch(rect)
 
 
         # 環境grid可視化
@@ -347,7 +370,7 @@ def log_planning_plots_split(
                         linestyle="--", linewidth=1.0, alpha=0.6,
                         color="black",)
             else:
-                from matplotlib.patches import Rectangle
+                
                 rect = Rectangle((xmin, ymin), xmax - xmin, ymax - ymin,
                                 fill=False, linewidth=1.0, linestyle="--",
                                 edgecolor="black", alpha=0.6, zorder=0)
@@ -379,6 +402,12 @@ def log_planning_plots_split(
             except: pass
             try: del preds
             except: pass
+            
+        if 'single_step_preds' in locals() and isinstance(single_step_preds, list):
+            try: single_step_preds.clear()
+            except: pass
+            try: del single_step_preds
+            except: pass
 
         # 使い捨て変数も削除（任意）
         for _n in ('img', 'obs', 'P'):
@@ -390,3 +419,519 @@ def log_planning_plots_split(
         if torch.cuda.is_available():
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
+
+
+
+
+def log_planning_traj_plots_split(
+    result, report, idxs=None,
+    plot_every=1, xy_action=True,
+    plot_failure_only=False,
+    world_xlim=None, world_ylim=None,
+    use_pixel_mapper=False, pixel_mapper=None,
+    env=None,  # 運動学計算用
+    plot_action = True,
+):
+    """
+    図B: EE 軌跡 + 1ステップ予測 + bluebox + ワールド範囲 を可視化
+    """
+    if idxs is None:
+        idxs = default_plot_idxs
+
+    T = len(result.locations)
+    B = result.observations[0].shape[0]
+
+    for idx in idxs:
+        if plot_failure_only and getattr(report, "success", [False] * B)[idx]:
+            continue
+
+        starts = result.locations[0][idx].detach().cpu()        # (2,)
+        targets = result.targets[idx].detach().cpu()            # (2,)
+        traj = torch.stack(
+            [result.locations[t][idx] for t in range(T)],
+            dim=0
+        ).detach().cpu()                                        # (T,2)
+
+        # ---- 1step 予測列 ----
+        single_step_preds = []
+        T_loc  = len(result.locations)         # 初期+各ステップ → T+1
+        T_pred = len(result.pred_locations)    # 各ステップ → T
+        t_term = getattr(report, "terminations", [T_loc - 1])[idx]
+        t_max = min(T_pred, T_loc - 1, t_term + 1)
+
+        if env is not None:
+            env.reset()
+            for t in range(t_max):
+                if t > report.terminations[idx]:
+                    break
+                act_seq = result.action_history[t][idx].detach().cpu().numpy()  # (H_t,7)
+                a0 = act_seq[0]
+                env.set_joint(a0)
+                ee = env.get_ee_position()[:2]
+                single_step_preds.append(ee)
+
+        # ---- オブジェクト軌跡 (bluebox) ----
+        obj_traj = None
+        if getattr(result, "object_history", None):
+            T_obj = len(result.object_history)
+            t_term = getattr(report, "terminations", [T - 1])[idx]
+            tt = min(T, T_obj, t_term + 1)
+
+            if tt > 0:
+                obj_traj = torch.stack(
+                    [result.object_history[t][idx] for t in range(tt)],
+                    dim=0
+                ).cpu()
+                if obj_traj.shape[-1] == 3:  # xyz → xy
+                    obj_traj = obj_traj[:, :2]
+
+        figB = plt.figure(dpi=250)
+        ax = plt.gca()
+
+        # EE 軌跡 + start/end
+        ax.scatter(targets[0], targets[1],
+                   s=12, c="tab:orange",
+                   label="goal", zorder=5)
+        ax.scatter(traj[:, 0], traj[:, 1],
+                   s=8, c="black", alpha=0.9,
+                   label="end-effector", zorder=6)
+        ax.text(traj[0, 0], traj[0, 1], "S",
+                fontsize=10, color="black",
+                ha="center", va="center",
+                fontweight="bold", zorder=7)
+        ax.text(traj[-1, 0], traj[-1, 1], "G",
+                fontsize=10, color="black",
+                ha="center", va="center",
+                fontweight="bold", zorder=7)
+
+        # ---- 1step 予測の可視化 ----
+        if len(single_step_preds) > 0 and plot_action:
+            single_step_preds_np = np.asarray(single_step_preds, dtype=np.float32)
+
+            for t, ee_pred in enumerate(single_step_preds_np):
+                if t % plot_every:
+                    continue
+
+                cur = traj[t]  # 実際の EE 位置
+                ax.plot(
+                    [cur[0], ee_pred[0]],
+                    [cur[1], ee_pred[1]],
+                    lw=0.5, alpha=0.7, c="red", zorder=2
+                )
+                ax.scatter(
+                    ee_pred[0], ee_pred[1],
+                    s=10, c="lime", marker="o", zorder=1
+                )
+
+        # ---- bluebox の中心軌跡 + box 枠 ----
+        if obj_traj is not None and len(obj_traj) > 0:
+            ax.plot(obj_traj[:, 0], obj_traj[:, 1],
+                    lw=1.2, c="tab:blue",
+                    label="bluebox_center", zorder=4)
+            ax.scatter(obj_traj[0, 0], obj_traj[0, 1],
+                       s=14, c="tab:blue",
+                       marker="x", label="bluebox_start", zorder=3)
+
+            hx, hy = 0.05, 0.05  # bluebox の半径（XML の size と対応）
+            cx, cy = obj_traj[-1, 0].item(), obj_traj[-1, 1].item()
+            rect_bb = Rectangle(
+                (cx - hx, cy - hy),
+                2 * hx, 2 * hy,
+                fill=False,
+                linewidth=1.2,
+                edgecolor="tab:blue",
+                alpha=0.8,
+                zorder=4.5,
+            )
+            ax.add_patch(rect_bb)
+
+        # ---- ワークスペース枠 ----
+        if world_xlim is not None and world_ylim is not None:
+            xmin, xmax = world_xlim
+            ymin, ymax = world_ylim
+
+            rect_ws = Rectangle(
+                (xmin, ymin),
+                xmax - xmin, ymax - ymin,
+                fill=False, linewidth=1.0, linestyle="--",
+                edgecolor="black", alpha=0.6, zorder=0
+            )
+            ax.add_patch(rect_ws)
+
+        ax.set_aspect("equal")
+        ax.grid(True, ls=":", lw=0.5, alpha=0.5)
+        ax.legend(fontsize=8, loc="best")
+
+        Logger.run().log_figure(figB, f"mpc/prediction_seq_{idx}")
+        plt.close(figB)
+
+        # メモリ掃除
+        try:
+            del figB, ax, traj, obj_traj, single_step_preds
+        except Exception:
+            pass
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+
+
+
+
+
+def log_planning_obs_plots_split(
+    result, report, idxs=None,
+    plot_every=1, xy_action=True,
+    plot_failure_only=False,
+    world_xlim=None, world_ylim=None,
+    use_pixel_mapper=False, pixel_mapper=None,
+    env=None,  # 使わないけどシグネチャ合わせ
+):
+    """
+    図A: 観測列 (result.observations) のみをグリッド表示して保存
+    """
+    if idxs is None:
+        idxs = default_plot_idxs
+
+    T = len(result.locations)
+    B = result.observations[0].shape[0]
+    H = result.observations[0][0].shape[-2]
+    W = result.observations[0][0].shape[-1]
+
+    num_panels = math.ceil(T / plot_every)
+    grid = max(4, math.ceil(math.sqrt(num_panels)))
+
+    for idx in idxs:
+        if plot_failure_only and getattr(report, "success", [False] * B)[idx]:
+            continue
+
+        figA = plt.figure(dpi=250)
+        p = 0
+        for t in range(T):
+            if t % plot_every:
+                continue
+            if t > report.terminations[idx]:
+                break
+
+            plt.subplot(grid, grid, p + 1)
+
+            obs = result.observations[t][idx]
+            if obs.shape[0] > 1:
+                img = obs.detach().cpu().numpy().transpose(1, 2, 0)
+                img = (img - img.min()) / (img.max() - img.min() + 1e-12)
+            else:
+                img = obs[0].detach().cpu().numpy()
+
+            plt.imshow(img)
+            plt.xticks([])
+            plt.yticks([])
+            p += 1
+
+        Logger.run().log_figure(figA, f"mpc/obs_seq_{idx}")
+        plt.close(figA)
+
+        # メモリ掃除
+        try:
+            del figA, img, obs
+        except Exception:
+            pass
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+
+
+
+def log_planning_videos_split(
+    result, report, idxs=None,
+    plot_every=1, xy_action=True,
+    plot_failure_only=False,
+    world_xlim=None, world_ylim=None,
+    use_pixel_mapper=False, pixel_mapper=None,
+    env=None,  # 未使用
+):
+    """
+    タスク実行時の観測列(result.observations)を動画(mp4)にして保存・ログする。
+    """
+
+    if idxs is None:
+        idxs = default_plot_idxs
+
+    T = len(result.observations)
+    B = result.observations[0].shape[0]
+
+    # 保存先ディレクトリを決める（Logger に output_dir があればそこを利用）
+    run = Logger.run()
+    if getattr(run, "output_path", None) is not None:
+        base_dir = Path(run.output_path) / "media" / "mpc" / "mpc_videos"
+    else:
+        base_dir = Path("mpc_videos")
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    # terminations がないケースも一応ケア
+    if hasattr(report, "terminations"):
+        terminations = report.terminations
+    else:
+        terminations = [T - 1] * B
+
+    for idx in idxs:
+        # 失敗ケースのみ描画したいとき
+        if plot_failure_only and getattr(report, "success", [False] * B)[idx]:
+            continue
+
+        t_term = terminations[idx]
+        frames = []
+
+        for t in range(T):
+            if t % plot_every:
+                continue
+            if t > t_term:
+                break
+
+            obs = result.observations[t][idx]  # (C,H,W) or (1,H,W)
+            # Tensor → numpy
+            obs_np = obs.detach().cpu().numpy()
+
+            # チャンネル次元を最後に持ってくる
+            # C>1 (RGB 等) の場合: (C,H,W) → (H,W,C)
+            # C==1 の場合: (1,H,W) → (H,W)
+            if obs_np.ndim == 3 and obs_np.shape[0] > 1:
+                img = obs_np.transpose(1, 2, 0)
+            elif obs_np.ndim == 3 and obs_np.shape[0] == 1:
+                img = obs_np[0]  # (H,W)
+            else:
+                # 既に (H,W,C) or (H,W) な場合も一応許容
+                img = obs_np
+
+            # 0〜1 に正規化 → 0〜255 uint8
+            img = img.astype(np.float32)
+            img_min = img.min()
+            img_max = img.max()
+            img = img - img_min
+            if img_max - img_min > 1e-12:
+                img = img / (img_max - img_min)
+            img = (img * 255.0).clip(0, 255).astype(np.uint8)
+
+            # グレースケールなら 3ch に拡張（動画可視化しやすくするため）
+            if img.ndim == 2:
+                img = np.stack([img] * 3, axis=-1)  # (H,W) → (H,W,3)
+
+            frames.append(img)
+
+        if len(frames) == 0:
+            continue
+
+        # ファイルパス決定
+        video_path = base_dir / f"obs_seq_{idx}.mp4"
+
+        # fps は好みで調整（ここでは 5fps）
+        imageio.mimsave(video_path, frames, fps=5)
+
+        # Logger にも動画としてログ（対応している場合のみ）
+        if hasattr(run, "log_video"):
+            try:
+                run.log_video(str(video_path), name=f"mpc/obs_video_{idx}")
+            except TypeError:
+                # log_video のシグネチャが違う場合はここを環境に合わせて修正
+                run.log_video(str(video_path))
+
+        # 後始末
+        del frames
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+
+
+
+# def log_planning_plots_split(
+#     result, report, idxs=None,
+#     plot_every=1, xy_action=True,
+#     plot_failure_only=False,
+#     world_xlim=None, world_ylim=None,
+#     use_pixel_mapper=False, pixel_mapper=None,
+#     env = None, #運動学計算用
+# ):
+
+#     if idxs is None:
+#         idxs = default_plot_idxs
+
+#     T = len(result.locations)
+#     B = result.observations[0].shape[0]
+#     H = result.observations[0][0].shape[-2]
+#     W = result.observations[0][0].shape[-1]
+
+
+#     #図A:観測のみ
+#     num_panels = math.ceil(T / plot_every)
+#     grid = max(4, math.ceil(math.sqrt(num_panels)))
+
+#     for idx in idxs:
+#         if plot_failure_only and report.success[idx]:
+#             continue
+
+#         figA = plt.figure(dpi=250)
+#         p = 0
+#         for t in range(T):
+#             if t % plot_every: continue
+#             if t > report.terminations[idx]: break
+#             plt.subplot(grid, grid, p+1)
+
+#             obs = result.observations[t][idx]
+#             if obs.shape[0] > 1:  
+#                 img = obs.detach().cpu().numpy().transpose(1,2,0)
+#                 # img = 0.2989*img[...,0] + 0.5870*img[...,1] + 0.1140*img[...,2]
+#                 img = (img - img.min())/(img.max()-img.min() + 1e-12)
+#             else:
+#                 img = obs[0].detach().cpu().numpy()
+
+#             plt.imshow(img)
+#             plt.xticks([]); plt.yticks([])
+#             p += 1
+
+#         Logger.run().log_figure(figA, f"mpc/obs_seq_{idx}")
+#         plt.close(figA)
+
+#         #図B: 軌跡のみ
+#         starts = result.locations[0][idx].detach().cpu()        # (2,)
+#         targets = result.targets[idx].detach().cpu()            # (2,)
+#         traj = torch.stack([result.locations[t][idx] for t in range(T)], dim=0).detach().cpu()  # (T,2)
+
+#         # 予測列：各tで H 分の予測
+#         preds = []
+#         T_loc  = len(result.locations)         # 初期+各ステップ → T+1
+#         T_pred = len(result.pred_locations)    # 各ステップ → T
+#         t_term = getattr(report, "terminations", [T_loc-1])[idx]
+#         t_max = min(T_pred, T_loc - 1, t_term + 1)
+        
+#         env.reset()
+#         for t in range(t_max):
+#             if t > report.terminations[idx]: break
+#             # preds.append(result.pred_locations[t][:, idx, :].detach().cpu())  # (H,2)
+            
+#             # print("[DBG: log_planning_plots_split/pldm/planning/plotting.py] action_history.len: ",  len(result.action_history)) #200 = T
+#             # print("[DBG: log_planning_plots_split/pldm/planning/plotting.py] action_history[0].shape: ",  result.action_history[0].shape) #(10, 100, 7)=(num_envs, H, dim)
+            
+            
+#             #運動学によるMPPI予測軌跡
+#             act = result.action_history[t][idx].detach().cpu().numpy() 
+#             # print("act.shape: ", act.shape)
+#             pred_locs_kinematics = []
+#             for a in act:
+#                 env.set_joint(a)
+#                 pred_locs_kinematics.append(env.get_ee_position()[:2])
+#             pred_locs_kinematics = torch.from_numpy(np.asarray(pred_locs_kinematics, dtype=np.float32))
+#             preds.append(pred_locs_kinematics)
+
+#         obj_traj = None
+#         if getattr(result, "object_history", None):  
+#             T_obj = len(result.object_history)
+#             t_term = getattr(report, "terminations", [T - 1])[idx]  # report が無ければ T-1
+#             tt = min(T, T_obj, t_term + 1) 
+
+#             if tt > 0:
+#                 obj_traj = torch.stack(
+#                     [result.object_history[t][idx] for t in range(tt)],
+#                     dim=0
+#                 ).cpu()
+#                 # xyz→xy
+#                 if obj_traj.shape[-1] == 3:
+#                     obj_traj = obj_traj[:, :2]
+
+
+            
+#         #pixel変換(使う予定なし)
+#         if use_pixel_mapper and pixel_mapper is not None:
+#             starts = pixel_mapper(starts).squeeze().float()
+#             targets = pixel_mapper(targets).squeeze().float()
+#             traj = pixel_mapper(traj).squeeze().float()
+#             preds = [pixel_mapper(p).squeeze().float() for p in preds]
+#             if obj_traj is not None:                        
+#                 obj_traj = pixel_mapper(obj_traj).squeeze().float()
+
+#         figB = plt.figure(dpi=250)
+#         ax = plt.gca()
+
+
+#         # ax.scatter(starts[0],  starts[1],  s=12, c="black",  label="start")
+#         ax.scatter(targets[0], targets[1], s=12, c="tab:orange", label="goal", zorder=5)
+#         ax.scatter(traj[:,0],  traj[:,1],  s=8,  c="black",  alpha=0.9, label="end-effector", zorder=6)
+#         ax.text(traj[0, 0], traj[0, 1], "S", fontsize=10, color="black", ha="center", va="center", fontweight="bold", zorder=7)
+#         ax.text(traj[-1, 0], traj[-1, 1], "G", fontsize=10, color="black", ha="center", va="center", fontweight="bold", zorder=7)
+
+
+#         if preds:
+#             for t, P in enumerate(preds):
+#                 if t % plot_every:  continue
+#                 ax.plot(P[:,0], P[:,1], lw=0.6, alpha=0.6, c="red", zorder=2)
+#                 ax.scatter(P[0, 0], P[0, 1], s=10, c="lime", marker="o", zorder=1)
+
+
+#         if obj_traj is not None and len(obj_traj) > 0:
+#             ax.plot(obj_traj[:,0], obj_traj[:,1], lw=1.2, c="tab:blue", label="bluebox", zorder=4)
+#             ax.scatter(obj_traj[0,0], obj_traj[0,1], s=14, c="tab:blue", marker="x", label="bluebox_start", zorder=3)
+            
+
+
+#         # 環境grid可視化
+#         if world_xlim is not None and world_ylim is not None:
+#             xmin, xmax = world_xlim
+#             ymin, ymax = world_ylim
+
+
+#             if use_pixel_mapper and pixel_mapper is not None:
+#                 box_xy = torch.tensor([[xmin, ymin],
+#                                     [xmax, ymin],
+#                                     [xmax, ymax],
+#                                     [xmin, ymax],
+#                                     [xmin, ymin]], dtype=torch.float32)
+#                 box_xy = pixel_mapper(box_xy).squeeze().float().cpu().numpy()
+#                 ax.plot(box_xy[:,0], box_xy[:,1],
+#                         linestyle="--", linewidth=1.0, alpha=0.6,
+#                         color="black",)
+#             else:
+#                 from matplotlib.patches import Rectangle
+#                 rect = Rectangle((xmin, ymin), xmax - xmin, ymax - ymin,
+#                                 fill=False, linewidth=1.0, linestyle="--",
+#                                 edgecolor="black", alpha=0.6, zorder=0)
+#                 ax.add_patch(rect)
+
+#         ax.set_aspect("equal")
+#         ax.grid(True, ls=":", lw=0.5, alpha=0.5)
+#         ax.legend(fontsize=8, loc="best")
+
+#         Logger.run().log_figure(figB, f"mpc/prediction_seq_{idx}")
+#         plt.close(figB)
+
+
+#         # figを必ず閉じる（ログ直後にやるのがベスト）
+#         try: plt.close(figA)
+#         except: pass
+#         try: plt.close(figB)
+#         except: pass
+
+#         # 大きい参照を明示解放
+#         for _n in ('ax', 'traj', 'obj_traj'):
+#             if _n in locals():
+#                 try: del locals()[_n]
+#                 except: pass
+
+#         # preds がリストなら中身を解放してからdel
+#         if 'preds' in locals() and isinstance(preds, list):
+#             try: preds.clear()
+#             except: pass
+#             try: del preds
+#             except: pass
+
+#         # 使い捨て変数も削除（任意）
+#         for _n in ('img', 'obs', 'P'):
+#             if _n in locals():
+#                 try: del locals()[_n]
+#                 except: pass
+
+#         gc.collect()
+#         if torch.cuda.is_available():
+#             torch.cuda.synchronize()
+#             torch.cuda.empty_cache()

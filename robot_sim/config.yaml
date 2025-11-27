@@ -1,23 +1,23 @@
-is_val: true
-pairs: 5 #5
-min_dist: 0.2
-episodes_per_pair: 1 #2000
-steps_per_episode: 10 ##100
+is_val: false
+pairs: 20 #5
+min_dist: 0.15
+episodes_per_pair: 5 #2000
+steps_per_episode: 500 ##100
 image_size: [64, 64]
 model_path: mujoco_menagerie/franka_emika_panda/scene.xml
-camera_name: top_view #top_view, default
+camera_name: default #top_view, default
 save_dir: pldm_envs/franka/presaved_datasets
 specify_init_position: true #初期姿勢を指定するか
 specify_goal_position: true #ゴール状態のFranka の位置を中点に指定するか
 goal_offset: [0.2, -0.2, 0.2]
 
-eval_only: false
-data_dir: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_10_timestep_1000
+eval_only: true
+data_dir: pldm_envs/franka/presaved_datasets/pairs_5_ep_200_timestep_1000
 
 #データ確認するか
 confirm_ik_result: false
 confirm_dist: false
-make_video: true
+make_video: false
 confirm_ee_trajectory: true
 confirm_data: false
 count_contact: false
@@ -25,8 +25,8 @@ count_contact: false
 visualize_target_trajectory: false #target_xyz軌跡の可視化
 
 
-start_goal_x_range: [0.365, 0.665]
-start_goal_y_range: [-0.15, 0.15]
+start_goal_x_range: [0.415, 0.615]
+start_goal_y_range: [-0.10, 0.10]
 start_goal_z_range: [0.05, 0.05]
 
 x_range: [0.315, 0.715] 

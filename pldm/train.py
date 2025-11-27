@@ -94,7 +94,7 @@ class TrainConfig(ConfigBase):
 
     eval_cfg: EvalConfig = field(default_factory=EvalConfig)
     
-    use_closed_loss_func: bool = False
+    use_opn_loss_func: bool = False
     confirm_normalize: bool = True
 
     def __post_init__(self):
@@ -164,7 +164,7 @@ class TrainConfig(ConfigBase):
 class Trainer:
     def __init__(self, config: TrainConfig):
         self.config = config
-        print('use_closed_loss:',self.config.use_closed_loss_func)
+        print('use_opn_loss:',self.config.use_opn_loss_func)
 
         print(f"Logger output path: {self.config.output_path}")
         Logger.run().initialize(
@@ -246,17 +246,18 @@ class Trainer:
 
         self.model = self.model.to(self.device)
 
-        # create open objectives
-        self.open_objectives_l1 = self.config.objectives_l1.build_open_objectives_list(
+        # create clsd objectives
+        self.clsd_objectives_l1 = self.config.objectives_l1.build_clsd_objectives_list(
             name_prefix="l1", repr_dim=self.model.level1.spatial_repr_dim
         )
-        # create closed objectives
-        self.closed_objectives_l1 = None
-        if self.config.use_closed_loss_func:
-            self.closed_objectives_l1 = self.config.objectives_l1.build_closed_objectives_list(
+        # create opn objectives
+        self.opn_objectives_l1 = None
+        if self.config.use_opn_loss_func:
+            self.opn_objectives_l1 = self.config.objectives_l1.build_opn_objectives_list(
                 name_prefix="l1", repr_dim=self.model.level1.spatial_repr_dim
             )
-        # other stuff...
+        print("[DBG][pldm/train.py] self.clsd_objectives_l1: ", self.clsd_objectives_l1)
+
 
         load_result = self.maybe_load_model()
 
@@ -352,26 +353,53 @@ class Trainer:
             print(f"loaded model from {self.config.load_checkpoint_path}")
 
             # IDM のパラメータを読み込む
+            # --- backward compatibility: map old names to new names ---
             if "idm_open_state_dicts" in checkpoint:
-                for obj in self.open_objectives_l1:
-                    if isinstance(obj, IDMObjective):
-                        state = checkpoint["idm_open_state_dicts"].get(obj.name_prefix, None)
-                        if state is not None:
-                            obj.action_predictor.load_state_dict(state)
-                            print(f"✅ open-IDM loaded for {obj.name_prefix}")
-                        else:
-                            print(f"⚠️ No open-IDM weights found for {obj.name_prefix}")
+                checkpoint["idm_clsd_state_dicts"] = checkpoint["idm_open_state_dicts"]
 
             if "idm_closed_state_dicts" in checkpoint:
-                if self.closed_objectives_l1 is not None:
-                    for obj in self.closed_objectives_l1:
+                checkpoint["idm_opn_state_dicts"] = checkpoint["idm_closed_state_dicts"]
+
+            if "idm_clsd_state_dicts" in checkpoint:
+                for obj in self.clsd_objectives_l1:
+                    if isinstance(obj, IDMObjective):
+                        state = checkpoint["idm_clsd_state_dicts"].get(obj.name_prefix, None)
+                        if state is not None:
+                            obj.action_predictor.load_state_dict(state)
+                            print(f"✅ clsd-IDM loaded for {obj.name_prefix}")
+                        else:
+                            print(f"⚠️ No clsd-IDM weights found for {obj.name_prefix}")
+
+            # elif "idm_open_state_dicts" in checkpoint:
+            #     for obj in self.clsd_objectives_l1:
+            #         if isinstance(obj, IDMObjective):
+            #             state = checkpoint["idm_open_state_dicts"].get(obj.name_prefix, None)
+            #             if state is not None:
+            #                 obj.action_predictor.load_state_dict(state)
+            #                 print(f"✅ clsd-IDM loaded for {obj.name_prefix}")
+            #             else:
+            #                 print(f"⚠️ No clsd-IDM weights found for {obj.name_prefix}")
+
+            if "idm_opn_state_dicts" in checkpoint:
+                if self.opn_objectives_l1 is not None:
+                    for obj in self.opn_objectives_l1:
                         if isinstance(obj, IDMObjective):
-                            state = checkpoint["idm_closed_state_dicts"].get(obj.name_prefix, None)
+                            state = checkpoint["idm_opn_state_dicts"].get(obj.name_prefix, None)
                             if state is not None:
                                 obj.action_predictor.load_state_dict(state)
-                                print(f"✅ closed-IDM loaded for {obj.name_prefix}")
+                                print(f"✅ opn-IDM loaded for {obj.name_prefix}")
                             else:
-                                print(f"⚠️ No closed-IDM weights found for {obj.name_prefix}")
+                                print(f"⚠️ No opn-IDM weights found for {obj.name_prefix}")
+            # elif "idm_closed_state_dicts" in checkpoint:
+            #     if self.opn_objectives_l1 is not None:
+            #         for obj in self.opn_objectives_l1:
+            #             if isinstance(obj, IDMObjective):
+            #                 state = checkpoint["idm_closed_state_dicts"].get(obj.name_prefix, None)
+            #                 if state is not None:
+            #                     obj.action_predictor.load_state_dict(state)
+            #                     print(f"✅ opn-IDM loaded for {obj.name_prefix}")
+            #                 else:
+            #                     print(f"⚠️ No opn-IDM weights found for {obj.name_prefix}")
             if "normalizer" in checkpoint:
                 self.ds.normalizer.load_state_dict(checkpoint["normalizer"])
                 print("✅ Normalizer loaded!")
@@ -464,38 +492,9 @@ class Trainer:
                 
                 
                 with torch.no_grad():
-                    # closed_output = self.model.level1.forward_closed(
-                    #     input_states=s,  # [T+1, B, C, H, W]
-                    #     actions=a,       # [T, B, A]
-                    #     propio_pos=optional_fields.get("propio_pos", None),
-                    #     propio_vel=optional_fields.get("propio_vel", None),
-                    # )
-
-                    # if self.closed_objectives_l1 is not None:
-                    #     closed_loss_infos = [
-                    #         objective(batch, [closed_output])
-                    #         for objective in self.closed_objectives_l1
-                    #     ]
-                    # else:
-                    #     closed_loss_infos = [
-                    #         objective(batch, [closed_output])
-                    #         for objective in self.open_objectives_l1
-                    #     ]
-                    # closed_total_loss = sum(info.total_loss for info in closed_loss_infos)
-
-                    # Logger.run().log(
-                    #     {
-                    #     "closed_loop_loss": closed_total_loss.item(),
-                    #     "custom_step": step,
-                    #     "epoch": epoch,
-                    
-                    #     }, 
-                    #     commit=False, 
-                    #     )
-                    # Logger.run().commit()
                     
                     
-                    #実際のopen_forward (のはず)
+                    #実際のopen_forward
                     open_output = self.model.forward_open(
                         input_states=s,  # [T, B, C, H, W] = [15, 64, 3, 64, 64]
                         actions=a,       # [T - 1, B, D] = [14, 64, 2]
@@ -506,7 +505,7 @@ class Trainer:
                     
                     open_loss_infos = [
                         objective(batch, [open_output.level1])
-                        for objective in self.open_objectives_l1
+                        for objective in self.clsd_objectives_l1
                     ]
                     open_total_loss = sum(info.total_loss for info in open_loss_infos)
                     
@@ -523,15 +522,16 @@ class Trainer:
                 
                 forward_result = self.model.forward_posterior(s.to(self.device), a.to(self.device), **optional_fields)
                 
-                # obs_comp_shape = forward_result.level1.pred_output.obs_component.shape
-                # print('OBS_COMP.SHAPE:', obs_comp_shape)
+                print('[DBG][pldm/train.py] pred_output.obs_component.shape:', forward_result.level1.pred_output.obs_component.shape) #[70, 16, 16, 26, 26]=[T,B,C,H,W]
+                print('[DBG][pldm/train.py] pred_output.predictions: ', forward_result.level1.pred_output.predictions.shape) #[70, 16, 30, 26, 26]=[T,B,C,H,W]
+                print('[DBG][pldm/train.py] pred_output.propio_component: ', forward_result.level1.pred_output.propio_component.shape) #[70, 16, 14, 26, 26]=[T,B,C,H,W]
                 
                 
                 loss_infos = []
                 if self.config.hjepa.train_l1:
                     loss_infos += [
                         objective(batch, [forward_result.level1])
-                        for objective in self.open_objectives_l1
+                        for objective in self.clsd_objectives_l1
                     ]
                 for i, loss in enumerate(loss_infos):
                     if loss is None:
@@ -545,16 +545,7 @@ class Trainer:
                 self.optimizer.step()
                 self.model.update_ema()  # if ema is enabled, update ema encoder
 
-                #IDM のactionpredictor のパラメータが更新されるか
-                ###############
-                ap_has_grad = False
-                for n, p in self.model.named_parameters():
-                    if "action_predictor" in n:
-                        if p.grad is not None and p.grad.abs().sum().item() > 0:
-                            ap_has_grad = True
-                            break
-                # print("[IDM DEBUG]IDM action_predictor gets grads? ->", ap_has_grad)
-                ###############
+
                 
                 self.validate_loss_val_ds() 
 
@@ -633,7 +624,7 @@ class Trainer:
             if self.config.hjepa.train_l1:
                 loss_infos += [
                     objective(batch, [forward_result.level1])
-                    for objective in self.open_objectives_l1
+                    for objective in self.clsd_objectives_l1
                 ]
 
             for loss_info in loss_infos:
@@ -707,17 +698,17 @@ class Trainer:
         if self.config.output_path is not None:
             os.makedirs(self.config.output_path, exist_ok=True)
             
-            # IDM の action_predictor を含むすべての open objectives を対象に保存
-            idm_open_state_dicts = {}
-            for obj in self.open_objectives_l1:
+            # IDM の action_predictor を含むすべての clsd objectives を対象に保存
+            idm_clsd_state_dicts = {}
+            for obj in self.clsd_objectives_l1:
                 if isinstance(obj, IDMObjective):
-                    idm_open_state_dicts[obj.name_prefix] = obj.action_predictor.state_dict()
+                    idm_clsd_state_dicts[obj.name_prefix] = obj.action_predictor.state_dict()
             
-            idm_closed_state_dicts = {}
-            if self.closed_objectives_l1 is not None:
-                for obj in self.closed_objectives_l1:
+            idm_opn_state_dicts = {}
+            if self.opn_objectives_l1 is not None:
+                for obj in self.opn_objectives_l1:
                     if isinstance(obj, IDMObjective):
-                        idm_closed_state_dicts[obj.name_prefix] = obj.action_predictor.state_dict()
+                        idm_opn_state_dicts[obj.name_prefix] = obj.action_predictor.state_dict()
                     
             torch.save(
                 {
@@ -726,8 +717,8 @@ class Trainer:
                     "epoch": self.epoch,
                     "step": self.step,
                     "sample_step": self.sample_step,
-                    "idm_open_state_dicts": idm_open_state_dicts,
-                    "idm_closed_state_dicts": idm_closed_state_dicts,
+                    "idm_clsd_state_dicts": idm_clsd_state_dicts,
+                    "idm_opn_state_dicts": idm_opn_state_dicts,
                     "normalizer": self.ds.normalizer.state_dict(), 
                 },
                 os.path.join(
@@ -742,8 +733,8 @@ class Trainer:
         if self.val_ds is None:
             return
         self.model.eval()
-        open_losses = []
-        closed_losses = []
+        clsd_losses = []
+        opn_losses = []
 
         for step, batch in enumerate(self.val_ds):
             s = batch.states.to(self.device).transpose(0, 1)
@@ -751,38 +742,39 @@ class Trainer:
             optional_fields = get_optional_fields(batch, device=s.device)
 
             # official - loop
-            open_result = self.model.forward_posterior(s, a, **optional_fields)
-            open_loss_infos = [
-                obj(batch, [open_result.level1]) for obj in self.open_objectives_l1
+            clsd_result = self.model.forward_posterior(s, a, **optional_fields)
+            clsd_loss_infos = [
+                obj(batch, [clsd_result.level1]) for obj in self.clsd_objectives_l1
             ]
-            open_total_loss = sum(info.total_loss.item() for info in open_loss_infos)
-            open_losses.append(open_total_loss)
+            clsd_total_loss = sum(info.total_loss.item() for info in clsd_loss_infos)
+            clsd_losses.append(clsd_total_loss)
 
-            # Closed-loop
-            # closed_result = self.model.level1.forward_closed(
+            # Open-loop
+            # opn_result = self.model.level1.forward_open(
             #     input_states=s,
             #     actions=a,
             #     propio_pos=optional_fields.get("propio_pos", None),
             #     propio_vel=optional_fields.get("propio_vel", None),
             # )
-            # if self.closed_objectives_l1 is not None:
-            #     closed_loss_infos = [
-            #         obj(batch, [closed_result]) for obj in self.closed_objectives_l1
+            # if self.opn_objectives_l1 is not None:
+            #     opn_loss_infos = [
+            #         obj(batch, [opn_result]) for obj in self.opn_objectives_l1
             #     ]
             # else:
-            #     closed_loss_infos = [
-            #         obj(batch, [closed_result]) for obj in self.open_objectives_l1
+            #     opn_loss_infos = [
+            #         obj(batch, [opn_result]) for obj in self.open_objectives_l1
             #     ]
-            # closed_total_loss = sum(info.total_loss.item() for info in closed_loss_infos)
-            # closed_losses.append(closed_total_loss)
+            # opn_total_loss = sum(info.total_loss.item() for info in opn_loss_infos)
+            # opn_losses.append(opn_total_loss)
+
 
             if self.config.quick_debug or step >= 2:
                 break
 
         Logger.run().log(
             {
-            "val_loop_loss": np.mean(open_losses),
-            # "val_closed_loop_loss": np.mean(closed_losses),
+            "val_loop_loss": np.mean(clsd_losses),
+            "val_opn_loop_loss": np.mean(opn_losses),
             "val_epoch": self.epoch,
             "val_sample_step": self.sample_step,
             "val_step": self.step, 
