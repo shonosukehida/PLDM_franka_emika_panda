@@ -87,12 +87,12 @@ objectives_l1:
     arch: 'conv'
     use_pred: false
     arch_subclass: a
-  open_objectives: #実際はclosed
+  clsd_objectives: #実際はclosed
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
-  closed_objectives:
+  opn_objectives:
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   - ObjectiveType.IDM
