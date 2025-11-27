@@ -79,7 +79,7 @@ hjepa:
 load_checkpoint_path: null #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
 load_l1_only: false
 
-use_closed_loss_func: &use_opn_loss_func false #現在はopen_objectives を共通の損失関数として使用
+use_opn_loss_func: &use_opn_loss_func false #現在はopen_objectives を共通の損失関数として使用
 objectives_l1:
   idm:
     action_dim: 7
@@ -142,7 +142,7 @@ eval_cfg:
     probe_propio: true
     probe_encoder: true
     probe_preds: true
-    use_closed_loss_func: *use_closed_loss_func
+    use_opn_loss_func: *use_opn_loss_func
     vis_dynamics_closed_featuremap: true
     vis_dynamics_open_featuremap: true
     vis_encoder_featuremap: true
