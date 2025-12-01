@@ -143,9 +143,9 @@ eval_cfg:
     probe_encoder: true
     probe_preds: true
     use_opn_loss_func: *use_opn_loss_func
-    vis_dynamics_closed_featuremap: true
-    vis_dynamics_open_featuremap: true
-    vis_encoder_featuremap: true
+    vis_dynamics_closed_featuremap: false
+    vis_dynamics_open_featuremap: false
+    vis_encoder_featuremap: false
     epochs: 5 #5
     epochs_enc: 5 #5
     epochs_latent: 5 #5
@@ -182,7 +182,7 @@ eval_cfg:
     image_obs: true
     stack_states: 1
     data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/'
-    fps: 2.5 #FPS指定
+    fps: 50 #FPS指定
     level1:
       planner_type: PlannerType.MPPI
       min_step: 0

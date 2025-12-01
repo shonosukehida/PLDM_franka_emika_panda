@@ -1,0 +1,62 @@
+paths:
+  outdir: ./robot_task_sim/traj_eval_out
+
+camera: "top_view"
+
+eval_kind:
+  run_follow:
+    execute: true
+    make_video: true
+  initial_settling:
+    execute: false
+    timestep: 1
+    mode: "hold"  #passive/hold/raw    passive:前フレームの値のまま固定, hold: ctrl[:]=qpos[:], raw: senv.physics.step() を直接呼ぶ
+    save_frames_every: 10 #0:保存なし
+    gravity: null #null:重力加速度, 基本null
+    hold_type: "strict" #mode=hold のとき, 毎ステップ初期姿勢をアクチュエータに入れる: strict, そうでない: null
+    use_traj: true
+    position: null #[0.515, 0.0, 0.10]
+
+
+
+eval:
+  image_size: [128, 128]
+  success_tol: 0.005
+  step_substeps: 100000000000000 #dont use
+  max_steps_per_waypoint: 300
+  hold_steps_at_target: 10
+  save_every: 25
+  seed: 0
+  num_points: 160 #640
+  settle_steps: 0 #set_xyz 内で, ik解をqpos へ代入した後に進めるタイムステップ
+
+
+workspace:
+  x_min: 0.315
+  x_max: 0.715
+  y_min: -0.2
+  y_max: 0.2
+  z_fixed: 0.10
+  margin: 0.01
+
+
+robot:
+  franka_freq: 50
+  kp: [null, null, null, null, null, null, null] #dont use
+  kd: [null, null, null, null, null, null, null] #dont use
+  dof_damping: null
+  dof_armature: null
+  ctrl_low: null
+  ctrl_high: null
+  solver_iters: null
+  ls_iters: null
+
+control:
+  rot_weight: 0.0
+  target_rotmat: null   # [[1,0,0],[0,-1,0],[0,0,-1]]
+  max_dq: 0.03 #0.03
+  n_interp: 50
+
+render:
+  mujoco_gl: egl
+  display: false

@@ -795,6 +795,12 @@ class ProbingEvaluator:
                     name_prefix = "",
                     max_points = 5000,
                 )
+            self.plot_encoder_latent_tsne(
+                    btc,
+                    model,
+                    name_prefix = "",
+                    max_points = 5000,
+            )
 
             # self.plot_prober_predictions_by_encprober(
             #     btc,
@@ -2258,6 +2264,117 @@ class ProbingEvaluator:
         gc.collect()
         torch.cuda.empty_cache()
 
+    @torch.no_grad()
+    def plot_encoder_latent_tsne(
+        self,
+        batch,
+        jepa: JEPA,
+        name_prefix: str = "",
+        max_points: int = 5000,
+    ):
+        """
+        学習後の Encoder 潜在を t-SNE で 2 次元に可視化する。
+
+        - 入力 shape / 流れは log_encoder_latent_variance() と同じ
+        - 時刻 T × バッチ B を全部まとめて N = T*B サンプルとして扱い、
+        flatten した潜在ベクトルに対して t-SNE を適用する。
+        """
+
+        from pathlib import Path
+        import matplotlib.pyplot as plt
+        from sklearn.manifold import TSNE
+
+        # ===== 1. Encoder 出力を取得 =====
+        states = batch.states.to(self.device).transpose(0, 1)   # [T, B, ...]
+        actions = batch.actions.to(self.device).transpose(0, 1) # [T, B, ...]
+        optional_fields = get_optional_fields(batch, device=states.device)
+
+        print("[DBG plot_encoder_latent_tsne] states:", states.shape)
+        print("[DBG plot_encoder_latent_tsne] actions:", actions.shape)
+
+        enc_output = jepa.forward_posterior(
+            states, actions, encode_only=True, **optional_fields
+        )
+        enc_output = enc_output.backbone_output
+
+        encoder_encs = enc_output.obs_component
+        # encoder_encs: (T, B, C, H, W) or (T, B, D, ...)
+        print("[DBG plot_encoder_latent_tsne] encoder_encs:", encoder_encs.shape)
+
+        # ===== 2. [T,B,...] → (N, K) に flatten =====
+        zs = []
+        for x in encoder_encs:  # x: [B, C, H, W] or [B, D, ...]
+            x_flat = x.reshape(x.shape[0], -1)  # (B, K)
+            zs.append(x_flat)
+
+        z_all = torch.cat(zs, dim=0)  # (N, K), N = T * B
+        N, K = z_all.shape
+        if N > max_points:
+            idx = torch.randperm(N)[:max_points]
+            z_all = z_all[idx]
+            N = max_points
+
+        print(f"[TSNE] using N = {N}, K = {K}")
+
+        # ===== 3. t-SNE 入力用に前処理 =====
+        # mean 0 / var 1 に軽く正規化しておくと t-SNE が安定しやすい
+        z_all = z_all.detach().cpu()
+        z_mean = z_all.mean(dim=0, keepdim=True)
+        z_std = z_all.std(dim=0, keepdim=True)
+        z_std[z_std < 1e-6] = 1.0  # ほぼ一定の次元で発散しないように
+        z_norm = (z_all - z_mean) / z_std
+        z_np = z_norm.numpy()
+
+        # ===== 4. t-SNE の実行 =====
+        # パラメータは標準的な設定（必要ならあとで調整）
+        tsne = TSNE(
+            n_components=2,
+            perplexity=min(30.0, max(5.0, N / 50.0)),  # サンプル数に応じて少しだけ調整
+            n_iter=1000,
+            init="random",
+            learning_rate="auto",
+            metric="euclidean",
+        )
+        print("[TSNE] fitting...")
+        z_2d = tsne.fit_transform(z_np)  # (N, 2)
+        print("[TSNE] done.")
+
+        # ===== 5. プロット & 保存 =====
+        run = Logger.run()
+        if run.output_path is not None:
+            run_dir = Path(run.output_path)
+        else:
+            run_dir = Path(".")
+
+        out_dir = run_dir / "latent_tsne"  # latent_variance と同列
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        fig, ax = plt.subplots(1, 1, figsize=(5, 4), dpi=200)
+        ax.scatter(z_2d[:, 0], z_2d[:, 1], s=6, alpha=0.6)
+        ax.set_xlabel("t-SNE dim 1")
+        ax.set_ylabel("t-SNE dim 2")
+        ax.set_title(f"{name_prefix} encoder latent t-SNE")
+        fig.tight_layout()
+
+        out_path_fig = out_dir / f"{name_prefix}_encoder_latent_tsne.png"
+        plt.savefig(out_path_fig)
+        plt.close(fig)
+
+        print(f"[LATENT TSNE] saved t-SNE plot -> {out_path_fig.resolve()}")
+
+        # （スカラーはないので Logger への log は省略 or 必要なら追加）
+
+        # ===== 6. メモリ開放 =====
+        try:
+            del z_all, z_norm, z_np, z_2d
+        except:
+            pass
+        try:
+            del enc_output, encoder_encs, states, actions, optional_fields
+        except:
+            pass
+        gc.collect()
+        torch.cuda.empty_cache()
 
 
     # encoder 出力で学習させたprober を共通利用
