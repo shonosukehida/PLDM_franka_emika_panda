@@ -1,8 +1,8 @@
-is_val: false
-pairs: 1 #5
+is_val: true
+pairs: 5 #5
 min_dist: 0.15
-episodes_per_pair: 1 #2000
-steps_per_episode: 500 ##100
+episodes_per_pair: 5 #2000
+steps_per_episode: 300 ##100
 image_size: [64, 64]
 model_path: mujoco_menagerie/franka_emika_panda/scene.xml
 camera_name: top_view #top_view, default
@@ -41,10 +41,10 @@ z_range: [0.1, 0.1]
 sample_method_list: null #["direction", "towards_bluebox"] #null 単一のsampleメソッド
 sample_method_ratio: null #[1, 1]
 
-sample_method: 'towards_bluebox' #'direction' or 'uniform' or 'uniform_constrain' or 'towards_bluebox'
+sample_method: 'direction' #'direction' or 'uniform' or 'uniform_constrain' or 'towards_bluebox'
 margin_ratio: 0.80
 sample_direction:
-  dist_range: [0.0, 0.0025] #出力距離の範囲 #0.01(だと思う)
+  dist_range: [0.0025, 0.0025] #出力距離の範囲 #
   max_loop: 100
   freeze_z: true
   prob_dist: 'vonmises' # uniform, vonmises

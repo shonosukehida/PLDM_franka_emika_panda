@@ -42,7 +42,7 @@ z_range: [0.1, 0.1]
 sample_method: 'direction' #'direction' or 'uniform' or 'uniform_constrain'
 margin_ratio: 0.80
 sample_direction:
-  dist_range: [0.0, 0.0025] #出力距離の範囲 #0.01(だと思う)
+  dist_range: [0.0025, 0.0025] #出力距離の範囲 #0.01(だと思う)
   max_loop: 100
   freeze_z: true
   prob_dist: 'vonmises' # uniform, vonmises
