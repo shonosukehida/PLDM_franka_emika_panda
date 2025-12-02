@@ -2330,7 +2330,7 @@ class ProbingEvaluator:
         tsne = TSNE(
             n_components=2,
             perplexity=min(30.0, max(5.0, N / 50.0)),  # サンプル数に応じて少しだけ調整
-            n_iter=1000,
+            max_iter=1000,
             init="random",
             learning_rate="auto",
             metric="euclidean",
