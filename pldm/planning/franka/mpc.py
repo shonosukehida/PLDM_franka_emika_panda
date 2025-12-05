@@ -41,7 +41,8 @@ class FrankaMPCEvaluator(MPCEvaluator):
         envs_generator = FrankaEnvsGenerator(
             model_path=config.model_path,  
             n_envs=config.n_envs,
-            normalizer=normalizer
+            normalizer=normalizer,
+            max_dq=self.config.max_dq
         )
         self.envs = envs_generator()
         for e in self.envs:
@@ -130,19 +131,19 @@ class FrankaMPCEvaluator(MPCEvaluator):
             )
 
             #行動列の出力なし
-            # log_planning_traj_plots_split(
-            #     result=mpc_data,
-            #     report=report,
-            #     idxs=list(range(self.config.n_envs)) if not self.quick_debug else [0],
-            #     plot_every=self.config.plot_every,
-            #     plot_failure_only=self.config.plot_failure_only,
-            #     world_xlim=[0.315, 0.715],
-            #     world_ylim=[-0.2, 0.2],
-            #     use_pixel_mapper=False,
-            #     pixel_mapper=self.pixel_mapper,
-            #     env=self.envs[0],
-            #     plot_action = True
-            # )
+            log_planning_traj_plots_split(
+                result=mpc_data,
+                report=report,
+                idxs=list(range(self.config.n_envs)) if not self.quick_debug else [0],
+                plot_every=self.config.plot_every,
+                plot_failure_only=self.config.plot_failure_only,
+                world_xlim=[0.315, 0.715],
+                world_ylim=[-0.2, 0.2],
+                use_pixel_mapper=False,
+                pixel_mapper=self.pixel_mapper,
+                env=self.envs[0],
+                plot_action = False
+            )
 
             if self.config.visualize_planning_videos:
                 print("visualize_planning_videos!!")

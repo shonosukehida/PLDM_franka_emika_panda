@@ -131,6 +131,11 @@ def make_dataloader(ds, loader_config, normalizer=None, suffix="", train=True):
                 n_samples=1 if loader_config.quick_debug else 100,
                 # min_max_normalize=loader_config.min_max_normalize,
                 normalize_mode=loader_config.normalize_mode,
+                normalize_actions_mode=getattr(
+                    loader_config,
+                    "normalize_actions_mode",
+                    loader_config.normalize_mode,  # フィールド未追加でも落ちないよう fallback
+                ),
                 normalizer_hardset=loader_config.normalizer_hardset,
                 min_states_val=loader_config.min_states_val,
                 max_states_val=loader_config.max_states_val,
@@ -154,6 +159,7 @@ def make_dataloader(ds, loader_config, normalizer=None, suffix="", train=True):
     return loader
 
 
+
 def make_dataloader_for_prebatched_ds(
     ds,
     loader_config: DataConfig,
@@ -166,16 +172,30 @@ def make_dataloader_for_prebatched_ds(
             normalizer = Normalizer.build_normalizer(
                 ds,
                 n_samples=1 if loader_config.quick_debug else 100,
-                min_max_state=loader_config.min_max_normalize_state,
+                normalize_mode=loader_config.normalize_mode,
+                normalize_actions_mode=getattr(
+                    loader_config,
+                    "normalize_actions_mode",
+                    loader_config.normalize_mode,
+                ),
                 normalizer_hardset=loader_config.normalizer_hardset,
-                min_val=loader_config.min_val,
-                max_val=loader_config.max_val,
+                min_states_val=loader_config.min_states_val,
+                max_states_val=loader_config.max_states_val,
+                min_actions_val=loader_config.min_actions_val,
+                max_actions_val=loader_config.max_actions_val,
+                min_locations_val=loader_config.min_locations_val,
+                max_locations_val=loader_config.max_locations_val,
+                min_propio_pos_val=loader_config.min_propio_pos_val,
+                max_propio_pos_val=loader_config.max_propio_pos_val,
+                min_propio_vel_val=loader_config.min_propio_vel_val,
+                max_propio_vel_val=loader_config.max_propio_vel_val,
+                min_bluebox_locs_val=loader_config.min_bluebox_locs_val,
+                max_bluebox_locs_val=loader_config.max_bluebox_locs_val,
             )
     else:
         normalizer = Normalizer.build_id_normalizer()
 
     loader = NormalizedDataLoader(ds, normalizer)
-
     ds.normalizer = normalizer
 
     return loader

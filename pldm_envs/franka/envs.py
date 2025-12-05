@@ -18,7 +18,8 @@ class FrankaSimEnv:
         goal_noise=0.01,
         normalizer: Normalizer = None,
         success_thresh=0.05,    # しきい値 m
-        substeps=200,           
+        substeps=200,       
+        max_dq=0.01    
     ):
         self.model_path = model_path
         self.image_size = tuple(image_size)
@@ -55,7 +56,8 @@ class FrankaSimEnv:
         self.start_pos = None
         self.goal_pos = None
         
-        self.MAX_DQ = 1000_000_000.0
+        self.MAX_DQ = max_dq
+        print("[dbg][pldm_envs/franka/envs.py] self.MAX_DQ:", self.MAX_DQ)
         
         self.control_dt = float(self.physics.model.opt.timestep) * int(self.substeps) 
 
@@ -144,7 +146,7 @@ class FrankaSimEnv:
 
         return self.get_obs()
 
-    def step(self, action, max_dq = 0.01):
+    def step(self, action):
         action = np.asarray(action, dtype=np.float32).reshape(-1)
         if action.shape[0] != self.n_arm_act:
             raise ValueError(f"expected action dim {self.n_arm_act} but got {action.shape}")
@@ -153,8 +155,7 @@ class FrankaSimEnv:
 
         
         qpos = self.physics.data.qpos[:7].copy()
-        
-        self.MAX_DQ = max_dq #1step あたりの最大増分rad
+
         dq = np.clip(action - qpos, -self.MAX_DQ, self.MAX_DQ)
         target = qpos + dq #qpos + dq 
 

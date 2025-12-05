@@ -7,6 +7,7 @@ data:
   dataset_type: DatasetType.Franka
   normalize: true #true
   normalize_mode: "zscore"
+  normalize_actions_mode: "minmax"
   min_states_val: 0.0
   max_states_val: 1.0
   min_actions_val: 0.0
@@ -180,14 +181,17 @@ eval_cfg:
     log_pred_dist_every: 9999999
     plot_every: 16
     set_start_target_path: null #"../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
-    action_repeat: 4
+    action_repeat: 1
     action_repeat_mode: 'id'
     img_size: 64
     replan_every: 4
     image_obs: true
     stack_states: 1
     data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/'
-    fps: 2.5 #FPS指定
+    max_dq: 0.03
+    fps: 50 #FPS指定
+    max_inner_steps: 50 #MPPI出力目標行動姿勢に近づけるまでに回す最大step数
+    reach_eps: 1e-2 #MPPI出力目標姿勢と現在の姿勢の距離
     level1:
       planner_type: PlannerType.MPPI
       min_step: 0

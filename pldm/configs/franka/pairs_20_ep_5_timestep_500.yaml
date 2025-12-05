@@ -7,6 +7,7 @@ data:
   dataset_type: DatasetType.Franka
   normalize: true
   normalize_mode: "zscore"
+  normalize_actions_mode: "minmax"
   min_states_val: 0.0
   max_states_val: 1.0
   min_actions_val: 0.0
@@ -27,8 +28,8 @@ data:
     batch_size: 16 #128
     beta: 0.4
     crop_length: null
-    images_path: pldm_envs/franka/presaved_datasets/pairs_20_ep_5_timestep_500/images.npy
-    path: pldm_envs/franka/presaved_datasets/pairs_20_ep_5_timestep_500/data.p
+    images_path: pldm_envs/franka/presaved_datasets/pairs_20_ep_5_timestep_500_view_default/images.npy
+    path: pldm_envs/franka/presaved_datasets/pairs_20_ep_5_timestep_500_view_default/data.p
     location_only: false
     # normalize: true
     num_workers: 0 #10
@@ -45,7 +46,7 @@ eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
 eval_mpcs: 20
-eval_only: false
+eval_only: true
 hjepa:
   l1_n_steps: *n_steps
   train_l1: true
@@ -76,7 +77,7 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: null #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
+load_checkpoint_path: /home/shonosukehida/work/PLDM_franka_emika_panda/pldm/checkpoints/franka_20251127_164315/epoch=5_sample_step=258528.ckpt  #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
 load_l1_only: false
 
 use_opn_loss_func: &use_opn_loss_func false #現在はopen_objectives を共通の損失関数として使用
@@ -122,10 +123,10 @@ eval_cfg:
   probing:
     exe_probing: true
     l1_depth: *n_steps
-    train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/images.npy 
-    train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/data.p 
-    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/images.npy 
-    val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/data.p
+    train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300_sample_direction_view_default/images.npy
+    train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300_sample_direction_view_default/data.p
+    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300_sample_direction_view_default/images.npy
+    val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300_sample_direction_view_default/data.p
     probe_targets: 'locations,propio_vel,bluebox_locs' 
     locations:
       arch: 'conv'
@@ -144,7 +145,7 @@ eval_cfg:
     probe_preds: true
     use_opn_loss_func: *use_opn_loss_func
     vis_dynamics_closed_featuremap: true
-    vis_dynamics_open_featuremap: true
+    vis_dynamics_open_featuremap: false
     vis_encoder_featuremap: true
     epochs: 5 #5
     epochs_enc: 5 #5
@@ -155,7 +156,7 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: true
-    load_prober: false
+    load_prober: true
   disable_planning: false
   franka_planning:
     n_envs: 4 #85
@@ -175,14 +176,17 @@ eval_cfg:
     log_pred_dist_every: 9999999
     plot_every: 16
     set_start_target_path: null #"../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
-    action_repeat: 4
+    action_repeat: 1
     action_repeat_mode: 'id'
     img_size: 64
     replan_every: 4
     image_obs: true
     stack_states: 1
-    data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/'
-    fps: 2.5 #FPS指定
+    data_path: 'pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300_sample_direction_view_default/'
+    max_dq: 0.03
+    fps: 50 #FPS指定
+    max_inner_steps: 50 #MPPI出力目標行動姿勢に近づけるまでに回す最大step数
+    reach_eps: 1e-2 #MPPI出力目標姿勢と現在の姿勢の距離
     level1:
       planner_type: PlannerType.MPPI
       min_step: 0
@@ -242,5 +246,5 @@ run_name: pldm_franka
 run_project: Franka
 save_every_n_epochs: 1
 seed: 246
-wandb: true
+wandb: false
 confirm_normalize: true

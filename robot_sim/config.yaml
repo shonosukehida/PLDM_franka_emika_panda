@@ -1,9 +1,9 @@
 is_val: true
-pairs: 5 #5
+pairs: 1 #5
 min_dist: 0.15
-episodes_per_pair: 5 #2000
-steps_per_episode: 300 ##100
-image_size: [64, 64]
+episodes_per_pair: 1 #2000
+steps_per_episode: 100 ##100
+image_size: [64, 64] #[64, 64]
 model_path: mujoco_menagerie/franka_emika_panda/scene.xml
 camera_name: top_view #top_view, default
 save_dir: pldm_envs/franka/presaved_datasets
@@ -17,7 +17,7 @@ data_dir: null
 #データ確認するか
 confirm_ik_result: false
 confirm_dist: false
-make_video: false
+make_video: false #false
 confirm_ee_trajectory: true
 confirm_data: false
 count_contact: false

@@ -860,7 +860,9 @@ class Trainer:
             normalizer = train_loader.normalizer
 
             mode = getattr(normalizer, "normalize_mode", "minmax")
+            actions_mode = getattr(normalizer, "normalize_actions_mode", "minmax")
             f.write(f"normalize_mode: {mode}\n")
+            f.write(f"normalize_actions_mode:{actions_mode}\n")
 
             def log_block(title, orig, unnorm, renorm, diff):
                 def write_stats(tag, x):

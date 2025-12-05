@@ -11,6 +11,7 @@ from pldm.planning.enums import MPCResult, PooledMPCResult
 import numpy as np
 from pldm.models.utils import flatten_conv_output
 from tqdm import tqdm
+from pldm.planning.franka.env_wrapper import HoldUntilReachWrapper, ActionRepeatWrapper
 
 
 class MPCEvaluator(ABC):
@@ -174,6 +175,12 @@ class MPCEvaluator(ABC):
             loss_history: list of a_T (n_iters,)
         """
         
+        
+        print("[DBG][pldm/planning/mpc.py] self.config.reach_eps:", self.config.reach_eps)
+        print("[DBG][pldm/planning/mpc.py] self.config.max_inner_steps:", self.config.max_inner_steps)
+        
+        envs = [HoldUntilReachWrapper(e, reach_eps=self.config.reach_eps, max_inner_steps=self.config.max_inner_steps) for e in envs]
+        
         physic_timestep = envs[0].physics.model.opt.timestep
         substeps = envs[0].substeps
         desired_freq = self.config.fps
@@ -181,108 +188,13 @@ class MPCEvaluator(ABC):
         per_step_dt = physic_timestep * substeps
         
         repeat = max(1, round(dt_target / per_step_dt))
+
         envs = [ActionRepeatWrapper(e, repeat=repeat) for e in envs]
         
         effective_dt = per_step_dt * repeat
         print(f"[MPC] timestep={physic_timestep:.6f}s  substeps={substeps}  "
             f"repeat={repeat}  → effective_dt={effective_dt:.3f}s "
             f"({1.0/effective_dt:.2f} Hz)")
-        
-
-        
-        ################################
-        def _get_action_bounds(env):
-            # 最優先: 既にある ctrlrange / n_arm_act を使う
-            if hasattr(env, "ctrlrange") and hasattr(env, "n_arm_act"):
-                low  = env.ctrlrange[:, 0].astype(np.float32)
-                high = env.ctrlrange[:, 1].astype(np.float32)
-                shape = (env.n_arm_act,)
-                return low, high, shape
-
-            # 予備: arm_actuator_ids があるならそこから拾う
-            if hasattr(env, "arm_actuator_ids"):
-                cr = env.physics.model.actuator_ctrlrange[env.arm_actuator_ids]
-                low  = cr[:, 0].astype(np.float32)
-                high = cr[:, 1].astype(np.float32)
-                shape = (len(env.arm_actuator_ids),)
-                return low, high, shape
-
-            # 最終手段: 全アクチュエータの範囲
-            cr = env.physics.model.actuator_ctrlrange
-            low  = cr[:, 0].astype(np.float32)
-            high = cr[:, 1].astype(np.float32)
-            shape = (cr.shape[0],)
-            return low, high, shape
-        
-
-        def pulse_once(env, dim, amp, steps=1):
-            low, high, shape = _get_action_bounds(env)
-
-            info0 = env.get_info()
-            ee0   = np.array(info0.get("location",   [np.nan, np.nan]), dtype=np.float32)
-            obj0  = np.array(info0.get("object_pos", [np.nan, np.nan]), dtype=np.float32)
-            qpos0 = env.physics.data.qpos[:7].copy()
-
-            u = np.zeros(shape, dtype=np.float32)  # ← action_space.shape は使わない
-            u[dim] = amp
-
-            # クリップ判定
-            clipped = np.any((u <= low + 1e-6) | (u >= high - 1e-6))
-
-            for _ in range(steps):
-                obs, rew, done, trunc, info = env.step(u)
-
-            info1 = env.get_info()
-            ee1   = np.array(info1.get("location",   [np.nan, np.nan]), dtype=np.float32)
-            obj1  = np.array(info1.get("object_pos", [np.nan, np.nan]), dtype=np.float32)
-            qpos1 = env.physics.data.qpos[:7].copy()
-
-            dqpos = (qpos1 - qpos0)[:7]
-            dee   = ee1  - ee0
-            dobj  = obj1 - obj0
-
-            print(f"[PULSE] joint={dim} amp={amp:+.4f} steps={steps} clipped={clipped}")
-            print(f"        low/high[{dim}] = {low[dim]:+.3f} / {high[dim]:+.3f}")
-            print(f"        Δqpos[{dim}]={dqpos[dim]:+.5f} | ||Δee||={np.linalg.norm(dee):.5f}  Δee={dee}")
-            print(f"        Δobj={dobj} (||Δobj||={np.linalg.norm(dobj):.5f})")
-
-
-            expected = np.clip(amp, -env.MAX_DQ, env.MAX_DQ) * steps
-            err = dqpos[dim] - expected
-            print(f"expected Δq[{dim}]≈{expected:+.5f}, err={err:+.5f}")
-            print("Δqpos(all) =", np.round((qpos1 - qpos0)[:7], 5))
-            
-            
-
-            return dee, dobj, dqpos
-
-
-        def pulse_sweep(env, dims=None, amps=(+0.05, -0.05, +0.1, -0.1, +0.2), steps_list=(1,5)):
-            if dims is None:
-                # 既定で env.n_arm_act を使うと安全
-                n = getattr(env, "n_arm_act", 7)
-                dims = range(n)
-            rows = []
-            for d in dims:
-                for amp in amps:
-                    for st in steps_list:
-                        env.reset()
-                        dee, dobj, dqpos = pulse_once(env, d, amp, steps=st)
-                        rows.append((d, amp, st, *dee.tolist(), *dobj.tolist(), dqpos[d]))
-            return rows
-
-
-
-        for env in envs:
-            env.reset()
-            rows = pulse_sweep(env)
-            rows = np.array(rows, dtype=np.float32)
-            print("[SUMMARY] mean |Δee/(amp*steps)| by joint:")
-            for j in range(getattr(env, "n_arm_act", 7)):
-                m = rows[rows[:,0]==j]
-                g = np.mean(np.linalg.norm(m[:,3:5], axis=1) / (np.abs(m[:,1]) * m[:,2]))
-                print(f"  joint{j}: {g:.4f}  (per-step gain)")
-        ################################
         
 
 
@@ -362,6 +274,7 @@ class MPCEvaluator(ABC):
                 else:
                     curr_propio_vel = None
 
+                print("[DBG][pldm/planning/mpc.py]self.config.n_steps:", self.config.n_steps)
                 planning_result = planner.plan(
                     obs_t,
                     curr_propio_pos=curr_propio_pos,
@@ -451,23 +364,3 @@ class MPCEvaluator(ABC):
         )
 
 
-class ActionRepeatWrapper:
-    def __init__(self, env, repeat):
-        self.env = env
-        self.repeat = int(repeat)
-        # 物理dt
-        self.dt = float(env.physics.model.opt.timestep) * getattr(env, "substeps", 1) * self.repeat
-    def reset(self, *a, **kw): return self.env.reset(*a, **kw)
-    def get_info(self): return self.env.get_info()
-    def get_obs(self): return self.env.get_obs()
-    def step(self, action):
-        total_r, done, trunc, info = 0.0, False, False, None
-        obs = None
-        for _ in range(self.repeat):
-            obs, r, done, trunc, info = self.env.step(action)
-            total_r += r
-            if done or trunc:
-                break
-        return obs, total_r, done, trunc, info
-    def __getattr__(self, name):  # 既存属性に委譲
-        return getattr(self.env, name)

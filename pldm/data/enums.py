@@ -50,6 +50,7 @@ class DataConfig(ConfigBase):
     normalize: bool = False
     # min_max_normalize: bool = False
     normalize_mode: str = "minmax"
+    normalize_actions_mode: str = "minmax"
     normalizer_hardset: bool = False
     quick_debug: bool = False
     num_workers: int = 0
