@@ -41,8 +41,8 @@ class HoldUntilReachWrapper:
             obs, r, done, truncated, info = self.env.step(action)
             total_reward += r
 
-            if done or truncated:
-                break
+            # if done or truncated:
+            #     break
 
         # 念のため：max_inner_steps=0 などで obs が一度も更新されなかった場合
         if obs is None:

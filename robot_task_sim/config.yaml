@@ -27,8 +27,8 @@ eval:
   hold_steps_at_target: 10
   save_every: 25
   seed: 0
-  num_points: 160 #640
-  settle_steps: 0 #set_xyz 内で, ik解をqpos へ代入した後に進めるタイムステップ
+  num_points: 320 #640
+  settle_steps: 10000 #set_xyz 内で, ik解をqpos へ代入した後に進めるタイムステップ
 
 
 workspace:

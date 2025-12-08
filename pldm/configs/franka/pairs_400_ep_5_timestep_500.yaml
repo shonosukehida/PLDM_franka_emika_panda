@@ -46,7 +46,7 @@ eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
 eval_mpcs: 20
-eval_only: false
+eval_only: true
 hjepa:
   l1_n_steps: *n_steps
   train_l1: true
@@ -77,7 +77,7 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: null #pldm/checkpoints/franka_20251120_125701/epoch=5_sample_step=5172000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20251120_125701/epoch=5_sample_step=5172000.ckpt #pldm/checkpoints/franka_20251120_125701/epoch=5_sample_step=5172000.ckpt
 load_l1_only: false
 
 use_opn_loss_func: &use_opn_loss_func false #現在はopen_objectives を共通の損失関数として使用
@@ -156,7 +156,7 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: true
-    load_prober: false
+    load_prober: true
   disable_planning: false
   franka_planning:
     n_envs: 4 #85
@@ -183,7 +183,7 @@ eval_cfg:
     image_obs: true
     stack_states: 1
     data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/'
-    max_dq: 0.01
+    max_dq: 0.1
     fps: 2.5 #FPS指定
     max_inner_steps: 500 #MPPI出力目標行動姿勢に近づけるまでに回す最大step数 #192
     reach_eps: 1e-2 #MPPI出力目標姿勢と現在の姿勢の距離

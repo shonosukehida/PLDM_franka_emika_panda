@@ -863,6 +863,8 @@ def log_planning_traj_plots_split(
         ax.scatter(px_traj, py_traj,
                    s=8, c="black", alpha=0.9,
                    label="end-effector", zorder=6)
+        ax.plot(px_traj, py_traj, c="black", linewidth=1.0, alpha=0.7, zorder=5)
+
 
         # S/G ラベル
         sx, sy = px_traj[0], py_traj[0]

@@ -418,7 +418,7 @@ def run_follow(env, traj_xyz, name="rectangle"):
 
         step_cnt = 0
         while step_cnt < MAX_STEPS_PER_WAYPOINT:
-            obs, reward, done, truncated, info = env.step(q_des, max_dq = MAX_DQ)
+            obs, reward, done, truncated, info = env.step(q_des)
             cur = ee(env)
             err = float(np.linalg.norm(cur - target))
 
@@ -1074,6 +1074,7 @@ def main():
         success_thresh=SUCCESS_TOL,
         substeps=STEP_SUBSTEPS,
         normalizer=None,  
+        max_dq=MAX_DQ,
     )
     
 
