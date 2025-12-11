@@ -155,7 +155,7 @@ eval_cfg:
     max_samples: 2000000
     max_samples_enc: 2000000
     schedule: Cosine
-    visualize_probing: false #true
+    visualize_probing: true #true
     load_prober: true
   disable_planning: false
   franka_planning:
@@ -172,7 +172,7 @@ eval_cfg:
       max_block_radius: 9999
       override_config: true
     visualize_planning: true
-    visualize_planning_videos: false
+    visualize_planning_videos: true
     log_pred_dist_every: 9999999
     plot_every: 16
     set_start_target_path: null #"../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
