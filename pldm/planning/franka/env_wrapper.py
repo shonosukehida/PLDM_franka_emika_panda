@@ -13,6 +13,9 @@ class HoldUntilReachWrapper:
         self.env = env
         self.reach_eps = reach_eps
         self.max_inner_steps = max_inner_steps
+        print("[HoldUntilReachWrapper] reach_eps=", self.reach_eps,
+      "max_inner_steps=", self.max_inner_steps)
+
 
     # --- 未定義の属性は全部内側の env に委譲する ---
     def __getattr__(self, name):

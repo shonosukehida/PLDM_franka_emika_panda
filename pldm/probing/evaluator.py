@@ -554,90 +554,90 @@ class ProbingEvaluator:
             prober.eval()
             probing_losses[probe_target] = []
 
-        for idx, batch in enumerate(tqdm(val_ds, desc="Eval probe pred")):
-            # put time first
-            states = batch.states.to(self.device).transpose(0, 1)
+        # for idx, batch in enumerate(tqdm(val_ds, desc="Eval probe pred")):
+        #     # put time first
+        #     states = batch.states.to(self.device).transpose(0, 1)
 
-            actions = batch.actions.to(self.device).transpose(0, 1)
+        #     actions = batch.actions.to(self.device).transpose(0, 1)
 
-            optional_fields = get_optional_fields(batch, device=states.device)
+        #     optional_fields = get_optional_fields(batch, device=states.device)
 
-            forward_result = model.forward_posterior(states, actions, **optional_fields)
+        #     forward_result = model.forward_posterior(states, actions, **optional_fields)
 
-            pred_output = forward_result.pred_output
-            enc_output = forward_result.backbone_output
+        #     pred_output = forward_result.pred_output
+        #     enc_output = forward_result.backbone_output
 
-            for probe_target, prober in probers.items():
-                pred_encs = self._get_pred_output_for_attr(
-                    pred_output,
-                    probe_target,
-                )
+        #     for probe_target, prober in probers.items():
+        #         pred_encs = self._get_pred_output_for_attr(
+        #             pred_output,
+        #             probe_target,
+        #         )
 
-                encs = self._get_enc_output_for_attr(enc_output, probe_target)
+        #         encs = self._get_enc_output_for_attr(enc_output, probe_target)
 
-                target = getattr(batch, probe_target).to(self.device)
-                target = target[:, :: model.subsampling_ratio()]
+        #         target = getattr(batch, probe_target).to(self.device)
+        #         target = target[:, :: model.subsampling_ratio()]
 
-                pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
+        #         pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
 
-                losses = location_losses(pred_locs, target)
-                probing_losses[probe_target].append(losses.cpu())
+        #         losses = location_losses(pred_locs, target)
+        #         probing_losses[probe_target].append(losses.cpu())
 
-            repr_loss = F.mse_loss(encs, pred_encs, reduction="none")
-            reduce_dims = tuple(range(1, encs.ndim))
-            repr_loss = repr_loss.mean(dim=reduce_dims)
-            eval_repr_losses.append(repr_loss.cpu())
+        #     repr_loss = F.mse_loss(encs, pred_encs, reduction="none")
+        #     reduce_dims = tuple(range(1, encs.ndim))
+        #     repr_loss = repr_loss.mean(dim=reduce_dims)
+        #     eval_repr_losses.append(repr_loss.cpu())
 
-            target_encs = encs[-1]
-            target_encs = target_encs.unsqueeze(0).expand(
-                encs.shape[0], *[-1] * len(target_encs.shape)
-            )
+        #     target_encs = encs[-1]
+        #     target_encs = target_encs.unsqueeze(0).expand(
+        #         encs.shape[0], *[-1] * len(target_encs.shape)
+        #     )
 
-            # permutation = torch.randperm(64)
-            # target_encs = target_encs[:, permutation, :, :, :]
-            target_repr_loss = F.mse_loss(target_encs, pred_encs, reduction="none")
-            target_repr_loss = target_repr_loss.mean(dim=reduce_dims)
-            target_repr_losses.append(target_repr_loss.cpu())
+        #     # permutation = torch.randperm(64)
+        #     # target_encs = target_encs[:, permutation, :, :, :]
+        #     target_repr_loss = F.mse_loss(target_encs, pred_encs, reduction="none")
+        #     target_repr_loss = target_repr_loss.mean(dim=reduce_dims)
+        #     target_repr_losses.append(target_repr_loss.cpu())
 
-            if quick_debug and idx > 2:
-                break
+        #     if quick_debug and idx > 2:
+        #         break
 
-        repr_loss = torch.stack(eval_repr_losses).mean(dim=0)
-        target_repr_losses = torch.stack(target_repr_losses).mean(dim=0)
+        # repr_loss = torch.stack(eval_repr_losses).mean(dim=0)
+        # target_repr_losses = torch.stack(target_repr_losses).mean(dim=0)
 
-        # Plot repr loss over timesteps
-        Logger.run().log_line_plot(
-            data=[[i, x.item()] for i, x in enumerate(repr_loss)],
-            plot_name=f"finetune_pred_val_{plot_prefix}_repr_loss",
-        )
+        # # Plot repr loss over timesteps
+        # Logger.run().log_line_plot(
+        #     data=[[i, x.item()] for i, x in enumerate(repr_loss)],
+        #     plot_name=f"finetune_pred_val_{plot_prefix}_repr_loss",
+        # )
 
-        # Plot target repr loss over timesteps
-        Logger.run().log_line_plot(
-            data=[[i, x.item()] for i, x in enumerate(target_repr_losses)],
-            plot_name=f"finetune_pred_val_{plot_prefix}_target_repr_loss",
-        )
+        # # Plot target repr loss over timesteps
+        # Logger.run().log_line_plot(
+        #     data=[[i, x.item()] for i, x in enumerate(target_repr_losses)],
+        #     plot_name=f"finetune_pred_val_{plot_prefix}_target_repr_loss",
+        # )
 
-        log_dict = {}
+        # log_dict = {}
 
-        for probe_target, eval_losses in probing_losses.items():
-            losses_t = torch.stack(eval_losses, dim=0).mean(dim=0)
-            losses_t = val_ds.normalizer.unnormalize_mse(losses_t, probe_target)
-            losses_t = losses_t.mean(dim=-1)
-            average_eval_loss = losses_t.mean().item()
-            log_dict[f"finetune_pred_val_{plot_prefix}_{probe_target}/loss_avg"] = (
-                average_eval_loss
-            )
-            log_dict[
-                f"finetune_pred_val_{plot_prefix}_{probe_target}/loss_rmse_avg"
-            ] = np.sqrt(average_eval_loss)
+        # for probe_target, eval_losses in probing_losses.items():
+        #     losses_t = torch.stack(eval_losses, dim=0).mean(dim=0)
+        #     losses_t = val_ds.normalizer.unnormalize_mse(losses_t, probe_target)
+        #     losses_t = losses_t.mean(dim=-1)
+        #     average_eval_loss = losses_t.mean().item()
+        #     log_dict[f"finetune_pred_val_{plot_prefix}_{probe_target}/loss_avg"] = (
+        #         average_eval_loss
+        #     )
+        #     log_dict[
+        #         f"finetune_pred_val_{plot_prefix}_{probe_target}/loss_rmse_avg"
+        #     ] = np.sqrt(average_eval_loss)
 
-            # Plot probbing loss over timesteps
-            Logger.run().log_line_plot(
-                data=[[i, x.item()] for i, x in enumerate(losses_t)],
-                plot_name=f"finetune_pred_val_{plot_prefix}_{probe_target}_loss",
-            )
+        #     # Plot probbing loss over timesteps
+        #     Logger.run().log_line_plot(
+        #         data=[[i, x.item()] for i, x in enumerate(losses_t)],
+        #         plot_name=f"finetune_pred_val_{plot_prefix}_{probe_target}_loss",
+        #     )
 
-        Logger.run().log(log_dict)
+        # Logger.run().log(log_dict)
 
         # right now, we only visualize location predictions
         if self.config.visualize_probing and visualize:
@@ -838,29 +838,51 @@ class ProbingEvaluator:
                 vis_encoder_featuremap = False,     
             )
             
-            self.plot_cca(
-                btc,
-                model,
-                prober = None,
-                prober_open = None,
-                prober_bluebox_locs = None,
-                prober_bluebox_locs_open = None,
-                enc_prober = None,
-                enc_prober_bluebox = None,
-                normalizer = None,
-                name_prefix = "",
-                idxs = None,
-                notebook = False,
-                pixel_mapper = None,
-                vis_dynamics_closed_featuremap = False,
-                vis_dynamics_open_featuremap = False,
-                vis_encoder_featuremap = False,
-            )
+            # self.plot_cca(
+            #     btc,
+            #     model,
+            #     prober = None,
+            #     prober_open = None,
+            #     prober_bluebox_locs = None,
+            #     prober_bluebox_locs_open = None,
+            #     enc_prober = None,
+            #     enc_prober_bluebox = None,
+            #     normalizer = None,
+            #     name_prefix = "",
+            #     idxs = None,
+            #     notebook = False,
+            #     pixel_mapper = None,
+            #     vis_dynamics_closed_featuremap = False,
+            #     vis_dynamics_open_featuremap = False,
+            #     vis_encoder_featuremap = False,
+            # )
             
             self.plot_pca(
                 btc,
                 model,     
             )
+            
+            # self.plot_pca_open_closed(
+            #     btc,
+            #     model,
+            #     name_prefix=f"{plot_prefix}_val",
+            #     idxs=None if not quick_debug else list(range(10)),
+            # )
+
+            
+            # metrics_latent = self.log_latent_forward_mse(
+            #     batch=btc,
+            #     jepa=model,
+            #     prober=probers["locations"],
+            #     prober_open=probers_open["locations"],
+            #     prober_bluebox_locs=probers["bluebox_locs"],
+            #     prober_bluebox_locs_open=probers_open["bluebox_locs"],
+            #     enc_prober=enc_probers["locations"] if isinstance(enc_probers, dict) else None,
+            #     enc_prober_bluebox=enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
+            #     normalizer=val_ds.normalizer,
+            #     name_prefix=plot_prefix,
+            # )
+
 
         return
 
@@ -2377,777 +2399,7 @@ class ProbingEvaluator:
         torch.cuda.empty_cache()
 
 
-    # encoder 出力で学習させたprober を共通利用
-    # @torch.no_grad()
-    # def plot_prober_predictions_by_encprober(
-    #     self,
-    #     batch,
-    #     jepa: JEPA,
-    #     prober: torch.nn.Module,
-    #     prober_open: torch.nn.Module,
-    #     prober_bluebox_locs: torch.nn.Module = None,
-    #     prober_bluebox_locs_open: torch.nn.Module = None,
-    #     enc_prober: torch.nn.Module = None,
-    #     enc_prober_bluebox: torch.nn.Module = None,
-    #     normalizer: Normalizer = None,
-    #     name_prefix: str = "",
-    #     idxs: Optional[List[int]] = None,
-    #     notebook: bool = False,
-    #     pixel_mapper = None,
-    #     vis_dynamics_closed_featuremap: bool = True,
-    #     vis_dynamics_open_featuremap: bool = True,
-    #     vis_encoder_featuremap: bool = True,
-        
-    # ):
-    #     assert enc_prober is not None, "enc_prober is required"
-    #     assert enc_prober_bluebox is not None, "enc_prober_bluebox is required"
 
-
-    #     # データバッチ
-    #     states = batch.states.to(self.device).transpose(0, 1) #torch.Size([64, 50, 3, 64, 64])
-    #     actions = batch.actions.to(self.device).transpose(0, 1)
-
-    #     optional_fields = get_optional_fields(batch, device=states.device)
-
-    #     # closed-forward 出力列
-    #     pred_output = jepa.forward_posterior(
-    #         states, actions, **optional_fields
-    #     )
-    #     pred_output = pred_output.pred_output
-
-    #     # open-forward 出力列
-    #     pred_output_open = jepa.forward_open(
-    #         states, actions, **optional_fields
-    #     )
-    #     pred_output_open = pred_output_open.pred_output
-        
-        
-    #     #encoderの出力列
-    #     enc_output = jepa.forward_posterior(
-    #             states, actions, encode_only=True, **optional_fields
-    #         )
-    #     enc_output = enc_output.backbone_output
-    #     #encoder 出力列から画像ベースに分離
-    #     encoder_encs = enc_output.obs_component
-        
-
-    #     #closed-forward 出力列から画像ベースに分離
-    #     if pred_output.obs_component is not None: ##
-    #         pred_encs = pred_output.obs_component
-    #     else: #x
-    #         pred_encs = pred_output.predictions
-
-    #     #open-forward 出力列から画像ベースに分離
-    #     if pred_output_open.obs_component is not None: ##
-    #         pred_encs_open = pred_output_open.obs_component
-    #     else: #x
-    #         pred_encs_open = pred_output_open.predictions
-
-
-    #     #TODO endeffector
-    #     # #closed-forward出力列 --> prober
-    #     # pred_locs_clsfwd_clsprb = torch.stack([prober(x) for x in pred_encs], dim=1)
-    #     # pred_locs_clsfwd_clsprb = normalizer.unnormalize_location(pred_locs_clsfwd_clsprb).cpu()
-        
-    #     # #open-forward出力列 --> prober
-    #     # pred_locs_opnfwd_clsprb = torch.stack([prober(x) for x in pred_encs_open], dim=1)
-    #     # pred_locs_opnfwd_clsprb = normalizer.unnormalize_location(pred_locs_opnfwd_clsprb).cpu()
-        
-    #     # #closed-forward出力列 --> prober_open
-    #     # pred_locs_clsfwd_opnprb = torch.stack([prober_open(x) for x in pred_encs], dim=1)
-    #     # pred_locs_clsfwd_opnprb = normalizer.unnormalize_location(pred_locs_clsfwd_opnprb).cpu()
-        
-    #     # #open-forward出力列 --> prober_open
-    #     # pred_locs_opnfwd_opnprb = torch.stack([prober_open(x) for x in pred_encs_open], dim=1)
-    #     # pred_locs_opnfwd_opnprb = normalizer.unnormalize_location(pred_locs_opnfwd_opnprb).cpu()
-        
-        
-    #     #encoder出力列
-    #     if enc_prober is not None:
-    #         pred_enc_locs = torch.stack([enc_prober(x) for x in encoder_encs], dim=1)
-    #         pred_enc_locs = normalizer.unnormalize_location(pred_enc_locs).cpu()
-            
-    #     #closed-forward出力列 --> enc_prober
-    #     pred_locs_clsfwd_encprb = torch.stack([enc_prober(x) for x in pred_encs], dim=1)
-    #     pred_locs_clsfwd_encprb = normalizer.unnormalize_location(pred_locs_clsfwd_encprb).cpu()
-        
-    #     #open-forward出力列 --> enc_prober 
-    #     pred_locs_opnfwd_encprb = torch.stack([enc_prober(x) for x in pred_encs_open], dim=1)
-    #     pred_locs_opnfwd_encprb = normalizer.unnormalize_location(pred_locs_opnfwd_encprb).cpu()
-        
-
-
-    #     #TODO bluebox_locs
-    #     # #closed-forward出力列 --> prober
-    #     # pred_bluebox_locs_clsfwd_clsprb = torch.stack([prober_bluebox_locs(x) for x in pred_encs], dim=1)
-    #     # pred_bluebox_locs_clsfwd_clsprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_clsfwd_clsprb).cpu()
-        
-    #     # #open-forward出力列 --> prober
-    #     # pred_bluebox_locs_opnfwd_clsprb = torch.stack([prober_bluebox_locs(x) for x in pred_encs_open], dim=1)
-    #     # pred_bluebox_locs_opnfwd_clsprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_opnfwd_clsprb).cpu()
-        
-    #     # #closed-forward出力列 --> prober_open
-    #     # pred_bluebox_locs_clsfwd_opnprb = torch.stack([prober_bluebox_locs_open(x) for x in pred_encs], dim=1)
-    #     # pred_bluebox_locs_clsfwd_opnprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_clsfwd_opnprb).cpu()
-        
-    #     # #open-forward出力列 --> prober_open
-    #     # pred_bluebox_locs_opnfwd_opnprb = torch.stack([prober_bluebox_locs_open(x) for x in pred_encs_open], dim=1)
-    #     # pred_bluebox_locs_opnfwd_opnprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_opnfwd_opnprb).cpu()
-        
-    #     #encoder出力列
-    #     pred_enc_bluebox_locs = torch.stack([enc_prober_bluebox(x) for x in encoder_encs], dim=1)
-    #     pred_enc_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_enc_bluebox_locs).cpu()
-
-        
-    #     #closed-forward出力列 --> enc_prober
-    #     pred_bluebox_locs_clsfwd_encprb = torch.stack([enc_prober_bluebox(x) for x in pred_encs], dim=1)
-    #     pred_bluebox_locs_clsfwd_encprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_clsfwd_encprb).cpu()
-        
-    #     #open-forward出力列 --> enc_prober
-    #     pred_bluebox_locs_opnfwd_encprb = torch.stack([enc_prober_bluebox(x) for x in pred_encs_open], dim=1)
-    #     pred_bluebox_locs_opnfwd_encprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_opnfwd_encprb).cpu()
-        
-
-
-    #     # pred_locs is of shape (batch_size, time, 1, 2)
-    #     if idxs is None: ##
-    #         idxs = list(range(min(pred_locs_clsfwd_encprb.shape[0], 64)))
-
-
-    #     gt_locations = normalizer.unnormalize_location(batch.locations).cpu()
-        
-    #     gt_bluebox_locations = normalizer.unnormalize_bluebox_locs(batch.bluebox_locs).cpu()
-
-
-
-    #     for i in tqdm(idxs, desc=f"Plotting {name_prefix}"):
-    #         fig, axes = plt.subplots(2, 4, figsize=(18, 12), dpi=200)
-
-    #         #画像表示
-    #         ax_img = axes[0][0]
-    #         img = normalizer.unnormalize_state(batch.states)
-    #         init_img = img[i, 0].cpu().numpy().transpose(1, 2, 0)
-    #         init_img = init_img.clip(0, 255).astype(np.uint8)
-            
-    #         ax_img.imshow(init_img)
-    #         ax_img.set_title("init obs")
-    #         ax_img.axis("off")
-
-
-    #         #予測軌跡表示, ee, closed-forward
-    #         ###########################################################################################
-    #         ax_ee_forward = axes[0][1]
-    #         #gt
-    #         ax_ee_forward.plot(
-    #             gt_locations[i, :, 0].cpu(),
-    #             gt_locations[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#3777FF",
-    #             alpha=0.8,
-    #             label="endeffector-ground-truth"
-    #         )
-    #         ax_ee_forward.text(
-    #             gt_locations[i, 0, 0].cpu().item(),
-    #             gt_locations[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#3777FF",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-            
-    #         ax_ee_forward.text(
-    #             gt_locations[i, -1, 0].cpu().item(),
-    #             gt_locations[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#3777FF",  
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-
-    #         #ee, encoder
-    #         ax_ee_forward.plot(
-    #             pred_enc_locs[i, :, 0].cpu(),
-    #             pred_enc_locs[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#008000",
-    #             alpha=0.8,
-    #             label="endeffector-encoder"
-    #         )
-    #         ax_ee_forward.text(
-    #             pred_enc_locs[i, 0, 0].cpu().item(),
-    #             pred_enc_locs[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#008000",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_ee_forward.text(
-    #             pred_enc_locs[i, -1, 0].cpu().item(),
-    #             pred_enc_locs[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#008000",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-            
-            
-    #         #ee, closed_forward, 
-    #         ax_ee_forward.plot(
-    #             pred_locs_clsfwd_encprb[i, :, 0].cpu(),
-    #             pred_locs_clsfwd_encprb[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#D62828",
-    #             alpha=0.8,
-    #             label="endeffector-closed_pred"
-    #         )
-    #         ax_ee_forward.text(
-    #             pred_locs_clsfwd_encprb[i, 0, 0].cpu().item(),
-    #             pred_locs_clsfwd_encprb[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#D62828",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_ee_forward.text(
-    #             pred_locs_clsfwd_encprb[i, -1, 0].cpu().item(),
-    #             pred_locs_clsfwd_encprb[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#D62828",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-            
-    #         ax_ee_forward.set_aspect("equal", adjustable="box")
-    #         ax_ee_forward.set_xlim(0.315, 0.715)
-    #         ax_ee_forward.set_ylim(-0.2, 0.2)
-    #         ax_ee_forward.set_xlabel("X (meters)")
-    #         ax_ee_forward.set_ylabel("Y (meters)")
-    #         ax_ee_forward.legend()
-    #         ax_ee_forward.set_title("dynamics model vs. groundtruth")
-    #         ###########################################################################################
-
-
-    #         #予測軌跡表示, ee, open-forward
-    #         ###########################################################################################
-    #         ax_ee_forward = axes[0][2]
-    #         #gt
-    #         ax_ee_forward.plot(
-    #             gt_locations[i, :, 0].cpu(),
-    #             gt_locations[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#3777FF",
-    #             alpha=0.8,
-    #             label="endeffector-ground-truth"
-    #         )
-    #         ax_ee_forward.text(
-    #             gt_locations[i, 0, 0].cpu().item(),
-    #             gt_locations[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#3777FF",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_ee_forward.text(
-    #             gt_locations[i, -1, 0].cpu().item(),
-    #             gt_locations[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#3777FF",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-
-
-    #         #ee, encoder
-    #         ax_ee_forward.plot(
-    #             pred_enc_locs[i, :, 0].cpu(),
-    #             pred_enc_locs[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#008000",
-    #             alpha=0.8,
-    #             label="endeffector-encoder"
-    #         )
-    #         ax_ee_forward.text(
-    #             pred_enc_locs[i, 0, 0].cpu().item(),
-    #             pred_enc_locs[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#008000",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_ee_forward.text(
-    #             pred_enc_locs[i, -1, 0].cpu().item(),
-    #             pred_enc_locs[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#008000",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-            
-            
-    #         #ee, open_forward, 
-    #         ax_ee_forward.plot(
-    #             pred_locs_opnfwd_encprb[i, :, 0].cpu(),
-    #             pred_locs_opnfwd_encprb[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#ff8c00",
-    #             alpha=0.8,
-    #             label="endeffector-open_pred"
-    #         )
-    #         ax_ee_forward.text(
-    #             pred_locs_opnfwd_encprb[i, 0, 0].cpu().item(),
-    #             pred_locs_opnfwd_encprb[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#ff8c00",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_ee_forward.text(
-    #             pred_locs_opnfwd_encprb[i, -1, 0].cpu().item(),
-    #             pred_locs_opnfwd_encprb[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#ff8c00",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-            
-    #         ax_ee_forward.set_aspect("equal", adjustable="box")
-    #         ax_ee_forward.set_xlim(0.315, 0.715)
-    #         ax_ee_forward.set_ylim(-0.2, 0.2)
-    #         ax_ee_forward.set_xlabel("X (meters)")
-    #         ax_ee_forward.set_ylabel("Y (meters)")
-    #         ax_ee_forward.legend()
-    #         ax_ee_forward.set_title("dynamics model vs. groundtruth")
-    #         ###########################################################################################
-
-
-    #         #予測軌跡表示, ee, encoder
-    #         ###########################################################################################
-    #         ax_ee_enc = axes[0][3]
-            
-    #         #gt
-    #         ax_ee_enc.plot(
-    #             gt_locations[i, :, 0].cpu(),
-    #             gt_locations[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#3777FF",
-    #             alpha=0.8,
-    #             label="endeffector-ground-truth"
-    #         )
-    #         ax_ee_enc.text(
-    #             gt_locations[i, 0, 0].cpu().item(),
-    #             gt_locations[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#3777FF",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_ee_enc.text(
-    #             gt_locations[i, -1, 0].cpu().item(),
-    #             gt_locations[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#3777FF",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-            
-            
-    #         #ee, encoder
-    #         ax_ee_enc.plot(
-    #             pred_enc_locs[i, :, 0].cpu(),
-    #             pred_enc_locs[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#008000",
-    #             alpha=0.8,
-    #             label="endeffector-encoder"
-    #         )
-    #         ax_ee_enc.text(
-    #             pred_enc_locs[i, 0, 0].cpu().item(),
-    #             pred_enc_locs[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#008000",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_ee_enc.text(
-    #             pred_enc_locs[i, -1, 0].cpu().item(),
-    #             pred_enc_locs[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#008000",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_ee_enc.set_aspect("equal", adjustable="box")
-    #         ax_ee_enc.set_xlim(0.315, 0.715)
-    #         ax_ee_enc.set_ylim(-0.2, 0.2)
-    #         ax_ee_enc.set_xlabel("X (meters)")
-    #         ax_ee_enc.set_ylabel("Y (meters)")
-    #         ax_ee_enc.legend()
-    #         ax_ee_enc.set_title("encoder vs. groundtruth")
-    #         ###########################################################################################
-
-
-
-    #         #予測軌跡表示, bluebox, closed-forward
-    #         ###########################################################################################
-    #         ax_bluebox_forward = axes[1][1]
-            
-    #         #box, gt
-    #         ax_bluebox_forward.plot(
-    #             gt_bluebox_locations[i, :, 0].cpu(),
-    #             gt_bluebox_locations[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#3777FF",
-    #             alpha=0.8,
-    #             label="bluebox-ground-truth"
-    #         )
-    #         ax_bluebox_forward.text(
-    #             gt_bluebox_locations[i, 0, 0].cpu().item(),
-    #             gt_bluebox_locations[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#3777FF",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_bluebox_forward.text(
-    #             gt_bluebox_locations[i, -1, 0].cpu().item(),
-    #             gt_bluebox_locations[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#3777FF",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-
-    #         #box, encoder
-    #         ax_bluebox_forward.plot(
-    #             pred_enc_bluebox_locs[i, :, 0].cpu(),
-    #             pred_enc_bluebox_locs[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#008000",
-    #             alpha=0.8,
-    #             label="bluebox-encoder-pred"
-    #         )
-    #         ax_bluebox_forward.text(
-    #             pred_enc_bluebox_locs[i, 0, 0].cpu().item(),
-    #             pred_enc_bluebox_locs[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#008000",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_bluebox_forward.text(
-    #             pred_enc_bluebox_locs[i, -1, 0].cpu().item(),
-    #             pred_enc_bluebox_locs[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#008000",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )    
-            
-    #         #box, closed_forward, closed_prober
-    #         ax_bluebox_forward.plot(
-    #             pred_bluebox_locs_clsfwd_encprb[i, :, 0].cpu(),
-    #             pred_bluebox_locs_clsfwd_encprb[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#D62828",
-    #             alpha=0.8,
-    #             label="bluebox-closed-pred"
-    #         )
-    #         ax_bluebox_forward.text(
-    #             pred_bluebox_locs_clsfwd_encprb[i, 0, 0].cpu().item(),
-    #             pred_bluebox_locs_clsfwd_encprb[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#D62828",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_bluebox_forward.text(
-    #             pred_bluebox_locs_clsfwd_encprb[i, -1, 0].cpu().item(),
-    #             pred_bluebox_locs_clsfwd_encprb[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#D62828",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-
-    #         ax_bluebox_forward.set_title("Bluebox Trajectory")
-    #         ax_bluebox_forward.set_xlim(0.315, 0.715)
-    #         ax_bluebox_forward.set_ylim(-0.2, 0.2)
-    #         ax_bluebox_forward.set_aspect("equal")
-    #         ax_bluebox_forward.legend()
-    #         ###########################################################################################
-
-
-    #         #予測軌跡表示, bluebox, open-forward
-    #         ###########################################################################################
-    #         ax_bluebox_forward = axes[1][2]
-            
-    #         #box, gt
-    #         ax_bluebox_forward.plot(
-    #             gt_bluebox_locations[i, :, 0].cpu(),
-    #             gt_bluebox_locations[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#3777FF",
-    #             alpha=0.8,
-    #             label="bluebox-ground-truth"
-    #         )
-    #         ax_bluebox_forward.text(
-    #             gt_bluebox_locations[i, 0, 0].cpu().item(),
-    #             gt_bluebox_locations[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#3777FF",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_bluebox_forward.text(
-    #             gt_bluebox_locations[i, -1, 0].cpu().item(),
-    #             gt_bluebox_locations[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#3777FF",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-
-    #         #box, encoder
-    #         ax_bluebox_forward.plot(
-    #             pred_enc_bluebox_locs[i, :, 0].cpu(),
-    #             pred_enc_bluebox_locs[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#008000",
-    #             alpha=0.8,
-    #             label="bluebox-encoder-pred"
-    #         )
-    #         ax_bluebox_forward.text(
-    #             pred_enc_bluebox_locs[i, 0, 0].cpu().item(),
-    #             pred_enc_bluebox_locs[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#008000",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_bluebox_forward.text(
-    #             pred_enc_bluebox_locs[i, -1, 0].cpu().item(),
-    #             pred_enc_bluebox_locs[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#008000",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         ) 
-            
-    #         #box, closed_forward, closed_prober
-    #         ax_bluebox_forward.plot(
-    #             pred_bluebox_locs_opnfwd_encprb[i, :, 0].cpu(),
-    #             pred_bluebox_locs_opnfwd_encprb[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#ff8c00",
-    #             alpha=0.8,
-    #             label="bluebox-open-pred"
-    #         )
-    #         ax_bluebox_forward.text(
-    #             pred_bluebox_locs_opnfwd_encprb[i, 0, 0].cpu().item(),
-    #             pred_bluebox_locs_opnfwd_encprb[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#ff8c00",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_bluebox_forward.text(
-    #             pred_bluebox_locs_opnfwd_encprb[i, -1, 0].cpu().item(),
-    #             pred_bluebox_locs_opnfwd_encprb[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#ff8c00",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-
-
-    #         ax_bluebox_forward.set_title("Bluebox Trajectory")
-    #         ax_bluebox_forward.set_xlim(0.315, 0.715)
-    #         ax_bluebox_forward.set_ylim(-0.2, 0.2)
-    #         ax_bluebox_forward.set_aspect("equal")
-    #         ax_bluebox_forward.legend()
-    #         ###########################################################################################
-
-
-    #         #予測軌跡表示, bluebox, encoder
-    #         ###########################################################################################
-    #         ax_bluebox_enc = axes[1][3]
-            
-    #         #box, gt
-    #         ax_bluebox_enc.plot(
-    #             gt_bluebox_locations[i, :, 0].cpu(),
-    #             gt_bluebox_locations[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#3777FF",
-    #             alpha=0.8,
-    #             label="bluebox-ground-truth"
-    #         )
-    #         ax_bluebox_enc.text(
-    #             gt_bluebox_locations[i, 0, 0].cpu().item(),
-    #             gt_bluebox_locations[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#3777FF",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_bluebox_enc.text(
-    #             gt_bluebox_locations[i, -1, 0].cpu().item(),
-    #             gt_bluebox_locations[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#3777FF",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-            
-
-    #         #box, encoder
-    #         ax_bluebox_enc.plot(
-    #             pred_enc_bluebox_locs[i, :, 0].cpu(),
-    #             pred_enc_bluebox_locs[i, :, 1].cpu(),
-    #             marker="o",
-    #             markersize=2.5,
-    #             linewidth=1,
-    #             c="#008000",
-    #             alpha=0.8,
-    #             label="bluebox-encoder-pred"
-    #         )
-    #         ax_bluebox_enc.text(
-    #             pred_enc_bluebox_locs[i, 0, 0].cpu().item(),
-    #             pred_enc_bluebox_locs[i, 0, 1].cpu().item(),
-    #             "S",
-    #             color="#008000",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-    #         ax_bluebox_enc.text(
-    #             pred_enc_bluebox_locs[i, -1, 0].cpu().item(),
-    #             pred_enc_bluebox_locs[i, -1, 1].cpu().item(),
-    #             "G",
-    #             color="#008000",
-    #             fontsize=12,
-    #             ha="center",
-    #             va="center",
-    #         )
-
-    #         ax_bluebox_enc.set_title("Bluebox Trajectory")
-    #         ax_bluebox_enc.set_xlim(0.315, 0.715)
-    #         ax_bluebox_enc.set_ylim(-0.2, 0.2)
-    #         ax_bluebox_enc.set_aspect("equal")
-    #         ax_bluebox_enc.legend()
-    #         ###########################################################################################
-            
-            
-
-
-    #         if not notebook:
-    #             Logger.run().log_figure(fig, f"{name_prefix}-prober_predictions_by_encprober_{i}", dir_name = 'prober_prediction_by_encprober')
-    #             # Logger.run().log_video(ft_maps_gif_path, f"{name_prefix}-featuremap_{i}")
-
-    #             plt.close(fig)
-    #         else:
-    #             plt.show()
-
-    #     plt.close('all')
-
-    #     try:
-    #         del pred_locs_clsfwd_encprb, pred_locs_opnfwd_encprb
-    #     except Exception:
-    #         pass
-    #     try:
-    #         del pred_bluebox_locs_clsfwd_encprb, pred_bluebox_locs_opnfwd_encprb
-    #     except Exception:
-    #         pass
-    #     try:
-    #         del pred_enc_locs, pred_enc_bluebox_locs
-    #     except Exception:
-    #         pass
-
-    #     try:
-    #         del pred_encs, pred_encs_open, encoder_encs
-    #     except Exception:
-    #         pass
-
-    #     try:
-    #         del gt_locations, gt_bluebox_locations
-    #     except Exception:
-    #         pass
-
-    #     try:
-    #         del img, init_img
-    #     except Exception:
-    #         pass
-
-    #     try:
-    #         del pred_output, pred_output_open, enc_output
-    #     except Exception:
-    #         pass
-    #     try:
-    #         del states, actions, optional_fields
-    #     except Exception:
-    #         pass
-
-    #     gc.collect()
-    #     torch.cuda.empty_cache()
             
 
     @torch.no_grad()
@@ -3705,6 +2957,280 @@ class ProbingEvaluator:
 
 
 
+    @torch.no_grad()
+    def plot_pca_open_closed(
+        self,
+        batch,
+        jepa: "JEPA",
+        name_prefix: str = "",
+        idxs: Optional[List[int]] = None,
+        notebook: bool = False,
+        pool: str = "gap",      # "gap"/"flat"
+        k: int = 3,             # PCA 次元
+    ):
+        """
+        open-forward 列を基準に PCA 軸を学習し、
+        - open-forward 列（基準）
+        - closed-forward 列
+        を「同じ PCA 空間」に射影して 2D/3D で可視化する。
+
+        encoder ではなく open を anchor にしている点だけが元の plot_pca と異なる。
+        """
+        import matplotlib as mpl
+        from matplotlib.lines import Line2D
+        from sklearn.decomposition import PCA
+        import numpy as np
+        import gc
+        import torch
+
+        device = self.device
+        states = batch.states.to(device).transpose(0, 1)  # [T,B,...]
+        actions = batch.actions.to(device).transpose(0, 1)
+        optional_fields = get_optional_fields(batch, device=states.device)
+
+        # ---- closed-forward 潜在列 ----
+        closed_res = jepa.forward_posterior(states, actions, **optional_fields)
+        pred_closed = closed_res.pred_output
+        if getattr(pred_closed, "obs_component", None) is not None:
+            closed_lat_seq = pred_closed.obs_component    # [T,B,C,H,W] or [T,B,D]
+        else:
+            closed_lat_seq = pred_closed.predictions      # [T,B,D]
+
+        # ---- open-forward 潜在列 ----
+        open_res = jepa.forward_open(states, actions, **optional_fields)
+        pred_open = open_res.pred_output
+        if getattr(pred_open, "obs_component", None) is not None:
+            open_lat_seq = pred_open.obs_component        # [T,B,C,H,W] or [T,B,D]
+        else:
+            open_lat_seq = pred_open.predictions          # [T,B,D]
+
+        T_ref, B_ref = states.shape[0], states.shape[1]
+
+        def _to_BTD(x, pool="flat"):
+            """
+            [T,B,...] or [B,T,...] -> [B,T,D]
+            （元の plot_pca と同じヘルパ）
+            """
+            assert torch.is_tensor(x)
+            if x.dim() == 3:
+                if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                    x = x.transpose(0, 1).contiguous()   # [B,T,D]
+                return x
+            if x.dim() == 5:
+                # [T,B,C,H,W] or [B,T,C,H,W]
+                if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                    x = x.permute(1, 0, 2, 3, 4).contiguous()  # [B,T,C,H,W]
+                elif not (x.shape[0] == B_ref and x.shape[1] == T_ref):
+                    x = x.transpose(0, 1).contiguous()
+                B, T = x.shape[:2]
+                if pool == "gap":
+                    x = x.mean(dim=(-2, -1)).contiguous()      # -> [B,T,C]
+                else:
+                    C, H, W = x.shape[2:]
+                    x = x.reshape(B, T, C * H * W).contiguous()
+                return x
+            # fallback
+            if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                x = x.transpose(0, 1).contiguous()
+            elif not (x.shape[0] == B_ref and x.shape[1] == T_ref):
+                x = x.transpose(0, 1).contiguous()
+            B, T = x.shape[:2]
+            D = int(np.prod(x.shape[2:]))
+            return x.reshape(B, T, D).contiguous()
+
+        # [B,T,D] にそろえる（まだGPU上）
+        open_lat_seq   = _to_BTD(open_lat_seq,   pool=pool)
+        closed_lat_seq = _to_BTD(closed_lat_seq, pool=pool)
+
+        B, T, Do = open_lat_seq.shape
+        B2, T2, Dc = closed_lat_seq.shape
+        assert B == B2 and T == T2, f"[PCA-open] shape mismatch: open {open_lat_seq.shape}, closed {closed_lat_seq.shape}"
+
+        if idxs is None:
+            idxs = list(range(B))
+
+        # ===== ここで CPU に移して GPU を早めに解放 =====
+        open_lat_seq_cpu   = open_lat_seq.detach().to("cpu")
+        closed_lat_seq_cpu = closed_lat_seq.detach().to("cpu")
+
+        try:
+            del open_lat_seq, closed_lat_seq
+            del closed_res, open_res, pred_open, pred_closed
+            del states, actions, optional_fields
+        except Exception:
+            pass
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        # ---- PCA を open-forward で学習 (CPU) ----
+        Z_open = open_lat_seq_cpu.reshape(B * T, Do).numpy()
+        pca = PCA(n_components=min(k, Do))
+        U_open = pca.fit_transform(Z_open)  # [B*T, k_eff]
+        expl = pca.explained_variance_ratio_
+        k_eff = U_open.shape[1]
+
+        # ---- closed-forward を同じ基底へ射影 (CPU) ----
+        if Dc != Do:
+            # open/closed の次元が違う場合は線形射影で合わせる
+            Z_closed = closed_lat_seq_cpu.reshape(B * T, Dc).numpy()
+            A, *_ = np.linalg.lstsq(Z_closed, Z_open, rcond=None)
+            Z_closed_in_open_dim = Z_closed @ A
+        else:
+            Z_closed_in_open_dim = closed_lat_seq_cpu.reshape(B * T, Dc).numpy()
+
+        V_closed = pca.transform(Z_closed_in_open_dim)  # [B*T, k_eff]
+
+        # [B,T,k_eff] に戻す (still CPU, numpy → torch)
+        U_bt = U_open.reshape(B, T, k_eff)
+        V_bt = V_closed.reshape(B, T, k_eff)
+
+        # ---- 2D 可視化 ----
+        color_open   = "tab:orange"
+        color_closed = "tab:blue"
+
+        import matplotlib.pyplot as plt
+
+        if k_eff >= 2:
+            U2 = U_bt[:, :, :2]
+            V2 = V_bt[:, :, :2]
+            lim = float(max(abs(U2).max(), abs(V2).max()))
+
+            for i in idxs:
+                fig2d, ax2d = plt.subplots(1, 1, figsize=(6, 6), dpi=140)
+                u2d = U_bt[i, :, :2]
+                v2d = V_bt[i, :, :2]
+
+                for t in range(T - 1):
+                    ax2d.plot(u2d[t:t+2, 0], u2d[t:t+2, 1], color=color_open,   alpha=0.95)
+                    ax2d.plot(v2d[t:t+2, 0], v2d[t:t+2, 1], color=color_closed, alpha=0.95)
+
+                # start / goal マーク（Open）
+                ax2d.scatter(u2d[0,0],  u2d[0,1],  s=12, c=color_open,   label="Open")
+                ax2d.text(u2d[0,0],  u2d[0,1],  "S", fontsize=9, ha="center", va="center", color=color_open)
+                ax2d.text(u2d[-1,0], u2d[-1,1], "G", fontsize=9, ha="center", va="center", color=color_open)
+
+                # start / goal マーク（Closed）
+                ax2d.scatter(v2d[0,0],  v2d[0,1],  s=12, c=color_closed, label="Closed")
+                ax2d.text(v2d[0,0],  v2d[0,1],  "S", fontsize=9, ha="center", va="center", color=color_closed)
+                ax2d.text(v2d[-1,0], v2d[-1,1], "G", fontsize=9, ha="center", va="center", color=color_closed)
+
+                ax2d.set_xlim(-lim, lim); ax2d.set_ylim(-lim, lim)
+                ax2d.set_aspect("equal", adjustable="box")
+                ax2d.set_xlabel("PC1"); ax2d.set_ylabel("PC2")
+                ax2d.set_title(
+                    f"{name_prefix} | idx={i} | PCA(open-anchor) (top-{k_eff}): "
+                    + ", ".join(f"{v:.2f}" for v in expl[:k_eff])
+                )
+                handles = [
+                    Line2D([0],[0], color=color_open,   lw=2, label="Open"),
+                    Line2D([0],[0], color=color_closed, lw=2, label="Closed"),
+                ]
+                ax2d.legend(handles=handles, loc="best", frameon=True)
+
+                if not notebook:
+                    Logger.run().log_figure(
+                        fig2d,
+                        f"{name_prefix}-pca_openanchor-2d-i{i}",
+                        dir_name="pca_open_anchor/pca2d_pertraj",
+                    )
+                    plt.close(fig2d)
+                else:
+                    plt.show()
+
+        # ---- 3D 可視化 ----
+        if k_eff >= 3:
+            from mpl_toolkits.mplot3d import Axes3D  # noqa
+
+            for i in idxs:
+                fig3d = plt.figure(figsize=(8, 8), dpi=140)
+                ax3d = fig3d.add_subplot(111, projection="3d")
+                u3d = U_bt[i, :, :3]
+                v3d = V_bt[i, :, :3]
+
+                for t in range(T - 1):
+                    ax3d.plot(u3d[t:t+2,0], u3d[t:t+2,1], u3d[t:t+2,2], color=color_open,   alpha=0.95)
+                    ax3d.plot(v3d[t:t+2,0], v3d[t:t+2,1], v3d[t:t+2,2], color=color_closed, alpha=0.95)
+
+                s_size = 24
+                off = 0.0
+                ax3d.scatter(u3d[0,0],  u3d[0,1],  u3d[0,2],  s=s_size, c=color_open,   depthshade=False)
+                ax3d.scatter(u3d[-1,0], u3d[-1,1], u3d[-1,2], s=s_size, c=color_open,   depthshade=False)
+                ax3d.text(u3d[0,0]+off,  u3d[0,1]+off,  u3d[0,2]+off,  "S", color=color_open,   fontsize=9)
+                ax3d.text(u3d[-1,0]+off, u3d[-1,1]+off, u3d[-1,2]+off, "G", color=color_open,   fontsize=9)
+
+                ax3d.scatter(v3d[0,0],  v3d[0,1],  v3d[0,2],  s=s_size, c=color_closed, depthshade=False)
+                ax3d.scatter(v3d[-1,0], v3d[-1,1], v3d[-1,2], s=s_size, c=color_closed, depthshade=False)
+                ax3d.text(v3d[0,0]+off,  v3d[0,1]+off,  v3d[0,2]+off,  "S", color=color_closed, fontsize=9)
+                ax3d.text(v3d[-1,0]+off, v3d[-1,1]+off, v3d[-1,2]+off, "G", color=color_closed, fontsize=9)
+
+                ax3d.set_xlabel("PC1"); ax3d.set_ylabel("PC2"); ax3d.set_zlabel("PC3")
+                ax3d.set_title(
+                    f"PCA(open-anchor,3D) — {name_prefix} | var exp: "
+                    + ", ".join(f"{v:.2f}" for v in expl[:3])
+                )
+                handles = [
+                    Line2D([0],[0], color=color_open,   lw=2, label="Open"),
+                    Line2D([0],[0], color=color_closed, lw=2, label="Closed"),
+                ]
+                ax3d.legend(handles=handles, loc="upper left", frameon=True)
+                if not notebook:
+                    Logger.run().log_figure(
+                        fig3d,
+                        f"{name_prefix}-pca_openanchor-3d-i{i}",
+                        dir_name="pca_open_anchor/pca3d_pertraj",
+                    )
+                    plt.close(fig3d)
+                else:
+                    plt.show()
+
+        # ---- 時間方向の cos 類似度（open vs closed） ----
+        try:
+            U_t = torch.from_numpy(U_bt)   # [B,T,k_eff]
+            V_t = torch.from_numpy(V_bt)
+
+            def _cos_mean(a, b, eps=1e-8):
+                a = a / (a.norm(dim=-1, keepdim=True) + eps)
+                b = b / (b.norm(dim=-1, keepdim=True) + eps)
+                return (a * b).sum(-1).mean().item()
+
+            cos_over_time = []
+            for t in range(T):
+                cos_over_time.append(_cos_mean(U_t[:, t, :k_eff], V_t[:, t, :k_eff]))
+
+            figc, axc = plt.subplots(1, 1, figsize=(7, 3), dpi=140)
+            axc.plot(range(T), cos_over_time, marker='o', linewidth=1.5)
+            axc.set_xlabel("t (horizon)")
+            axc.set_ylabel("cosine in PCA(open) space")
+            axc.set_title(
+                f"Timewise Cosine (open vs closed) — mean={np.mean(cos_over_time):.3f} | var exp (top-{k_eff}): "
+                + ", ".join(f"{v:.2f}" for v in expl[:k_eff])
+            )
+            figc.tight_layout()
+            if not notebook:
+                Logger.run().log_figure(
+                    figc,
+                    f"{name_prefix}-pca_openanchor-timewise-cosine",
+                    dir_name="pca_open_anchor/pca_cos",
+                )
+                plt.close(figc)
+            else:
+                plt.show()
+        except Exception:
+            pass
+
+        plt.close("all")
+        try:
+            del U_bt, V_bt, U_open, V_closed, Z_open, Z_closed_in_open_dim
+        except Exception:
+            pass
+        try:
+            del open_lat_seq_cpu, closed_lat_seq_cpu
+        except Exception:
+            pass
+        gc.collect()
+        torch.cuda.empty_cache()
+
+
 
 
 
@@ -3734,85 +3260,73 @@ class ProbingEvaluator:
         vis_encoder_featuremap: bool = True,
         
     ):
+        import gc
+        import torch
+
         assert enc_prober is not None, "enc_prober is required"
         assert enc_prober_bluebox is not None, "enc_prober_bluebox is required"
 
+        device = self.device
 
         # データバッチ
-        states = batch.states.to(self.device).transpose(0, 1) #torch.Size([64, 50, 3, 64, 64])
-        actions = batch.actions.to(self.device).transpose(0, 1)
+        states = batch.states.to(device).transpose(0, 1) #torch.Size([64, 50, 3, 64, 64])
+        actions = batch.actions.to(device).transpose(0, 1)
 
         optional_fields = get_optional_fields(batch, device=states.device)
 
         # closed-forward 出力列
-        pred_output = jepa.forward_posterior(
+        closed_res = jepa.forward_posterior(
             states, actions, **optional_fields
         )
-        pred_output = pred_output.pred_output
+        pred_output = closed_res.pred_output
 
         # open-forward 出力列
-        pred_output_open = jepa.forward_open(
+        open_res = jepa.forward_open(
             states, actions, **optional_fields
         )
-        pred_output_open = pred_output_open.pred_output
+        pred_output_open = open_res.pred_output
         
-        
-        #encoderの出力列
-        enc_output = jepa.forward_posterior(
-                states, actions, encode_only=True, **optional_fields
-            )
-        enc_output = enc_output.backbone_output
-        #encoder 出力列から画像ベースに分離
-        encoder_encs = enc_output.obs_component
-        
+        # encoderの出力列 (encode_only で余計なものを出さない)
+        enc_res = jepa.forward_posterior(
+            states, actions, encode_only=True, **optional_fields
+        )
+        enc_output = enc_res.backbone_output
 
-        #closed-forward 出力列から画像ベースに分離
+        # encoder 出力列から画像ベースに分離
+        encoder_encs = enc_output.obs_component  # [T,B,C,H,W] 想定
+        
+        # closed-forward 出力列から画像ベースに分離
         if pred_output.obs_component is not None: ##
             pred_encs = pred_output.obs_component
         else: #x
             pred_encs = pred_output.predictions
 
-        #open-forward 出力列から画像ベースに分離
+        # open-forward 出力列から画像ベースに分離
         if pred_output_open.obs_component is not None: ##
             pred_encs_open = pred_output_open.obs_component
         else: #x
             pred_encs_open = pred_output_open.predictions
 
+        # detach（逆伝播グラフを完全に切る）
+        encoder_encs   = encoder_encs.detach()
+        pred_encs      = pred_encs.detach()
+        pred_encs_open = pred_encs_open.detach()
 
-        #TODO endeffector
-        # #closed-forward出力列 --> prober
-        # pred_locs_clsfwd_clsprb = torch.stack([prober(x) for x in pred_encs], dim=1)
-        # pred_locs_clsfwd_clsprb = normalizer.unnormalize_location(pred_locs_clsfwd_clsprb).cpu()
-        
-        # #open-forward出力列 --> prober
-        # pred_locs_opnfwd_clsprb = torch.stack([prober(x) for x in pred_encs_open], dim=1)
-        # pred_locs_opnfwd_clsprb = normalizer.unnormalize_location(pred_locs_opnfwd_clsprb).cpu()
-        
-        # #closed-forward出力列 --> prober_open
-        # pred_locs_clsfwd_opnprb = torch.stack([prober_open(x) for x in pred_encs], dim=1)
-        # pred_locs_clsfwd_opnprb = normalizer.unnormalize_location(pred_locs_clsfwd_opnprb).cpu()
-        
-        # #open-forward出力列 --> prober_open
-        # pred_locs_opnfwd_opnprb = torch.stack([prober_open(x) for x in pred_encs_open], dim=1)
-        # pred_locs_opnfwd_opnprb = normalizer.unnormalize_location(pred_locs_opnfwd_opnprb).cpu()
-        
-        
-        #encoder出力列
+        # ===== プロバー通過（まだGPU上） =====
+        # encoder出力列
         if enc_prober is not None:
             pred_enc_locs = torch.stack([enc_prober(x) for x in encoder_encs], dim=1)
-            pred_enc_locs = normalizer.unnormalize_location(pred_enc_locs).cpu()
+            pred_enc_locs = normalizer.unnormalize_location(pred_enc_locs)
             
-        #closed-forward出力列 --> enc_prober
+        # closed-forward出力列 --> enc_prober
         pred_locs_clsfwd_encprb = torch.stack([enc_prober(x) for x in pred_encs], dim=1)
-        pred_locs_clsfwd_encprb = normalizer.unnormalize_location(pred_locs_clsfwd_encprb).cpu()
+        pred_locs_clsfwd_encprb = normalizer.unnormalize_location(pred_locs_clsfwd_encprb)
         
-        #open-forward出力列 --> enc_prober 
+        # open-forward出力列 --> enc_prober 
         pred_locs_opnfwd_encprb = torch.stack([enc_prober(x) for x in pred_encs_open], dim=1)
-        pred_locs_opnfwd_encprb = normalizer.unnormalize_location(pred_locs_opnfwd_encprb).cpu()
+        pred_locs_opnfwd_encprb = normalizer.unnormalize_location(pred_locs_opnfwd_encprb)
         
-
-
-        #TODO bluebox_locs
+        # TODO bluebox_locs
         # #closed-forward出力列 --> prober
         # pred_bluebox_locs_clsfwd_clsprb = torch.stack([prober_bluebox_locs(x) for x in pred_encs], dim=1)
         # pred_bluebox_locs_clsfwd_clsprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_clsfwd_clsprb).cpu()
@@ -3829,31 +3343,56 @@ class ProbingEvaluator:
         # pred_bluebox_locs_opnfwd_opnprb = torch.stack([prober_bluebox_locs_open(x) for x in pred_encs_open], dim=1)
         # pred_bluebox_locs_opnfwd_opnprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_opnfwd_opnprb).cpu()
         
-        #encoder出力列
+        # encoder出力列 (bluebox)
         pred_enc_bluebox_locs = torch.stack([enc_prober_bluebox(x) for x in encoder_encs], dim=1)
-        pred_enc_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_enc_bluebox_locs).cpu()
+        pred_enc_bluebox_locs = normalizer.unnormalize_bluebox_locs(pred_enc_bluebox_locs)
 
-        
-        #closed-forward出力列 --> enc_prober
+        # closed-forward出力列 --> enc_prober (bluebox)
         pred_bluebox_locs_clsfwd_encprb = torch.stack([enc_prober_bluebox(x) for x in pred_encs], dim=1)
-        pred_bluebox_locs_clsfwd_encprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_clsfwd_encprb).cpu()
+        pred_bluebox_locs_clsfwd_encprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_clsfwd_encprb)
         
-        #open-forward出力列 --> enc_prober
+        # open-forward出力列 --> enc_prober (bluebox)
         pred_bluebox_locs_opnfwd_encprb = torch.stack([enc_prober_bluebox(x) for x in pred_encs_open], dim=1)
-        pred_bluebox_locs_opnfwd_encprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_opnfwd_encprb).cpu()
-        
+        pred_bluebox_locs_opnfwd_encprb = normalizer.unnormalize_bluebox_locs(pred_bluebox_locs_opnfwd_encprb)
 
+        # ===== ここで全部 CPU に移し、GPU テンソルを早めに解放 =====
+        pred_enc_locs              = pred_enc_locs.detach().cpu()
+        pred_locs_clsfwd_encprb    = pred_locs_clsfwd_encprb.detach().cpu()
+        pred_locs_opnfwd_encprb    = pred_locs_opnfwd_encprb.detach().cpu()
+        pred_enc_bluebox_locs      = pred_enc_bluebox_locs.detach().cpu()
+        pred_bluebox_locs_clsfwd_encprb = pred_bluebox_locs_clsfwd_encprb.detach().cpu()
+        pred_bluebox_locs_opnfwd_encprb = pred_bluebox_locs_opnfwd_encprb.detach().cpu()
+
+        # pred_encs 系はもう不要
+        try:
+            del encoder_encs, pred_encs, pred_encs_open
+        except Exception:
+            pass
+
+        # pred_output 系もここで解放
+        try:
+            del closed_res, open_res, enc_res
+            del pred_output, pred_output_open, enc_output
+        except Exception:
+            pass
 
         # pred_locs is of shape (batch_size, time, 1, 2)
         if idxs is None: ##
             idxs = list(range(min(pred_locs_clsfwd_encprb.shape[0], 64)))
 
-
+        # GT は CPU でOK
         gt_locations = normalizer.unnormalize_location(batch.locations).cpu()
-        
         gt_bluebox_locations = normalizer.unnormalize_bluebox_locs(batch.bluebox_locs).cpu()
 
+        # states/actions/optional_fields はここまでで用は済んだので解放
+        try:
+            del states, actions, optional_fields
+        except Exception:
+            pass
 
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from tqdm import tqdm
 
         for i in tqdm(idxs, desc=f"Plotting {name_prefix}"):
             fig, axes = plt.subplots(1, 2, figsize=(18, 12), dpi=200)
@@ -4490,9 +4029,6 @@ class ProbingEvaluator:
             # ax_bluebox_enc.legend()
             ###########################################################################################
             
-            
-
-
             if not notebook:
                 Logger.run().log_figure(fig, f"{name_prefix}-prober_predictions_by_encprober_{i}", dir_name = 'prober_prediction_by_encprober_FOR_POSTER')
                 # Logger.run().log_video(ft_maps_gif_path, f"{name_prefix}-featuremap_{i}")
@@ -4503,6 +4039,7 @@ class ProbingEvaluator:
                 
             plt.close('all')
 
+        # ===== 末尾: 後始末（元の del 群は維持） =====
         try:
             del pred_locs_clsfwd_encprb, pred_locs_opnfwd_encprb
         except Exception:
@@ -4541,3 +4078,180 @@ class ProbingEvaluator:
 
         gc.collect()
         torch.cuda.empty_cache()
+
+
+
+
+
+    @torch.no_grad()
+    def log_latent_forward_mse(
+        self,
+        batch,
+        jepa: JEPA,
+        prober: torch.nn.Module,
+        prober_open: torch.nn.Module,
+        prober_bluebox_locs: torch.nn.Module = None,
+        prober_bluebox_locs_open: torch.nn.Module = None,
+        enc_prober: torch.nn.Module = None,
+        enc_prober_bluebox: torch.nn.Module = None,
+        normalizer: Normalizer = None,
+        name_prefix: str = "",
+        idxs: Optional[List[int]] = None,
+        notebook: bool = False,
+        pixel_mapper = None,
+        vis_dynamics_closed_featuremap: bool = True,
+        vis_dynamics_open_featuremap: bool = True,
+        vis_encoder_featuremap: bool = True,
+    ):
+        """
+        latent 上での一貫性を測る評価:
+
+        - closed vs open
+        - open   vs encoder(Z)
+        - closed vs encoder(Z)
+
+        を MSE で計算し，
+
+        - 全時刻・全バッチ平均のスカラー値
+        - 時刻ごとの MSE 推移の line plot
+
+        を Logger に記録する。
+        """
+
+        device = self.device
+
+        # ===== 1. バッチをデバイスに載せる & optional fields =====
+        states = batch.states.to(device).transpose(0, 1)   # [T, B, ...]
+        actions = batch.actions.to(device).transpose(0, 1) # [T, B, ...]
+        optional_fields = get_optional_fields(batch, device=states.device)
+
+        # ===== 2. closed-forward 出力列 =====
+        closed_res = jepa.forward_posterior(
+            states, actions, **optional_fields
+        )
+        closed_pred = closed_res.pred_output       # ForwardResult.pred_output
+        enc_output  = closed_res.backbone_output   # ForwardResult.backbone_output
+
+        encoder_encs = enc_output.obs_component    # [T, B, C, H, W] 想定
+        if closed_pred.obs_component is not None:
+            closed_encs = closed_pred.obs_component
+        else:
+            closed_encs = closed_pred.predictions  # fallback
+
+        # ---- まず encoder / closed を CPU に退避して GPU を空ける ----
+        encoder_encs_cpu = encoder_encs.detach().float().cpu()
+        closed_encs_cpu  = closed_encs.detach().float().cpu()
+
+        # GPU 上の参照を削除
+        del encoder_encs, closed_encs, enc_output, closed_pred, closed_res
+        # states / actions は open-forward でも使うので残す
+        torch.cuda.empty_cache()
+
+        # ===== 3. open-forward 出力列 =====
+        open_res = jepa.forward_open(
+            states, actions, **optional_fields
+        )
+        open_pred = open_res.pred_output
+
+        if open_pred.obs_component is not None:
+            open_encs = open_pred.obs_component
+        else:
+            open_encs = open_pred.predictions
+
+        # open もすぐ CPU へ
+        open_encs_cpu = open_encs.detach().float().cpu()
+
+        # GPU 上の参照を削除
+        del open_encs, open_pred, open_res
+        del states, actions, optional_fields
+        torch.cuda.empty_cache()
+
+        # ここから先は encoder_encs_cpu / closed_encs_cpu / open_encs_cpu だけを使う（全部 CPU）✨
+        #   encoder_encs_cpu: [T, B, ...]  (CPU)
+        #   closed_encs_cpu : [T, B, ...]  (CPU)
+        #   open_encs_cpu   : [T, B, ...]  (CPU)
+
+        # ===== 4. helper: 全体平均 MSE / 時刻ごとの MSE =====
+        def mse_all(a: torch.Tensor, b: torch.Tensor) -> float:
+            # 全次元に対して平均を取ったスカラー
+            return F.mse_loss(a, b).item()
+
+        def mse_per_timestep(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+            # a,b: [T, B, ...] (CPU 上)
+            diff = F.mse_loss(a, b, reduction="none")    # [T, B, ...]
+            # 時刻以外の次元で平均 -> [T]
+            reduce_dims = tuple(range(1, diff.ndim))
+            return diff.mean(dim=reduce_dims).detach().cpu()
+
+        # ===== 5. スカラー MSE を計算 =====
+        mse_closed_open = mse_all(closed_encs_cpu, open_encs_cpu)
+        mse_open_enc    = mse_all(open_encs_cpu,  encoder_encs_cpu)
+        mse_closed_enc  = mse_all(closed_encs_cpu, encoder_encs_cpu)
+
+        # ===== 6. 時刻ごとの MSE 推移も計算 =====
+        mse_t_closed_open = mse_per_timestep(closed_encs_cpu, open_encs_cpu)    # [T]
+        mse_t_open_enc    = mse_per_timestep(open_encs_cpu,  encoder_encs_cpu)  # [T]
+        mse_t_closed_enc  = mse_per_timestep(closed_encs_cpu, encoder_encs_cpu) # [T]
+
+        # ===== 7. ログ: スカラー値 =====
+        log_dict = {
+            f"{name_prefix}/latent_mse_closed_vs_open": mse_closed_open,
+            f"{name_prefix}/latent_mse_open_vs_enc"  : mse_open_enc,
+            f"{name_prefix}/latent_mse_closed_vs_enc": mse_closed_enc,
+        }
+        Logger.run().log(log_dict)
+
+        # ===== 8. ログ: 時刻ごとの line plot =====
+        Logger.run().log_line_plot(
+            data=[[int(t), float(mse_t_closed_open[t])] for t in range(mse_t_closed_open.shape[0])],
+            plot_name=f"{name_prefix}_latent_mse_closed_vs_open_per_t"
+        )
+        Logger.run().log_line_plot(
+            data=[[int(t), float(mse_t_open_enc[t])] for t in range(mse_t_open_enc.shape[0])],
+            plot_name=f"{name_prefix}_latent_mse_open_vs_enc_per_t"
+        )
+        Logger.run().log_line_plot(
+            data=[[int(t), float(mse_t_closed_enc[t])] for t in range(mse_t_closed_enc.shape[0])],
+            plot_name=f"{name_prefix}_latent_mse_closed_vs_enc_per_t"
+        )
+
+        # コンソールにも一応出しておくとデバッグしやすいかも
+        print(
+            f"[LATENT MSE] {name_prefix} | "
+            f"closed-open={mse_closed_open:.6e}, "
+            f"open-Z={mse_open_enc:.6e}, "
+            f"closed-Z={mse_closed_enc:.6e}"
+        )
+
+        # ===== ローカルファイルにも保存する =====
+        run = Logger.run()
+        from pathlib import Path
+
+        if run.output_path is not None:
+            out_dir = Path(run.output_path) / "latent_mse"
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            out_path = out_dir / f"{name_prefix}_latent_mse.txt"
+            with open(out_path, "w") as f:
+                f.write(f"[LATENT MSE] {name_prefix}\n")
+                f.write(f"closed-open={mse_closed_open:.6e}\n")
+                f.write(f"open-Z    ={mse_open_enc:.6e}\n")
+                f.write(f"closed-Z  ={mse_closed_enc:.6e}\n\n")
+
+                f.write("=== timestep MSE ===\n")
+                f.write("closed-open: " + ", ".join(f"{v:.6e}" for v in mse_t_closed_open.tolist()) + "\n")
+                f.write("open-enc   : " + ", ".join(f"{v:.6e}" for v in mse_t_open_enc.tolist()) + "\n")
+                f.write("closed-enc : " + ", ".join(f"{v:.6e}" for v in mse_t_closed_enc.tolist()) + "\n")
+
+            print(f"[LATENT MSE] saved → {out_path.resolve()}")
+
+        # ===== CPU テンソルも掃除（お好みで） =====
+        del encoder_encs_cpu, closed_encs_cpu, open_encs_cpu
+        del mse_t_closed_open, mse_t_open_enc, mse_t_closed_enc
+        gc.collect()
+
+        return {
+            "closed_vs_open": mse_closed_open,
+            "open_vs_z": mse_open_enc,
+            "closed_vs_z": mse_closed_enc,
+        }

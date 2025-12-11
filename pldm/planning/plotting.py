@@ -976,3 +976,143 @@ def log_planning_traj_plots_split(
         if torch.cuda.is_available():
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
+
+
+
+def log_planning_joint_angle_plots_split(
+    result,
+    report,
+    idxs=None,
+    plot_every: int = 1,
+    plot_failure_only: bool = False,
+    joint_names=None,
+):
+    if idxs is None:
+        idxs = default_plot_idxs
+
+    if not hasattr(result, "qpos_history") or result.qpos_history is None or len(result.qpos_history) == 0:
+        print("[WARN] result.qpos_history が存在しないため、関節角度の可視化をスキップします。")
+        return
+
+    T_q = len(result.qpos_history)      # 状態列の長さ（q_0, q_1, ..., q_{T_q-1})
+    T_a = len(result.action_history)    # 行動列の長さ（a_0, ..., a_{T_a-1})
+
+    if T_q <= 1 or T_a == 0:
+        print("[WARN] qpos_history / action_history が短すぎるのでスキップします。")
+        return
+
+    # a_t と q_{t+1} を比較できるのは t = 0..min(T_a-1, T_q-2)
+    T_cmp = min(T_a, T_q - 1)
+
+    B = result.qpos_history[0].shape[0]
+
+    if joint_names is None:
+        joint_names = [f"Joint {i+1}" for i in range(7)]
+
+    for idx in idxs:
+        if idx >= B:
+            print(f"[WARN] idx={idx} は batch 次元 B={B} を超えています。スキップ。")
+            continue
+
+        if plot_failure_only and getattr(report, "success", [False] * B)[idx]:
+            continue
+
+        # terminations は「状態インデックス（q_t）の最大値」を指していると仮定
+        # すると有効な行動インデックスは 0..t_term-1
+        t_term_states = getattr(report, "terminations", [T_q - 1])[idx]
+        t_max = min(T_cmp, t_term_states)  # t in [0, t_max-1] が有効
+
+        target_traj = []
+        actual_traj = []
+
+        for t in range(t_max):
+            # ----- target: 出力行動 a_t -----
+            act_t = result.action_history[t]
+
+            if act_t.ndim == 3:
+                a0 = act_t[idx, 0]   # (7,)
+            elif act_t.ndim == 2:
+                a0 = act_t[idx]
+            else:
+                raise ValueError(f"Unexpected action_history[{t}].shape={act_t.shape}")
+
+            target_traj.append(a0.detach().cpu())
+
+            # ----- actual: q_{t+1} -----
+            qpos_t = result.qpos_history[t + 1][idx]  # (7,) を想定
+            if qpos_t.numel() > 7:
+                qpos_t = qpos_t[:7]
+            actual_traj.append(qpos_t.detach().cpu())
+
+        if len(target_traj) == 0:
+            continue
+
+        target_traj = torch.stack(target_traj, dim=0)  # (t_max, 7)
+        actual_traj = torch.stack(actual_traj, dim=0)  # (t_max, 7)
+
+        target_np = target_traj.numpy()
+        actual_np = actual_traj.numpy()
+        ts = np.arange(target_np.shape[0])
+        
+        # --- 関節ごとの min-max を求める ---
+        min_j = np.minimum(target_np.min(axis=0), actual_np.min(axis=0))  # (7,)
+        max_j = np.maximum(target_np.max(axis=0), actual_np.max(axis=0))  # (7,)
+
+        range_j = max_j - min_j
+        # max_j == min_j（＝その関節がずっと同じ値）のとき、ゼロ割りを防ぐ
+        range_j[range_j == 0] = 1.0
+
+        target_norm = 2.0 * (target_np - min_j) / range_j - 1.0
+        actual_norm = 2.0 * (actual_np - min_j) / range_j - 1.0
+
+        target_np = target_norm
+        actual_np = actual_norm
+
+        fig, axes = plt.subplots(
+            nrows=7,
+            ncols=1,
+            figsize=(8, 10),
+            dpi=200,
+            sharex=True,
+        )
+
+        for j in range(7):
+            ax = axes[j]
+
+            ax.plot(
+                ts,
+                target_np[:, j],
+                linewidth=1.0,
+                label="target (action)",
+            )
+
+            ax.plot(
+                ts,
+                actual_np[:, j],
+                linewidth=1.0,
+                linestyle="--",
+                label="actual (qpos)",
+            )
+
+            ax.set_ylabel(joint_names[j], fontsize=8)
+            ax.grid(True, linestyle=":", linewidth=0.5, alpha=0.6)
+
+            if j == 0:
+                ax.legend(fontsize=8, loc="best")
+
+        axes[-1].set_xlabel("timestep (t, comparing a_t vs q_{t+1})", fontsize=9)
+        fig.suptitle(f"Joint angle comparison (episode idx={idx})", fontsize=10)
+        fig.tight_layout()
+
+        Logger.run().log_figure(fig, f"mpc/joint_angle_comparison_ep{idx}")
+        plt.close(fig)
+
+        try:
+            del fig, axes, target_traj, actual_traj, target_np, actual_np
+        except Exception:
+            pass
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()

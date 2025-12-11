@@ -485,7 +485,7 @@ def run_follow(env, traj_xyz, name="rectangle"):
             if err < SUCCESS_TOL:
 
                 for _ in range(HOLD_STEPS_AT_TARGET):
-                    env.step(q_des, MAX_DQ)
+                    env.step(q_des)
                     
                     cur_hold = ee(env)
                     v_hold = (cur_hold - prev_cur) / dt_step
@@ -1113,7 +1113,7 @@ def main():
 
     todo = [
         ("rectangle", NUM_PNTS, False),
-        ("lawnmower", NUM_PNTS, False),
+        # ("lawnmower", NUM_PNTS, False),
         ("lissajous", NUM_PNTS, False),
         # ("random", NUM_PNTS, False),
         # ("stationary", NUM_PNTS, False),

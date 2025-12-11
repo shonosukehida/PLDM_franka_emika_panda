@@ -239,8 +239,9 @@ class MPPI:
             state = torch.tensor(state)
         self.state = state.to(dtype=self.dtype, device=self.d)
         
-        
+        print("[pldm/planning/planners/mppi_torch.py, 242] self.state.shape:", self.state.shape)
         with torch.inference_mode():
+            print("[pldm/planning/planners/mppi_torch.py, 244] before cost:", torch.cuda.memory_allocated()/1024**2, "MB")
             cost_total = self._compute_total_cost_batch()
             torch.cuda.empty_cache()
             beta = torch.min(cost_total)

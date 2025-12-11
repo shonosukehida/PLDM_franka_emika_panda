@@ -7,7 +7,7 @@ data:
   dataset_type: DatasetType.Franka
   normalize: true
   normalize_mode: "zscore"
-  normalize_actions_mode: "minmax"
+  normalize_actions_mode: "zscore"
   min_states_val: 0.0
   max_states_val: 1.0
   min_actions_val: -1.0
@@ -155,24 +155,24 @@ eval_cfg:
     max_samples: 2000000
     max_samples_enc: 2000000
     schedule: Cosine
-    visualize_probing: true
+    visualize_probing: false #true
     load_prober: true
   disable_planning: false
   franka_planning:
     n_envs: 4 #85
     n_envs_batch_size: 1 #16
-    n_steps: 50000 #192
+    n_steps: 250 #192
     levels: "easy"
     easy:
-      n_steps: 200
-      n_envs: 10 #80
-      max_plan_length: 100 
+      n_steps: 70
+      n_envs: 10 #80 #10(12/11)
+      max_plan_length: 100 #タスク時 #100
       plot_every: 10
       min_block_radius: 4
       max_block_radius: 9999
       override_config: true
     visualize_planning: true
-    visualize_planning_videos: true
+    visualize_planning_videos: false
     log_pred_dist_every: 9999999
     plot_every: 16
     set_start_target_path: null #"../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
@@ -183,8 +183,8 @@ eval_cfg:
     image_obs: true
     stack_states: 1
     data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/'
-    max_dq: 0.1
-    fps: 2.5 #FPS指定
+    max_dq: 0.03
+    fps: 50 #FPS指定
     max_inner_steps: 500 #MPPI出力目標行動姿勢に近づけるまでに回す最大step数 #192
     reach_eps: 1e-2 #MPPI出力目標姿勢と現在の姿勢の距離
     level1:
@@ -198,9 +198,9 @@ eval_cfg:
         lr: 0.03
         n_iters: 200
       mppi:
-        noise_sigma: 0.01 #5 #ノイズ共分散 0.01
+        noise_sigma: 0.002 #5 #ノイズ共分散 0.01, 0.002
         num_samples: 500 #500.  #ランダム行動列のサンプル数
-        lambda_: 0.0025 #温度
+        lambda_: 0.0025 #温度 #0.0025 #良い軌道と悪い軌道との重みの差をどれくらいにするか
   # d4rl_planning:
   #   n_envs: 10 #85
   #   n_envs_batch_size: 4 #16

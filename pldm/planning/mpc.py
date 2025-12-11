@@ -180,6 +180,7 @@ class MPCEvaluator(ABC):
         print("[DBG][pldm/planning/mpc.py] self.config.max_inner_steps:", self.config.max_inner_steps)
         
         envs = [HoldUntilReachWrapper(e, reach_eps=self.config.reach_eps, max_inner_steps=self.config.max_inner_steps) for e in envs]
+        for env in envs: print(type(env))
         
         physic_timestep = envs[0].physics.model.opt.timestep
         substeps = envs[0].substeps
@@ -275,6 +276,7 @@ class MPCEvaluator(ABC):
                     curr_propio_vel = None
 
                 print("[DBG][pldm/planning/mpc.py]self.config.n_steps:", self.config.n_steps)
+                print("[DBG][pldm/planning/mpc.py]self.config.level1.max_plan_length:", self.config.level1.max_plan_length)
                 planning_result = planner.plan(
                     obs_t,
                     curr_propio_pos=curr_propio_pos,
