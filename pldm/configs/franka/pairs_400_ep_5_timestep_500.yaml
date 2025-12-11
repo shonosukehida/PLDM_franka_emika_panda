@@ -161,12 +161,12 @@ eval_cfg:
   franka_planning:
     n_envs: 4 #85
     n_envs_batch_size: 1 #16
-    n_steps: 250 #192
+    n_steps: 500 #192
     levels: "easy"
     easy:
       n_steps: 70
       n_envs: 10 #80 #10(12/11)
-      max_plan_length: 100 #タスク時 #100
+      max_plan_length: 50 #タスク時 #100
       plot_every: 10
       min_block_radius: 4
       max_block_radius: 9999
