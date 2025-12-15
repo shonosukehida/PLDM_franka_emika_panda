@@ -862,26 +862,26 @@ class ProbingEvaluator:
                 model,     
             )
             
-            # self.plot_pca_open_closed(
-            #     btc,
-            #     model,
-            #     name_prefix=f"{plot_prefix}_val",
-            #     idxs=None if not quick_debug else list(range(10)),
-            # )
+            self.plot_pca_open_closed(
+                btc,
+                model,
+                name_prefix=f"{plot_prefix}_val",
+                idxs=None if not quick_debug else list(range(10)),
+            )
 
             
-            # metrics_latent = self.log_latent_forward_mse(
-            #     batch=btc,
-            #     jepa=model,
-            #     prober=probers["locations"],
-            #     prober_open=probers_open["locations"],
-            #     prober_bluebox_locs=probers["bluebox_locs"],
-            #     prober_bluebox_locs_open=probers_open["bluebox_locs"],
-            #     enc_prober=enc_probers["locations"] if isinstance(enc_probers, dict) else None,
-            #     enc_prober_bluebox=enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
-            #     normalizer=val_ds.normalizer,
-            #     name_prefix=plot_prefix,
-            # )
+            metrics_latent = self.log_latent_forward_mse(
+                batch=btc,
+                jepa=model,
+                prober=probers["locations"],
+                prober_open=probers_open["locations"],
+                prober_bluebox_locs=probers["bluebox_locs"],
+                prober_bluebox_locs_open=probers_open["bluebox_locs"],
+                enc_prober=enc_probers["locations"] if isinstance(enc_probers, dict) else None,
+                enc_prober_bluebox=enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
+                normalizer=val_ds.normalizer,
+                name_prefix=plot_prefix,
+            )
 
 
         return

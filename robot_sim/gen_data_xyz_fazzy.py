@@ -69,11 +69,23 @@ class FrankaDatasetGenerator:
         
         self.eval_only = self.config['eval_only']
 
-        self.SAVE_PATH = (
-            f"pldm_envs/franka/presaved_datasets/val_pairs_{self.PAIRS}_ep_{self.EPISODES_PER_PAIR}_timestep_{self.STEPS_PER_EPISODE}_sample_{self.sample_tag}"
-            if self.IS_VAL else
-            f"pldm_envs/franka/presaved_datasets/pairs_{self.PAIRS}_ep_{self.EPISODES_PER_PAIR}_timestep_{self.STEPS_PER_EPISODE}_sample_{self.sample_tag}"
-        )
+        # self.SAVE_PATH = (
+        #     f"pldm_envs/franka/presaved_datasets/val_pairs_{self.PAIRS}_ep_{self.EPISODES_PER_PAIR}_timestep_{self.STEPS_PER_EPISODE}_sample_{self.sample_tag}"
+        #     if self.IS_VAL else
+        #     f"pldm_envs/franka/presaved_datasets/pairs_{self.PAIRS}_ep_{self.EPISODES_PER_PAIR}_timestep_{self.STEPS_PER_EPISODE}_sample_{self.sample_tag}"
+        # )
+        
+        
+        ratio_tag = "_".join(f"{r:.2f}".replace(".", "p") for r in self.sample_method_ratio)
+
+        if self.IS_VAL:
+            if "mix" not in self.sample_tag:
+                self.SAVE_PATH = f".../val_pairs_{...}_sample_{self.sample_tag}"
+            else:
+                self.SAVE_PATH = f".../val_pairs_{...}_sample_{self.sample_tag}_{ratio_tag}"
+        else:
+            self.SAVE_PATH = f".../pairs_{...}_sample_{self.sample_tag}"
+
         
         #データ確認のみの場合, 確認パスを指定
         if self.eval_only:
