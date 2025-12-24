@@ -10,7 +10,7 @@ from .enums import FrankaMPCConfig
 from pldm.planning.enums import MPCResult, PooledMPCResult
 from pldm.planning.utils import calc_avg_steps_to_goal
 from pldm.planning.plotting import log_planning_plots, log_l1_planning_loss, log_planning_plots_split, log_planning_videos_split
-from pldm.planning.plotting import log_planning_obs_plots_split, log_planning_traj_plots_split, log_planning_joint_angle_plots_split
+from pldm.planning.plotting import log_planning_obs_plots_split, log_planning_traj_plots_split, log_planning_joint_angle_plots_split, log_planning_torque_plots_split
 from pldm.planning.d4rl.enums import MPCReport  
 
 
@@ -39,11 +39,14 @@ class FrankaMPCEvaluator(MPCEvaluator):
             pixel_mapper=pixel_mapper
         )
 
+        print("[DBG][pldm/planning/franka/mpc.py]: task_name:", self.config.task.name)
         envs_generator = FrankaEnvsGenerator(
             model_path=config.model_path,  
             n_envs=config.n_envs,
             normalizer=normalizer,
-            max_dq=self.config.max_dq
+            max_dq=self.config.max_dq,
+            task_name=self.config.task.name,
+            task_cfg=self.config.task,
         )
         self.envs = envs_generator()
         for e in self.envs:
@@ -153,6 +156,16 @@ class FrankaMPCEvaluator(MPCEvaluator):
                 plot_every=self.config.plot_every,
                 plot_failure_only=self.config.plot_failure_only,
             )
+
+            log_planning_torque_plots_split(
+                result=mpc_data,
+                report=report,
+                env=self.envs[0], 
+                idxs=list(range(self.config.n_envs)) if not self.quick_debug else [0],
+                plot_failure_only=self.config.plot_failure_only,
+            )
+
+
             
             if self.config.visualize_planning_videos:
                 print("visualize_planning_videos!!")

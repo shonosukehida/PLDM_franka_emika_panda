@@ -1,4 +1,4 @@
-n_steps: &n_steps 70
+n_steps: &n_steps 50
 val_n_steps: *n_steps
 env_name: &env_name franka
 
@@ -7,7 +7,7 @@ data:
   dataset_type: DatasetType.Franka
   normalize: true
   normalize_mode: "zscore"
-  normalize_actions_mode: "minmax"
+  normalize_actions_mode: "zscore"
   min_states_val: 0.0
   max_states_val: 1.0
   min_actions_val: -1.0
@@ -46,7 +46,7 @@ eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
 eval_mpcs: 20
-eval_only: false
+eval_only: true
 hjepa:
   l1_n_steps: *n_steps
   train_l1: true
@@ -77,7 +77,7 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: null #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20251219_202750/epoch=5_sample_step=270336.ckpt #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
 load_l1_only: false
 
 use_opn_loss_func: &use_opn_loss_func false #現在はopen_objectives を共通の損失関数として使用
@@ -91,27 +91,31 @@ objectives_l1:
   clsd_objectives: #実際はclosed
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
+  - ObjectiveType.SIGReg
   - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   opn_objectives:
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
+  - ObjectiveType.SIGReg
   - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   vicreg_obs:
     adjust_cov: true
     cov_chunk_size: null
-    cov_coeff: 11.925 #11.925
+    cov_coeff: 0.0 #11.925
     cov_coeff_t: 0 #0
     cov_per_feature: false
     projector: id
     random_projector: false
     sim_coeff: 1 #1
-    std_coeff: 35.026 #35.026
-    std_coeff_t: 2.9199 #2.9199
-    sim_coeff_t: 0.10193 #0.10193
+    std_coeff: 0.0 #35.026
+    std_coeff_t: 0.0 #2.9199
+    sim_coeff_t: 0.0 #0.10193
   prediction_propio:
-    global_coeff: 1.4108 #1.4108
+    global_coeff: 0.0 #1.4108
+  sigreg:
+    coeff: 1.0
 optimizer_type: Adam
 output_dir: franka
 output_root: ./pldm/checkpoints
@@ -156,7 +160,7 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: true
-    load_prober: false
+    load_prober: true
   disable_planning: false
   franka_planning:
     n_envs: 4 #85
@@ -166,7 +170,7 @@ eval_cfg:
     easy:
       n_steps: 200
       n_envs: 10 #80
-      max_plan_length: 100 
+      max_plan_length: 50 #タスク時に使われる
       plot_every: 10
       min_block_radius: 4
       max_block_radius: 9999
@@ -183,15 +187,29 @@ eval_cfg:
     image_obs: true
     stack_states: 1
     data_path: 'pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_mix_direction_towards_bluebox_1_1/'
-    max_dq: 0.03
-    fps: 50 #FPS指定
+    max_dq: 100
+    fps: 10 #FPS指定
     max_inner_steps: 500 #MPPI出力目標行動姿勢に近づけるまでに回す最大step数
     reach_eps: 1e-2 #MPPI出力目標姿勢と現在の姿勢の距離
+    task:
+      name: reach_no_touch   # push_to_goal / reach_no_touch
+
+      reach_no_touch:
+        ee_goal_xyz: [0.55, 0.0, 0.10]      # 例: EEを置きたい位置
+        box_init_xyz: null                  # nullならresetで使うstart_posを採用
+        box_hold_eps: 0.02                  # 成功判定: 箱が動いてない閾値(m)
+        ee_success_eps: 0.03                # 成功判定: EE到達閾値(m)
+        use_box: true             # falseなら goal画像生成時に箱を遠方へ
+
+      push_to_goal:
+        success_thresh: 0.05                # 既存の箱ゴール成功判定(m)
+
+
     level1:
       planner_type: PlannerType.MPPI
       min_step: 0
       max_step: 1
-      max_plan_length: 64 #128 #一度に予測するホライズン
+      max_plan_length: 50 #128 #一度に予測するホライズン
       sgd:
         action_change_reg: 0
         l2_reg: 0
@@ -246,5 +264,5 @@ run_name: pldm_franka
 run_project: Franka
 save_every_n_epochs: 1
 seed: 246
-wandb: true
+wandb: false
 confirm_normalize: true

@@ -246,6 +246,8 @@ class Trainer:
 
         self.model = self.model.to(self.device)
 
+        print("[DBG][pldm/train.py] cfg sigreg coeff:", self.config.objectives_l1.sigreg.coeff)
+
         # create clsd objectives
         self.clsd_objectives_l1 = self.config.objectives_l1.build_clsd_objectives_list(
             name_prefix="l1", repr_dim=self.model.level1.spatial_repr_dim

@@ -112,6 +112,8 @@ objectives_l1:
     sim_coeff_t: 0.10193 #0.10193
   prediction_propio:
     global_coeff: 1.4108 #1.4108
+  sigreg:
+    coeff: 1.0
 optimizer_type: Adam
 output_dir: franka
 output_root: ./pldm/checkpoints
@@ -164,17 +166,17 @@ eval_cfg:
     n_steps: 192
     levels: "easy"
     easy:
-      n_steps: 200
-      n_envs: 10 #80
+      n_steps: 200 #タスクのタイムステップ
+      n_envs: 4 #80
       max_plan_length: 100 
-      plot_every: 10
+      plot_every: 1
       min_block_radius: 4
       max_block_radius: 9999
       override_config: true
     visualize_planning: true
     visualize_planning_videos: true
     log_pred_dist_every: 9999999
-    plot_every: 16
+    plot_every: 1
     set_start_target_path: null #"../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
     action_repeat: 1
     action_repeat_mode: 'id'
@@ -187,6 +189,19 @@ eval_cfg:
     fps: 50 #FPS指定
     max_inner_steps: 50 #MPPI出力目標行動姿勢に近づけるまでに回す最大step数
     reach_eps: 1e-2 #MPPI出力目標姿勢と現在の姿勢の距離
+    task:
+      name: reach_no_touch   # push_to_goal / reach_no_touch
+
+      reach_no_touch:
+        ee_goal_xyz: [0.55, 0.0, 0.10]      # 例: EEを置きたい位置
+        box_init_xyz: null                  # nullならresetで使うstart_posを採用
+        box_hold_eps: 0.02                  # 成功判定: 箱が動いてない閾値(m)
+        ee_success_eps: 0.03                # 成功判定: EE到達閾値(m)
+        use_box: true             # falseなら goal画像生成時に箱を遠方へ
+      push_to_goal:
+        success_thresh: 0.05                # 既存の箱ゴール成功判定(m)
+
+
     level1:
       planner_type: PlannerType.MPPI
       min_step: 0

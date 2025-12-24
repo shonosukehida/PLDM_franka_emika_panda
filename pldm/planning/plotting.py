@@ -390,13 +390,13 @@ def log_planning_plots_split(
         try: plt.close(figB)
         except: pass
 
-        # 大きい参照を明示解放
+
         for _n in ('ax', 'traj', 'obj_traj'):
             if _n in locals():
                 try: del locals()[_n]
                 except: pass
 
-        # preds がリストなら中身を解放してからdel
+
         if 'preds' in locals() and isinstance(preds, list):
             try: preds.clear()
             except: pass
@@ -409,7 +409,6 @@ def log_planning_plots_split(
             try: del single_step_preds
             except: pass
 
-        # 使い捨て変数も削除（任意）
         for _n in ('img', 'obs', 'P'):
             if _n in locals():
                 try: del locals()[_n]
@@ -1020,7 +1019,8 @@ def log_planning_joint_angle_plots_split(
         # terminations は「状態インデックス（q_t）の最大値」を指していると仮定
         # すると有効な行動インデックスは 0..t_term-1
         t_term_states = getattr(report, "terminations", [T_q - 1])[idx]
-        t_max = min(T_cmp, t_term_states)  # t in [0, t_max-1] が有効
+        # t_max = min(T_cmp, t_term_states)  # t in [0, t_max-1] が有効
+        t_max = T_cmp
 
         target_traj = []
         actual_traj = []
@@ -1116,3 +1116,81 @@ def log_planning_joint_angle_plots_split(
         if torch.cuda.is_available():
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
+            
+            
+def log_planning_torque_plots_split(
+    result,
+    report,
+    env,                      # ★追加
+    idxs=None,
+    plot_failure_only=False,
+    joint_names=None,
+):
+    if idxs is None:
+        idxs = default_plot_idxs
+
+    if not hasattr(result, "actforce_history") or len(result.actforce_history) == 0:
+        print("[WARN] actforce_history が無いのでスキップ")
+        return
+
+    # ===== MuJoCo model を env から取得（dm_control版）=====
+    model = env.physics.model   # ★ここがポイント
+
+    # (n_actuator, 2) : [min, max]
+    act_force_range = model.actuator_forcerange.copy()
+
+    # Franka arm の actuator id を env 側で持っているので、それを使うのが安全
+    arm_ids = getattr(env, "arm_actuator_ids", None)
+    if arm_ids is None:
+        # フォールバック：先頭7個（ただし危険）
+        arm_ids = np.arange(7)
+
+    torque_min = act_force_range[arm_ids, 0]
+    torque_max = act_force_range[arm_ids, 1]
+    torque_limit = np.maximum(np.abs(torque_min), np.abs(torque_max))  # (7,)
+
+    T = len(result.actforce_history)
+    B = result.actforce_history[0].shape[0]
+
+    if joint_names is None:
+        joint_names = [f"Joint {i+1}" for i in range(7)]
+
+    for idx in idxs:
+        if idx >= B:
+            continue
+        if plot_failure_only and getattr(report, "success", [False] * B)[idx]:
+            continue
+
+        if T <= 0:
+            print(f"[WARN] actforce plot skip: T={T}, idx={idx}")
+            continue
+
+        # (T, 7)  ※actforce_history[t][idx] が (7,) を返す前提
+        af = torch.stack(
+            [result.actforce_history[t][idx] for t in range(T)],
+            dim=0
+        ).cpu().numpy()
+
+        # ===== 正規化：|τ| / τ_max =====
+        af_norm = af / torque_limit[None, :]
+        af_norm = np.clip(af_norm, -1.1, 1.1)
+
+        ts = np.arange(af_norm.shape[0])
+
+        fig, axes = plt.subplots(7, 1, figsize=(8, 10), dpi=200, sharex=True)
+        for j in range(7):
+            ax = axes[j]
+            ax.plot(ts, af_norm[:, j], linewidth=1.0, label="|τ| / τ_max")
+            ax.axhline(1.0, linestyle="--", linewidth=0.6)
+            ax.axhline(-1.0, linestyle="--", linewidth=0.6)
+            ax.set_ylim(-1.1, 1.1)
+            ax.set_ylabel(joint_names[j], fontsize=8)
+            ax.grid(True, linestyle=":", linewidth=0.5, alpha=0.6)
+            if j == 0:
+                ax.legend(fontsize=8, loc="best")
+
+        axes[-1].set_xlabel("timestep", fontsize=9)
+        fig.suptitle(f"Torque normalized by actuator_forcerange idx={idx}", fontsize=10)
+        fig.tight_layout()
+        Logger.run().log_figure(fig, f"mpc/torque_actforce_norm_limit_ep{idx}")
+        plt.close(fig)

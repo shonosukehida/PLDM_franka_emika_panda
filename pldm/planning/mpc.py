@@ -12,7 +12,9 @@ import numpy as np
 from pldm.models.utils import flatten_conv_output
 from tqdm import tqdm
 from pldm.planning.franka.env_wrapper import HoldUntilReachWrapper, ActionRepeatWrapper
-
+import os
+import imageio
+from datetime import datetime
 
 class MPCEvaluator(ABC):
     def __init__(
@@ -136,10 +138,14 @@ class MPCEvaluator(ABC):
             qpos_history_c = mpc_result.qpos_history
             propio_history_c = mpc_result.propio_history
             object_history_c = getattr(mpc_result, "object_history", None)
+            
+            torque_history_c = getattr(mpc_result, "torque_history", None)
+            actforce_history_c = getattr(mpc_result, "actforce_history", None)
+
 
             mpc_data.observations.append(obs_c)
             mpc_data.locations.append(location_history_c)
-            mpc_data.action_history.append(action_history_c)
+            mpc_data.action_history.append(action_history_c) #[num_chunk, task_timestep, num_env, plan_timestep, num_joint]
             mpc_data.reward_history.append(reward_history_c)
             mpc_data.pred_locations.append(pred_locations_c)
             mpc_data.final_preds_dist.append(final_preds_dist_c)
@@ -149,10 +155,15 @@ class MPCEvaluator(ABC):
             mpc_data.propio_history.append(propio_history_c)
             if object_history_c is not None:                         
                 mpc_data.object_history.append(object_history_c)
+            if torque_history_c is not None:
+                mpc_data.torque_history.append(torque_history_c)
+            if actforce_history_c is not None:
+                mpc_data.actforce_history.append(actforce_history_c)
+
             chunk_offset += chunk_size
         
 
-        mpc_data.concatenate_chunks()
+        mpc_data.concatenate_chunks() #[task_timestep, num_env, plan_timestep, num_joint]
 
         return mpc_data
 
@@ -180,7 +191,7 @@ class MPCEvaluator(ABC):
         print("[DBG][pldm/planning/mpc.py] self.config.max_inner_steps:", self.config.max_inner_steps)
         
         envs = [HoldUntilReachWrapper(e, reach_eps=self.config.reach_eps, max_inner_steps=self.config.max_inner_steps) for e in envs]
-        for env in envs: print(type(env))
+        # for env in envs: print(type(env))
         
         physic_timestep = envs[0].physics.model.opt.timestep
         substeps = envs[0].substeps
@@ -208,6 +219,38 @@ class MPCEvaluator(ABC):
 
         #ゴール画像
         targets_t = torch.stack([e.get_target_obs() for e in envs]).to(self.device)
+        
+        
+        # ===== DEBUG: 目標画像を書き出す（timestamp付き）=====
+
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_dir = "debug_target_obs"
+        os.makedirs(save_dir, exist_ok=True)
+
+        # targets_t: (B, C, H, W) 想定
+        dbg = targets_t.detach().cpu()
+
+        # もし Normalizer がかかってるなら、ここで「戻す」方が見やすい
+        try:
+            dbg = self.normalizer.unnormalize_state(dbg)
+        except Exception:
+            pass
+
+        for i in range(min(5, dbg.shape[0])):  # 先頭5環境だけ
+            img = dbg[i].numpy()  # (C,H,W)
+            img = np.transpose(img, (1, 2, 0))  # (H,W,C)
+
+            # 0-1 の可能性もあるので保険（どっちでも破綻しにくい）
+            if img.max() <= 1.0:
+                img = (img * 255.0)
+
+            img = np.clip(img, 0, 255).astype(np.uint8)
+            imageio.imwrite(os.path.join(save_dir, f"target_obs_env{i}_{ts}.png"), img)
+
+        print(f"[DBG][pldm/planning/mpc.py] saved target_obs images to {save_dir}/")
+        # =====================================================
+                        
 
         # encode target obs
         if self.model.config.backbone.propio_dim is not None:
@@ -242,6 +285,9 @@ class MPCEvaluator(ABC):
         final_preds_dist_history = []
         
         object_history = [] 
+        torque_history = []
+        actforce_history = []
+
 
         init_infos = [e.get_info() for e in envs]
         if "location" in init_infos[0]:
@@ -256,6 +302,8 @@ class MPCEvaluator(ABC):
         if "object_pos" in init_infos[0]:
             object_history.append(np.array([info["object_pos"] for info in init_infos]))
 
+        print("[DBG][pldm/planning/mpc.py]self.config.n_steps:", self.config.n_steps)
+        print("[DBG][pldm/planning/mpc.py]self.config:", self.config)
         for i in tqdm(range(self.config.n_steps), desc="Planning steps"):
             if i % self.config.replan_every == 0:
 
@@ -275,7 +323,7 @@ class MPCEvaluator(ABC):
                 else:
                     curr_propio_vel = None
 
-                print("[DBG][pldm/planning/mpc.py]self.config.n_steps:", self.config.n_steps)
+
                 print("[DBG][pldm/planning/mpc.py]self.config.level1.max_plan_length:", self.config.level1.max_plan_length)
                 planning_result = planner.plan(
                     obs_t,
@@ -316,7 +364,10 @@ class MPCEvaluator(ABC):
             rewards_t = torch.from_numpy(np.stack([r[1] for r in results])).float()
             infos = [r[4] for r in results]
 
-            action_history.append(planned_actions.detach().cpu())
+            if i == 0:
+                print("info keys:", infos[0].keys())
+
+            action_history.append(planned_actions.detach().cpu()) #[task_timestep, env_idx, plan_timestep, num_joint]
             observation_history.append(current_obs)
             reward_history.append(rewards_t)
 
@@ -331,6 +382,13 @@ class MPCEvaluator(ABC):
                 
             if "object_pos" in infos[0]:
                 object_history.append(np.array([info["object_pos"] for info in infos]))
+                
+            if "qfrc_actuator" in infos[0]:
+                torque_history.append(np.array([info["qfrc_actuator"] for info in infos]))  # (B,7)
+
+            if "actuator_force" in infos[0]:
+                actforce_history.append(np.array([info["actuator_force"] for info in infos]))  # (B,7)
+
 
             if planning_result.locations is not None:
                 pred_locations = planning_result.locations.detach().cpu()
@@ -350,6 +408,9 @@ class MPCEvaluator(ABC):
         observation_history = [
             self.normalizer.unnormalize_state(o) for o in observation_history
         ]
+        print("len(torque_history):", len(torque_history))
+        print("len(actforce_history):", len(actforce_history))
+
 
         return MPCResult(
             observations=observation_history,
@@ -363,6 +424,8 @@ class MPCEvaluator(ABC):
             qpos_history=[torch.from_numpy(x) for x in qpos_history],
             propio_history=[torch.from_numpy(x) for x in propio_history],
             object_history=[torch.from_numpy(x) for x in object_history],
+            torque_history=[torch.from_numpy(x) for x in torque_history],
+            actforce_history=[torch.from_numpy(x) for x in actforce_history],
         )
 
 

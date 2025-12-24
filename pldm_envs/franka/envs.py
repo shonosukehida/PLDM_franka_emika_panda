@@ -18,8 +18,10 @@ class FrankaSimEnv:
         goal_noise=0.01,
         normalizer: Normalizer = None,
         success_thresh=0.05,    # しきい値 m
-        substeps=200,       
-        max_dq=0.01    
+        substeps=20,       
+        max_dq=0.01,
+        task_cfg = None,
+        task_name="push_to_goal",
     ):
         self.model_path = model_path
         self.image_size = tuple(image_size)
@@ -29,6 +31,7 @@ class FrankaSimEnv:
         self.use_normalize = normalizer is not None
         self.success_thresh = success_thresh
         self.substeps = substeps
+        print("[DBG][pldm_envs/franka/envs.py] self.use_normalize:", self.use_normalize)
 
         self.physics = dm_mj.Physics.from_xml_path(self.model_path)
 
@@ -60,6 +63,23 @@ class FrankaSimEnv:
         print("[dbg][pldm_envs/franka/envs.py] self.MAX_DQ:", self.MAX_DQ)
         
         self.control_dt = float(self.physics.model.opt.timestep) * int(self.substeps) 
+
+        self.task_cfg = task_cfg if task_cfg is not None else {}
+        self.task_name = task_name
+
+        self.ee_goal_pos = None
+        self.box_init_pos = None
+        self.robot_only = False
+        
+        if task_name == "push_to_goal":
+            self.use_box = True
+        elif task_name == "reach_no_touch":
+            tc = getattr(self.task_cfg, "reach_no_touch", None)
+            self.use_box = bool(getattr(tc, "use_box", True))
+        else:
+            # 新タスクは基本箱ありにする、など
+            self.use_box = True
+
 
     def calc_inverse_kinematic(self, target_xyz, target_rotmat=None, rot_weight=1.0):
         target_quat = None
@@ -125,15 +145,44 @@ class FrankaSimEnv:
         self.start_pos = start_pos
         self.goal_pos = goal_pos
 
+        # ---- task specific goal params ----
+        print("[DBG][pldm_envs/franka/envs.py] task_name:", self.task_name)
+        if self.task_name == "reach_no_touch":
+            tc = getattr(self.task_cfg, "reach_no_touch", None)
+            if tc is None:
+                raise ValueError("task_cfg.reach_no_touch is missing")  # もしくはデフォルト生成
+
+            self.ee_goal_pos = np.random.uniform(low=[0.415, -0.10, 0.05], high=[0.615, 0.10, 0.05])
+
+            # 箱の「初期位置」(保持したい位置)
+            if tc.box_init_xyz is None:
+                self.box_init_pos = self.start_pos.copy()
+            else:
+                self.box_init_pos = np.array(tc.box_init_xyz, dtype=np.float32)
+            robot_only = robot_only or  not self.use_box
+            self.robot_only = robot_only
+
+        else:
+            # push_to_goal
+            self.ee_goal_pos = None
+            self.box_init_pos = None
+
+
+
+
         # 青箱を start に置く
-        if not robot_only:
+        if not self.robot_only:
             self.physics.data.qpos[self.start_idx:self.start_idx+3] = start_pos
             self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0])
             self.physics.data.qvel[self.start_idx:self.start_idx+6] = 0
             self.physics.forward()
             
-            
-            _ = self._get_goal_obs_vec(goal_pos)
+
+            if self.task_name == "push_to_goal":
+                _ = self._get_goal_obs_vec(goal_pos)
+            elif self.task_name == "reach_no_touch":
+                _ = self._get_goal_obs_vec(self.start_pos)  # or box_init_pos
+                
         else:
             self.physics.data.qpos[self.start_idx:self.start_idx+3] = np.array([100.0, 100.0, 0.06])
             self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0])
@@ -155,11 +204,22 @@ class FrankaSimEnv:
 
         
         qpos = self.physics.data.qpos[:7].copy()
-
-        dq = np.clip(action - qpos, -self.MAX_DQ, self.MAX_DQ)
+        delta = action - qpos
+        dq = np.clip(delta, -self.MAX_DQ, self.MAX_DQ)
         target = qpos + dq #qpos + dq 
 
+        # ===== debug (最初の数ステップだけ) =====
+        if self.t < 5:
+            print("[dbg] t=", self.t)
+            print("[dbg] action:", action)
+            print("[dbg] qpos  :", qpos)
+            print("[dbg] delta :", delta)
+            print("[dbg] |delta|:", np.abs(delta))
+            print("[dbg] dq    :", dq)
+            print("[dbg] saturated:", (np.abs(delta) > self.MAX_DQ))
+        # =====================================
 
+        
         low, high = self.ctrlrange[:, 0], self.ctrlrange[:, 1]
         target = np.clip(target, low, high)
 
@@ -170,6 +230,14 @@ class FrankaSimEnv:
 
         for _ in range(self.substeps):
             self.physics.step()
+        
+        ###########################################
+        qfrc = self.physics.data.qfrc_actuator[:7].copy()      # 関節へ入った actuator トルク
+        afrc_all = self.physics.data.actuator_force.copy()  # (nu,)
+        afrc_arm = afrc_all[self.arm_actuator_ids].copy()   # (7,)
+        print("[dbg][pldm_envs/franka/envs.py] qfrc_actuator:", qfrc)
+        print("[dbg][pldm_envs/franka/envs.py] actuator_force (arm):", afrc_arm)
+        ###########################################
 
         self.t += 1
         image_obs = self.get_obs()
@@ -181,6 +249,8 @@ class FrankaSimEnv:
 
         truncated = False
         info = self.get_info()
+        info["qfrc_actuator"] = qfrc
+        info["actuator_force"] = afrc_arm
         return image_obs, reward, done, truncated, info
 
     def set_xyz(self, target_pos, target_rotmat=None, rot_weight=0.1,
@@ -272,23 +342,63 @@ class FrankaSimEnv:
         # backup
         qpos_bk = self.physics.data.qpos.copy()
         qvel_bk = self.physics.data.qvel.copy()
+        ctrl_bk = self.physics.data.ctrl.copy()
 
-        # 一時的にゴール配置にしてレンダ
-        self.physics.data.qpos[self.start_idx:self.start_idx+3] = self.goal_pos
-        self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0])
-        self.physics.data.qvel[self.start_idx:self.start_idx+6] = 0
-        self.physics.forward()
-        img = self.physics.render(height=self.image_size[0], width=self.image_size[1], camera_id=self.camera_id)
-        img = np.transpose(img, (2, 0, 1)).astype(np.float32)
-        img = torch.from_numpy(img).contiguous()
-        if self.use_normalize:
-            img = self.normalizer.normalize_state(img)
+        try:
+            if self.task_name == "push_to_goal":
+                # 既存：箱を goal_pos に置いてレンダ
+                self.physics.data.qpos[self.start_idx:self.start_idx+3] = self.goal_pos
+                self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0])
+                self.physics.data.qvel[self.start_idx:self.start_idx+6] = 0
+                self.physics.forward()
 
-        # restore
-        self.physics.data.qpos[:] = qpos_bk
-        self.physics.data.qvel[:] = qvel_bk
-        self.physics.forward()
-        return img
+            elif self.task_name == "reach_no_touch":
+                # reach_no_touch：箱は初期位置のまま、EEはゴールへ
+                tc = getattr(self.task_cfg, "reach_no_touch", None)
+                ee_eps = float(tc.ee_success_eps)
+                box_eps = float(tc.box_hold_eps)
+
+                if self.use_box:
+                    box_pos = self.box_init_pos if self.box_init_pos is not None else self.start_pos
+                    self.physics.data.qpos[self.start_idx:self.start_idx+3] = box_pos
+                    self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0])
+                    self.physics.data.qvel[self.start_idx:self.start_idx+6] = 0
+                else:
+                    self.physics.data.qpos[self.start_idx:self.start_idx+3] = np.array([100.0, 100.0, 0.05], dtype=np.float32)
+                    self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0], dtype=np.float32)
+                    self.physics.data.qvel[self.start_idx:self.start_idx+6] = 0.0
+
+
+                # EEをゴールへ（IK→qpos）
+                result = self.calc_inverse_kinematic(self.ee_goal_pos, rot_weight=0.1)
+                q_des = result.qpos[:7].copy()
+                self.physics.data.qpos[:7] = q_des
+                self.physics.data.qvel[:7] = 0.0
+
+                # ctrlも同期しておく（レンダ時の姿勢を安定させる）
+                self.physics.data.ctrl[:] = 0.0
+                self.physics.data.ctrl[self.arm_actuator_ids] = q_des
+
+                self.physics.forward()
+
+            # render
+            img = self.physics.render(
+                height=self.image_size[0],
+                width=self.image_size[1],
+                camera_id=self.camera_id
+            )
+            img = np.transpose(img, (2, 0, 1)).astype(np.float32)
+            img = torch.from_numpy(img).contiguous()
+            if self.use_normalize:
+                img = self.normalizer.normalize_state(img)
+            return img
+
+        finally:
+            # restore
+            self.physics.data.qpos[:] = qpos_bk
+            self.physics.data.qvel[:] = qvel_bk
+            self.physics.data.ctrl[:] = ctrl_bk
+            self.physics.forward()
 
     def _get_goal_obs_vec(self, goal_pos):
         # --- backup ---
@@ -311,12 +421,29 @@ class FrankaSimEnv:
             self.physics.forward()
 
 
-
     def _is_success(self, object_pos):
+        if self.task_name == "reach_no_touch":
+            tc = self.task_cfg.reach_no_touch
+            ee_eps = float(tc.ee_success_eps)
+            box_eps = float(tc.box_hold_eps)
+
+            ee = self.get_ee_position()
+            ok_ee = np.linalg.norm(ee - self.ee_goal_pos) < ee_eps
+
+            # デフォルトは箱条件なし（robot_only or use_box==False を安全に吸収）
+            ok_box = True
+            if (not self.robot_only) and self.use_box:
+                ok_box = np.linalg.norm(object_pos - self.box_init_pos) < box_eps
+
+            return float(ok_ee and ok_box)
         return float(np.linalg.norm(object_pos - self.goal_pos) < self.success_thresh)
 
+
     def get_target(self):
+        if self.task_name == "reach_no_touch":
+            return self.ee_goal_pos
         return self.goal_pos
+
 
     def get_ee_position(self):
         try:
