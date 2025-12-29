@@ -87,6 +87,7 @@ class VICRegObjective(torch.nn.Module):
         else:
             raise NotImplementedError
 
+        print("[DBG][pldm/objectives/vicreg.py] result.ema_backbone_output: ", result.ema_backbone_output is not None)
         if result.ema_backbone_output is not None:
             if self.pred_attr == "state":
                 ema_encodings = result.ema_backbone_output.encodings

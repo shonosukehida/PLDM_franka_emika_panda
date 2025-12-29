@@ -185,7 +185,7 @@ eval_cfg:
     image_obs: true
     stack_states: 1
     data_path: './pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300/'
-    max_dq: 100 #0.03
+    max_dq: 0.05 #0.03
     fps: 10 #FPS指定
     max_inner_steps: 500 #MPPI出力目標行動姿勢に近づけるまでに回す最大step数 #192
     reach_eps: 1e-2 #MPPI出力目標姿勢と現在の姿勢の距離

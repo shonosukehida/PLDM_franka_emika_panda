@@ -209,19 +209,27 @@ class FrankaSimEnv:
         target = qpos + dq #qpos + dq 
 
         # ===== debug (最初の数ステップだけ) =====
-        if self.t < 5:
-            print("[dbg] t=", self.t)
-            print("[dbg] action:", action)
-            print("[dbg] qpos  :", qpos)
-            print("[dbg] delta :", delta)
-            print("[dbg] |delta|:", np.abs(delta))
-            print("[dbg] dq    :", dq)
-            print("[dbg] saturated:", (np.abs(delta) > self.MAX_DQ))
+        # if self.t < 5:
+        #     print("[dbg] t=", self.t)
+        #     print("[dbg] action:", action)
+        #     print("[dbg] qpos  :", qpos)
+        #     print("[dbg] delta :", delta)
+        #     print("[dbg] |delta|:", np.abs(delta))
+        #     print("[dbg] dq    :", dq)
+        #     print("[dbg] saturated:", (np.abs(delta) > self.MAX_DQ))
         # =====================================
 
         
         low, high = self.ctrlrange[:, 0], self.ctrlrange[:, 1]
         target = np.clip(target, low, high)
+
+
+        if self.t < 5:
+            print("[pldm_envs/franka/envs.py]ctrlrange low/high:", low, high)
+            print("[pldm_envs/franka/envs.py]target(before clip):", qpos + dq)
+            print("[pldm_envs/franka/envs.py]target(after  clip):", target)
+            print("[pldm_envs/franka/envs.py]clipped?:", np.any((qpos + dq) != target))
+
 
 
         self.physics.data.ctrl[:] = 0.0
@@ -235,8 +243,8 @@ class FrankaSimEnv:
         qfrc = self.physics.data.qfrc_actuator[:7].copy()      # 関節へ入った actuator トルク
         afrc_all = self.physics.data.actuator_force.copy()  # (nu,)
         afrc_arm = afrc_all[self.arm_actuator_ids].copy()   # (7,)
-        print("[dbg][pldm_envs/franka/envs.py] qfrc_actuator:", qfrc)
-        print("[dbg][pldm_envs/franka/envs.py] actuator_force (arm):", afrc_arm)
+        # print("[dbg][pldm_envs/franka/envs.py] qfrc_actuator:", qfrc)
+        # print("[dbg][pldm_envs/franka/envs.py] actuator_force (arm):", afrc_arm)
         ###########################################
 
         self.t += 1

@@ -367,11 +367,25 @@ class JEPA(torch.nn.Module):
             obs_component = state_preds
             propio_component = None
 
-        # 観測列からエンコーダ出力列を得る（教師信号用）
+        # === 教師信号用 backbone 出力 ===
         if prop_batch is not None:
-            backbone_output = self.backbone.forward_multiple(input_states, propio=prop_batch)
+            backbone_output = self.backbone.forward_multiple(
+                input_states, propio=prop_batch
+            )
         else:
-            backbone_output = self.backbone.forward_multiple(input_states) #encodings: [T + 1, B, C, H, W] = [15, 64, 18, 26, 26]
+            backbone_output = self.backbone.forward_multiple(input_states)
+
+        # === EMA teacher（あれば）===
+        if self.config.momentum > 0:
+            with torch.no_grad():
+                if prop_batch is not None:
+                    ema_backbone_output = self.backbone_ema.forward_multiple(
+                        input_states, propio=prop_batch
+                    )
+                else:
+                    ema_backbone_output = self.backbone_ema.forward_multiple(input_states)
+        else:
+            ema_backbone_output = None
 
         pred_output = PredictorOutput(
             predictions=state_preds,
@@ -389,7 +403,7 @@ class JEPA(torch.nn.Module):
 
         return ForwardResult(
             backbone_output=backbone_output,
-            ema_backbone_output=None,
+            ema_backbone_output=ema_backbone_output,
             pred_output=pred_output,
             actions=actions,
         )

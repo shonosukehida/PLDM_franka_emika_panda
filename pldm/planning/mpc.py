@@ -358,11 +358,48 @@ class MPCEvaluator(ABC):
                     )
                     for j in range(len(envs))
                 ]
+                
+            #接触・拘束確認
+            # inner_env = envs[0]
+            # while hasattr(inner_env, "env"):
+            #     inner_env = inner_env.env
+            # d = inner_env.physics.data
+            # print("ncon", int(d.ncon))
+            # print("qfrc_bias", d.qfrc_bias[:7])
+            # print("qfrc_actuator", d.qfrc_actuator[:7])
+            # print("qfrc_constraint", d.qfrc_constraint[:7])  # ★拘束反力
+            # print("qfrc_passive", d.qfrc_passive[:7])        # ★摩擦/重力補助など
+            
+            d = envs[0].physics.data
+            m = envs[0].physics.model
+            print("ncon", int(d.ncon))
+            for k in range(int(d.ncon)):
+                c = d.contact[k]
+                g1 = m.id2name(c.geom1, "geom")
+                g2 = m.id2name(c.geom2, "geom")
+                print(k, g1, g2, "dist=", float(c.dist))
+
+
             
             assert len(results[0]) == 5
             current_obs = torch.from_numpy(np.stack([r[0] for r in results])).float()
             rewards_t = torch.from_numpy(np.stack([r[1] for r in results])).float()
             infos = [r[4] for r in results]
+            
+            ################################################################
+            # envs[0] で代表1本を見る（まずはこれでOK）
+            inner_env = envs[0]
+            while hasattr(inner_env, "env"):
+                inner_env = inner_env.env  # Wrapper を剥がす
+
+            qb2 = inner_env.physics.data.qfrc_bias[1]
+            qa2 = inner_env.physics.data.qfrc_actuator[1]
+            q2  = inner_env.physics.data.qpos[1]
+
+            print(f"[i={i:03d}] q2={q2:+.3f}  bias={qb2:+.2f}  act={qa2:+.2f}")
+            ################################################################
+                        
+            
 
             if i == 0:
                 print("info keys:", infos[0].keys())

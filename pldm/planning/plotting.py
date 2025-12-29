@@ -785,7 +785,7 @@ def log_planning_traj_plots_split(
     world_xlim=None, world_ylim=None,
     use_pixel_mapper=False, pixel_mapper=None,
     env=None,  # 運動学計算用
-    plot_action=True,
+    plot_action=True, use_box=True,
 ):
     """
     図B: EE 軌跡 + 1ステップ予測 + bluebox + ワールド範囲 を可視化
@@ -901,7 +901,7 @@ def log_planning_traj_plots_split(
                 )
 
         # ====== bluebox の中心軌跡 + box 枠 ======
-        if obj_traj is not None and len(obj_traj) > 0:
+        if obj_traj is not None and len(obj_traj) > 0 and use_box:
             obj_np = obj_traj.numpy()            # (T_obj,2) world
             px_obj, py_obj = world_to_plot_xy(obj_np)
 
@@ -1194,3 +1194,4 @@ def log_planning_torque_plots_split(
         fig.tight_layout()
         Logger.run().log_figure(fig, f"mpc/torque_actforce_norm_limit_ep{idx}")
         plt.close(fig)
+

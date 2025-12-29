@@ -1,4 +1,4 @@
-n_steps: &n_steps 50
+n_steps: &n_steps 15
 val_n_steps: *n_steps
 env_name: &env_name franka
 
@@ -7,7 +7,7 @@ data:
   dataset_type: DatasetType.Franka
   normalize: true
   normalize_mode: "zscore"
-  normalize_actions_mode: "minmax"
+  normalize_actions_mode: "zscore"
   min_states_val: 0.0
   max_states_val: 1.0
   min_actions_val: -1.0
@@ -80,7 +80,7 @@ hjepa:
 load_checkpoint_path: null #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
 load_l1_only: false
 
-use_opn_loss_func: &use_opn_loss_func false #現在はopen_objectives を共通の損失関数として使用
+use_opn_loss_func: &use_opn_loss_func true 
 objectives_l1:
   idm:
     action_dim: 7
@@ -262,5 +262,5 @@ run_name: pldm_franka
 run_project: Franka
 save_every_n_epochs: 1
 seed: 246
-wandb: true
+wandb: false
 confirm_normalize: true

@@ -25,10 +25,10 @@ class SIGRegLossInfo(NamedTuple):
 
 @dataclass
 class SIGRegObjectiveConfig(ConfigBase):
-    coeff: float = 1.0        # ← LeJEPA の λ 相当
+    coeff: float = 1.0        # LeJEPA の λ 相当
     num_slices: int = 256
     num_t: int = 17
-    pred_attr: str = "obs"    # "state" / "obs" / "propio" で切り替え可にしておくと便利
+    pred_attr: str = "obs"    # "state" / "obs" / "propio" 
 
 
 def sigreg_core(x: torch.Tensor,
@@ -40,30 +40,30 @@ def sigreg_core(x: torch.Tensor,
     device = x.device
     N, D = x.shape
 
-    # 1) ランダム 1D プロジェクションを num_slices 本サンプル
+    #(1) ランダム 1D プロジェクションを num_slices 本サンプル
     A = torch.randn(D, num_slices, device=device)
     A = A / (A.norm(p=2, dim=0, keepdim=True) + 1e-8)  # (D, M)
 
     # N×D → N×M に射影
     z = x @ A  # (N, M)
 
-    # 2) 積分点 t
+    #(2) 積分点 t
     t = torch.linspace(-5.0, 5.0, num_t, device=device)  # (T,)
     exp_f = torch.exp(-0.5 * t ** 2)                     # 理論 CF (N(0,1))
 
-    # 3) empirical CF
-    #    z: (N, M) → (N, M, T) で各 t に対する CF を計算
+    #(3) empirical CF
+    #    z: (N, M) --> (N, M, T) で各 t に対する CF を計算
     z_t = z.unsqueeze(-1) * t  # (N, M, T)
     ecf = (1j * z_t).exp().mean(dim=0)  # (M, T), complex
 
-    # 4) weighted L2 距離
+    #(4) weighted L2 距離
     # |ecf - exp_f|^2 * exp_f を t で積分
     err = (ecf - exp_f).abs().square() * exp_f  # (M, T)
     T_val = torch.trapz(err, t, dim=-1)        # (M,)
 
     # スライス平均
-    return T_val.mean() * N    # 論文のスケーリングに合わせたいならここで N を掛ける
-                               # 係数は config.coeff で最終的に調整可能
+    return T_val.mean() * N    # N 掛け: 論文のスケール
+                            
                                
 
 class SIGRegObjective(nn.Module):

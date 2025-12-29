@@ -148,9 +148,9 @@ eval_cfg:
     probe_encoder: true
     probe_preds: true
     use_opn_loss_func: *use_opn_loss_func
-    vis_dynamics_closed_featuremap: true
-    vis_dynamics_open_featuremap: true
-    vis_encoder_featuremap: true
+    vis_dynamics_closed_featuremap: false
+    vis_dynamics_open_featuremap: false
+    vis_encoder_featuremap: false
     epochs: 5 #5
     epochs_enc: 5 #5
     epochs_latent: 5 #5
@@ -159,7 +159,7 @@ eval_cfg:
     max_samples: 2000000
     max_samples_enc: 2000000
     schedule: Cosine
-    visualize_probing: true
+    visualize_probing: false
     load_prober: true
   disable_planning: false
   franka_planning:
@@ -169,7 +169,7 @@ eval_cfg:
     levels: "easy"
     easy:
       n_steps: 200
-      n_envs: 10 #80
+      n_envs: 4 #80
       max_plan_length: 50 #タスク時に使われる
       plot_every: 10
       min_block_radius: 4
@@ -199,7 +199,7 @@ eval_cfg:
         box_init_xyz: null                  # nullならresetで使うstart_posを採用
         box_hold_eps: 0.02                  # 成功判定: 箱が動いてない閾値(m)
         ee_success_eps: 0.03                # 成功判定: EE到達閾値(m)
-        use_box: true             # falseなら goal画像生成時に箱を遠方へ
+        use_box: false             # falseなら goal画像生成時に箱を遠方へ
 
       push_to_goal:
         success_thresh: 0.05                # 既存の箱ゴール成功判定(m)
@@ -216,7 +216,7 @@ eval_cfg:
         lr: 0.03
         n_iters: 200
       mppi:
-        noise_sigma: 0.002 #5 #ノイズ共分散 0.01
+        noise_sigma: 10 #5 #ノイズ共分散 0.01
         num_samples: 500 #500.  #ランダム行動列のサンプル数
         lambda_: 0.0025 #温度
   # d4rl_planning:

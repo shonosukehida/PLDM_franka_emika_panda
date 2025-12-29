@@ -101,7 +101,7 @@ class ObjectivesConfig:
     
     def build_opn_objectives_list(self, repr_dim: int, name_prefix: str = ""):
         objectives = []
-        for objective_type in self.closed_objectives:
+        for objective_type in self.clsd_objectives:
             if objective_type == ObjectiveType.VICReg:
                 objectives.append(
                     VICRegObjective(

@@ -119,6 +119,10 @@ class FrankaMPCEvaluator(MPCEvaluator):
                 env=self.envs[0],
             )
 
+            use_box = False
+            if self.config.task.name == "reach_no_touch" and self.config.task.reach_no_touch.use_box:
+                use_box = True
+                
             #行動列の出力あり
             log_planning_traj_plots_split(
                 result=mpc_data,
@@ -131,7 +135,8 @@ class FrankaMPCEvaluator(MPCEvaluator):
                 use_pixel_mapper=False,
                 pixel_mapper=self.pixel_mapper,
                 env=self.envs[0],
-                plot_action = True
+                plot_action = True,
+                use_box = use_box
             )
 
             #行動列の出力なし
