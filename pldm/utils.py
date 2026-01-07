@@ -71,3 +71,13 @@ def update_config_from_yaml(config_class, yaml_data):
         key: value for key, value in yaml_data.items() if key in config_field_names
     }
     return config_class(**relevant_yaml_data)
+
+
+
+def mem(tag):
+    import torch
+    torch.cuda.synchronize()
+    print(f"[MEM]{tag} alloc={torch.cuda.memory_allocated()/1e9:.2f}GB "
+          f"resv={torch.cuda.memory_reserved()/1e9:.2f}GB "
+          f"peak={torch.cuda.max_memory_allocated()/1e9:.2f}GB")
+

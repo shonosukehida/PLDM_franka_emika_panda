@@ -18,6 +18,7 @@ class VJEPA2Backbone(SequenceBackbone):
         img_size: int = 64,
         propio_dim: int | None = None,
         propio_encoder_arch: str | None = "id",  # 例: "75-64-14" とか
+        chunk_size: int = 2,
     ):
         super().__init__()
         self.freeze = freeze
@@ -39,6 +40,7 @@ class VJEPA2Backbone(SequenceBackbone):
             for p in self.vjepa2.parameters():
                 p.requires_grad_(False)
 
+
         # --- obs adapter（VJEPA2 token D -> out_obs_channels）---
         self.obs_adapter = self._build_obs_adapter_with_dummy_forward(out_obs_channels)
 
@@ -47,6 +49,8 @@ class VJEPA2Backbone(SequenceBackbone):
             self.propio_encoder = self._build_propio_encoder()
         else:
             self.propio_encoder = None
+        
+        self.chunk_size = chunk_size
 
     def _build_obs_adapter_with_dummy_forward(self, out_obs_channels: int) -> nn.Linear:
         # dummy: (B,T,C,H,W) で まずは T=1 で軽く通す（T=64はVRAM重い）
@@ -144,7 +148,7 @@ class VJEPA2Backbone(SequenceBackbone):
             propio_component=z_prop,
         )
 
-    def forward_multiple(self, x, propio=None, chunk_size: int = 2):
+    def forward_multiple(self, x, propio=None):
         """
         Override to avoid flattening (T*BS) into a huge batch for ViT-style models.
         x: (T, BS, C, H, W) or (BS, C, H, W)
@@ -165,9 +169,9 @@ class VJEPA2Backbone(SequenceBackbone):
         outs_prop = []
 
         N = state.shape[0]
-        for i in range(0, N, chunk_size):
-            s = state[i:i + chunk_size]
-            p = propio[i:i + chunk_size] if propio is not None else None
+        for i in range(0, N, self.chunk_size):
+            s = state[i:i + self.chunk_size]
+            p = propio[i:i + self.chunk_size] if propio is not None else None
 
             out = self.forward(s, p) if p is not None else self.forward(s)
 

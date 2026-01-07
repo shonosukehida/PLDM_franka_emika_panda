@@ -48,6 +48,8 @@ from pldm.objectives.idm import IDMObjective
 from transformers import AutoModel, AutoVideoProcessor
 from pldm.models.encoders.vjepa2_backbone import VJEPA2Backbone
 
+from pldm.utils import mem
+
 def seed_everything(seed):
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -249,25 +251,6 @@ class Trainer:
         self.model = self.model.to(self.device)
         print("[DBG][pldm/train.py] cfg sigreg coeff:", self.config.objectives_l1.sigreg.coeff)
         
-        
-        # --- ここで config で分岐 ---
-        if self.config.hjepa.level1.backbone.arch == "vjepa2":
-            bb = self.config.hjepa.level1.backbone   
-
-            vj_backbone = VJEPA2Backbone(
-                repo=bb.vjepa2_repo,
-                out_obs_channels=bb.vjepa2_adapter_channels,   # 例: 16
-                total_channels=self.model.level1.repr_dim,  # 例: 30（←level1のrepr_dim）
-                out_hw=bb.vjepa2_adapter_hw,                   # 例: 26
-                freeze=bb.vjepa2_freeze,
-                img_size=getattr(bb, "vjepa2_img_size", 64),
-                propio_dim=bb.propio_dim,
-                propio_encoder_arch=getattr(bb, "propio_encoder_arch", "id"),
-            ).to(self.device)
-
-            # 既存backboneを置換
-            self.model.level1.backbone = vj_backbone
-            print("✅ Replaced level1.backbone with V-JEPA2 backbone")
 
         # create clsd objectives
         self.clsd_objectives_l1 = self.config.objectives_l1.build_clsd_objectives_list(
@@ -456,7 +439,9 @@ class Trainer:
 
         if self.config.eval_at_beginning and not self.config.quick_debug:
             self.validate()
-
+            
+        torch.cuda.reset_peak_memory_stats()
+        mem("start")
         for epoch in tqdm(range(self.epoch, self.config.epochs + 1), desc="Epoch"):
             self.epoch = epoch
             end_time = time.time()
@@ -523,8 +508,8 @@ class Trainer:
                         actions=a,       # [T - 1, B, D] = [14, 64, 2]
                         propio_pos=optional_fields.get("propio_pos", None), #[T, B, D]
                         propio_vel=optional_fields.get("propio_vel", None), #[T, B, D]
-                        
                     )
+                    mem("after forward_open")
                     
                     open_loss_infos = [
                         objective(batch, [open_output.level1])
@@ -544,6 +529,7 @@ class Trainer:
                 
                 
                 forward_result = self.model.forward_posterior(s.to(self.device), a.to(self.device), **optional_fields)
+                mem("after forward closed")
                 
                 print('[DBG][pldm/train.py] pred_output.obs_component.shape:', forward_result.level1.pred_output.obs_component.shape) #[70, 16, 16, 26, 26]=[T,B,C,H,W]
                 print('[DBG][pldm/train.py] pred_output.predictions: ', forward_result.level1.pred_output.predictions.shape) #[70, 16, 30, 26, 26]=[T,B,C,H,W]
@@ -562,10 +548,13 @@ class Trainer:
 
 
                 total_loss = sum([loss_info.total_loss for loss_info in loss_infos if loss_info is not None])
+                mem("after calc loss")
                 if total_loss.isnan():
                     raise RuntimeError("NaN loss")
                 total_loss.backward()
+                mem("after calc backward")
                 self.optimizer.step()
+                mem("after opt step")
                 self.model.update_ema()  # if ema is enabled, update ema encoder
 
 
@@ -984,3 +973,5 @@ if __name__ == "__main__":
         import traceback
         print("🔥 TRAINING CRASHED")
         traceback.print_exc()
+
+

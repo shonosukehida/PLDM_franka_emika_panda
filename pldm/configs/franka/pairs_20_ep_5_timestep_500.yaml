@@ -54,7 +54,7 @@ hjepa:
   disable_l2: true
   level1:
     backbone:
-      arch: menet6
+      arch: menet6 #menet6/vjepa2
       backbone_subclass: d4rl_a
       backbone_mlp: null
       backbone_width_factor: 2
@@ -62,6 +62,15 @@ hjepa:
       channels: 3
       propio_dim: 14
       propio_encoder_arch: 'id'
+
+
+      vjepa2_repo: "facebook/vjepa2-vitl-fpc64-256"
+      vjepa2_freeze: true
+      vjepa2_use_single_frame: true #現在未使用
+      vjepa2_output: "spatial"   # "spatial" or "cls" #現在未使用
+      vjepa2_adapter_channels: 16
+      vjepa2_adapter_hw: 26
+      vjepa2_chunk_size: 16
     predictor:
       residual: true
       action_encoder_arch: 'id'

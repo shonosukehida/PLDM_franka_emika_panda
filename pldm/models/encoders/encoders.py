@@ -453,20 +453,8 @@ def build_backbone(
             img_size=getattr(config, "vjepa2_img_size", 64),
             propio_dim=config.propio_dim,
             propio_encoder_arch=config.propio_encoder_arch,
+            chunk_size=config.vjepa2_chunk_size,
         )
-
-        
-    elif arch == "vjepa2":
-        backbone = VJEPA2Backbone(
-            repo=config.vjepa2_repo,
-            out_channels=config.vjepa2_adapter_channels,
-            out_hw=config.vjepa2_adapter_hw,
-            freeze=config.vjepa2_freeze,
-            repeat_to_64=config.vjepa2_repeat_to_64,
-            use_single_frame=config.vjepa2_use_single_frame,
-            img_size=getattr(config, "vjepa2_img_size", 64),
-        )
-
     elif arch == "mlp":
         backbone = MLPEncoder(
             config=config,

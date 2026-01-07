@@ -28,6 +28,7 @@ class BackboneConfig(ConfigBase):
     vjepa2_output: str = "spatial"          # "spatial" or "cls"
     vjepa2_adapter_channels: int = 16
     vjepa2_adapter_hw: int = 26
+    vjepa2_chunk_size: int = 2
 
 class BackboneOutput:
     def __init__(

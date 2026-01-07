@@ -110,6 +110,8 @@ class JEPA(torch.nn.Module):
             pred_obs_dim=self.backbone.output_obs_dim,
             backbone_ln=self.backbone.final_ln if config.backbone.final_ln else None,
         )
+        print("[pldm/models/jepa.py] backbone_type: ", type(self.backbone), type(self.backbone_ema))
+
 
     def subsampling_ratio(self):
         return 1
