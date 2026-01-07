@@ -25,7 +25,7 @@ data:
     random_actions: false
     img_size: 64
     alpha: 0.6
-    batch_size: 16 #128
+    batch_size: 8 #128
     beta: 0.4
     crop_length: null
     images_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/images.npy

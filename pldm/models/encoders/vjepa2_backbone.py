@@ -106,6 +106,7 @@ class VJEPA2Backbone(SequenceBackbone):
         """
         if x.dim() != 4:
             raise ValueError(f"expects (BS,C,H,W), got {tuple(x.shape)}")
+        # print("VJEPA2Backbone.forward x:", x.shape)
 
         BS, C, H, W = x.shape
 
@@ -141,4 +142,51 @@ class VJEPA2Backbone(SequenceBackbone):
             encodings=enc,
             obs_component=z_obs,
             propio_component=z_prop,
+        )
+
+    def forward_multiple(self, x, propio=None, chunk_size: int = 2):
+        """
+        Override to avoid flattening (T*BS) into a huge batch for ViT-style models.
+        x: (T, BS, C, H, W) or (BS, C, H, W)
+        propio: (T, BS, propio_dim) or (BS, propio_dim)
+        """
+        # No time dimension -> default behavior
+        if x.dim() == 2 or x.dim() == 4:
+            return self.forward(x, propio) if propio is not None else self.forward(x)
+
+        T, BS = x.shape[:2]
+        state = x.flatten(0, 1)  # (T*BS, C, H, W)
+
+        if propio is not None:
+            propio = propio.flatten(0, 1)  # (T*BS, propio_dim)
+
+        outs_enc = []
+        outs_obs = []
+        outs_prop = []
+
+        N = state.shape[0]
+        for i in range(0, N, chunk_size):
+            s = state[i:i + chunk_size]
+            p = propio[i:i + chunk_size] if propio is not None else None
+
+            out = self.forward(s, p) if p is not None else self.forward(s)
+
+            outs_enc.append(out.encodings)
+            outs_obs.append(out.obs_component)
+            outs_prop.append(out.propio_component)
+
+        enc = torch.cat(outs_enc, dim=0).reshape(T, BS, *outs_enc[0].shape[1:])
+
+        obs_component = None
+        if outs_obs[0] is not None:
+            obs_component = torch.cat(outs_obs, dim=0).reshape(T, BS, *outs_obs[0].shape[1:])
+
+        propio_component = None
+        if outs_prop[0] is not None:
+            propio_component = torch.cat(outs_prop, dim=0).reshape(T, BS, *outs_prop[0].shape[1:])
+
+        return BackboneOutput(
+            encodings=enc,
+            obs_component=obs_component,
+            propio_component=propio_component,
         )
