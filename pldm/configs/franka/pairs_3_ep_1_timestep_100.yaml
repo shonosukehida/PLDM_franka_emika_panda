@@ -1,4 +1,4 @@
-n_steps: &n_steps 50
+n_steps: &n_steps 30
 val_n_steps: *n_steps
 env_name: &env_name franka
 
