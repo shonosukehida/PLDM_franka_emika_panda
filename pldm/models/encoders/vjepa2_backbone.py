@@ -113,13 +113,13 @@ class VJEPA2Backbone(SequenceBackbone):
         # (BS,1,3,H,W) を作って VJEPA2 に入れる（T=1で軽量）
         x_vid = x.unsqueeze(1).clamp(0, 1)
 
-        dev = x_vid.device
-        if self.obs_adapter.weight.device != dev:
-            self.obs_adapter = self.obs_adapter.to(dev)
-        if self.propio_encoder is not None:
-            self.propio_encoder = self.propio_encoder.to(dev)
-        # vjepa2本体も必要ならデバイス合わせ（※すでに .to(device) 済みなら不要）
-        self.vjepa2 = self.vjepa2.to(dev)
+        # dev = x_vid.device
+        # if self.obs_adapter.weight.device != dev:
+        #     self.obs_adapter = self.obs_adapter.to(dev)
+        # if self.propio_encoder is not None:
+        #     self.propio_encoder = self.propio_encoder.to(dev)
+        # # vjepa2本体も必要ならデバイス合わせ（※すでに .to(device) 済みなら不要）
+        # self.vjepa2 = self.vjepa2.to(dev)
 
         with torch.no_grad() if self.freeze else torch.enable_grad():
             out = self.vjepa2(pixel_values_videos=x_vid)
