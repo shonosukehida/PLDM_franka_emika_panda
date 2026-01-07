@@ -66,10 +66,16 @@ class JEPA(torch.nn.Module):
             self.repr_dim = self.spatial_repr_dim
 
         if self.config.momentum > 0:
-            self.backbone_ema, _ = build_backbone(
+            # self.backbone_ema, _ = build_backbone(
+            #     config.backbone,
+            #     input_dim=input_dim,
+            # )
+
+            bb = build_backbone(
                 config.backbone,
                 input_dim=input_dim,
             )
+            self.backbone_ema = bb[0] if isinstance(bb, tuple) else bb
             self.backbone_ema.load_state_dict(self.backbone.state_dict())
             for param in self.backbone_ema.parameters():
                 param.requires_grad = False

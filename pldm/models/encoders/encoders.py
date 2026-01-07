@@ -17,6 +17,8 @@ from pldm.models.encoders.enums import BackboneConfig, BackboneOutput
 from pldm.models.encoders.base_class import SequenceBackbone
 from pldm.models.encoders.impala import ImpalaEncoder
 
+from pldm.models.encoders.vjepa2_backbone import VJEPA2Backbone
+
 ResNet18 = resnet18
 ResNet18ID = resnet18ID
 
@@ -441,11 +443,30 @@ def build_backbone(
             backbone_pool=config.backbone_pool,
             backbone_final_fc=config.backbone_final_fc,
         )
-    elif arch == "menet6":
-        backbone = MeNet6(
-            config=config,
-            input_dim=input_dim,
+    elif arch == "vjepa2":
+        backbone = VJEPA2Backbone(
+            repo=config.vjepa2_repo,
+            out_obs_channels=16,
+            total_channels=30,
+            out_hw=config.vjepa2_adapter_hw,
+            freeze=config.vjepa2_freeze,
+            img_size=getattr(config, "vjepa2_img_size", 64),
+            propio_dim=config.propio_dim,
+            propio_encoder_arch=config.propio_encoder_arch,
         )
+
+        
+    elif arch == "vjepa2":
+        backbone = VJEPA2Backbone(
+            repo=config.vjepa2_repo,
+            out_channels=config.vjepa2_adapter_channels,
+            out_hw=config.vjepa2_adapter_hw,
+            freeze=config.vjepa2_freeze,
+            repeat_to_64=config.vjepa2_repeat_to_64,
+            use_single_frame=config.vjepa2_use_single_frame,
+            img_size=getattr(config, "vjepa2_img_size", 64),
+        )
+
     elif arch == "mlp":
         backbone = MLPEncoder(
             config=config,

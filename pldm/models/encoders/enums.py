@@ -20,6 +20,14 @@ class BackboneConfig(ConfigBase):
     fc_output_dim: Optional[int] = None  # if it's none, it will be a spatial output
     final_ln: bool = False
 
+    # --- V-JEPA2 backbone options ---
+    vjepa2_repo: str = "facebook/vjepa2-vitl-fpc64-256"
+    vjepa2_freeze: bool = True
+    vjepa2_use_single_frame: bool = True
+    vjepa2_repeat_to_64: bool = True
+    vjepa2_output: str = "spatial"          # "spatial" or "cls"
+    vjepa2_adapter_channels: int = 16
+    vjepa2_adapter_hw: int = 26
 
 class BackboneOutput:
     def __init__(

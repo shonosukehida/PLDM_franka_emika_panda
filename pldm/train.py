@@ -45,6 +45,9 @@ import pldm.utils as utils
 
 from pldm.objectives.idm import IDMObjective
 
+from transformers import AutoModel, AutoVideoProcessor
+from pldm.models.encoders.vjepa2_backbone import VJEPA2Backbone
+
 def seed_everything(seed):
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -243,10 +246,28 @@ class Trainer:
             use_propio_pos=use_propio_pos,
             use_propio_vel=use_propio_vel,
         ).to(self.device)
-
         self.model = self.model.to(self.device)
-
         print("[DBG][pldm/train.py] cfg sigreg coeff:", self.config.objectives_l1.sigreg.coeff)
+        
+        
+        # --- ここで config で分岐 ---
+        if self.config.hjepa.level1.backbone.arch == "vjepa2":
+            bb = self.config.hjepa.level1.backbone   
+
+            vj_backbone = VJEPA2Backbone(
+                repo=bb.vjepa2_repo,
+                out_obs_channels=bb.vjepa2_adapter_channels,   # 例: 16
+                total_channels=self.model.level1.repr_dim,  # 例: 30（←level1のrepr_dim）
+                out_hw=bb.vjepa2_adapter_hw,                   # 例: 26
+                freeze=bb.vjepa2_freeze,
+                img_size=getattr(bb, "vjepa2_img_size", 64),
+                propio_dim=bb.propio_dim,
+                propio_encoder_arch=getattr(bb, "propio_encoder_arch", "id"),
+            ).to(self.device)
+
+            # 既存backboneを置換
+            self.model.level1.backbone = vj_backbone
+            print("✅ Replaced level1.backbone with V-JEPA2 backbone")
 
         # create clsd objectives
         self.clsd_objectives_l1 = self.config.objectives_l1.build_clsd_objectives_list(

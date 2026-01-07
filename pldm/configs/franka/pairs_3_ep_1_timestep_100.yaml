@@ -54,7 +54,7 @@ hjepa:
   disable_l2: true
   level1:
     backbone:
-      arch: menet6
+      arch: vjepa2 #menet6
       backbone_subclass: d4rl_a
       backbone_mlp: null
       backbone_width_factor: 2
@@ -62,6 +62,14 @@ hjepa:
       channels: 3
       propio_dim: 14
       propio_encoder_arch: 'id'
+
+      vjepa2_repo: "facebook/vjepa2-vitl-fpc64-256"
+      vjepa2_freeze: true
+      vjepa2_use_single_frame: true
+      vjepa2_repeat_to_64: true
+      vjepa2_output: "spatial"   # "spatial" or "cls"
+      vjepa2_adapter_channels: 16
+      vjepa2_adapter_hw: 26
     predictor:
       residual: true
       action_encoder_arch: 'id'
@@ -185,7 +193,7 @@ eval_cfg:
     stack_states: 1
     data_path: './pldm_envs/franka/presaved_datasets/val_pairs_3_ep_1_timestep_100/'
     max_dq: 0.03
-    fps: 50 #FPS指定
+    fps: 10 #FPS指定
     max_inner_steps: 50 #MPPI出力目標行動姿勢に近づけるまでに回す最大step数
     reach_eps: 1e-2 #MPPI出力目標姿勢と現在の姿勢の距離
     task:
