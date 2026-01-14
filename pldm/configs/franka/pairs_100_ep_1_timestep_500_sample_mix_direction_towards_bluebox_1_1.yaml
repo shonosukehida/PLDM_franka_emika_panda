@@ -88,7 +88,7 @@ hjepa:
 load_checkpoint_path: pldm/checkpoints/franka_20260107_160630/epoch=5_sample_step=270528.ckpt #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
 load_l1_only: false
 
-alpha: 0.0 #
+alpha: 0.0 #0.0 #current_state = (1 - alpha) * next_state + alpha * teacher_state
 use_opn_loss_func: &use_opn_loss_func false #現在はopen_objectives を共通の損失関数として使用
 objectives_l1:
   idm:
