@@ -79,7 +79,9 @@ class ProbingConfig(ConfigBase):
     probe_preds: bool = True
     probe_expert: bool = False
     visualize_probing: bool = True
+    visualize_dynamics: bool = True
     load_prober: bool = False
+    train_prober: bool = True
     arch_subclass: str = "a"
     train_images_path: Optional[str] = None
     train_path: Optional[str] = None
@@ -307,6 +309,10 @@ class ProbingEvaluator:
 
         if self.quick_debug:
             epochs = 1
+            
+        if (not config.load_prober) and (not config.train_prober):
+            print("[ProbingEvaluator] load_prober=False & train_prober=False: skip prober entirely.")
+            return {}
         test_batch = next(iter(dataset))
 
         probers = {}
@@ -350,6 +356,9 @@ class ProbingEvaluator:
 
         if config.load_prober:
             return probers
+        if not config.train_prober:
+            print("[ProbingEvaluator] train_prober=False: skip training probers.")
+            return {} 
 
         all_parameters = []
         for probe_target, prober in probers.items():
@@ -509,7 +518,7 @@ class ProbingEvaluator:
 
         val_datasets = {"pred_probe": self.val_ds}
         val_datasets.update(self.extra_val_ds)
-
+        print("probe evaluating start!")
         for prefix, val_ds in val_datasets.items():
             self.evaluate_pred_prober(
                 probers=probers,
@@ -640,81 +649,9 @@ class ProbingEvaluator:
         # Logger.run().log(log_dict)
 
         # right now, we only visualize location predictions
-        if self.config.visualize_probing and visualize:
-
-            # =======================================================================
-            # === 可視化直前の“probe_valチェック”を安全に ===
-            from torch.utils.data import RandomSampler
-            import types
-
-            def _unwrap_loader(x):
-                # NormalizedDataLoader → .dataloader が本物の DataLoader
-                return getattr(x, "dataloader", x)
-
-            inner = _unwrap_loader(val_ds)
-
-            # PyTorchの版によって sampler の場所が違うことがあるので両対応
-            sampler = getattr(inner, "sampler", None)
-            if sampler is None and hasattr(inner, "batch_sampler"):
-                sampler = getattr(inner.batch_sampler, "sampler", None)
-
-            sampler_name = type(sampler).__name__ if sampler is not None else "<none>"
-            print(f"[VIS] sampler: {sampler_name}")  # 期待: SequentialSampler
-
-            assert not isinstance(sampler, RandomSampler), \
-                "可視化で shuffle=True のローダ（probe_ds）を掴んでます！probe_val_ds を渡してください。"
-
-
-            # ================= 可視化：各バッチの先頭GTをプロット =================
-
-
-            os.makedirs("vis_debug/val_batches", exist_ok=True)
-
-            # どれくらい見るか（全部なら None に）
-            MAX_BATCHES = None
-
-            def _sha(x: np.ndarray, n=16):
-                return hashlib.sha256(x.tobytes()).hexdigest()[:n]
-
-            # NOTE:
-            #   すでに btc = next(iter(val_ds)) していますが、
-            #   for ループは「新しいイテレータ」を作るので**先頭から**始まります👌
-            for b_idx, batch in enumerate(itertools.islice(val_ds, 0, MAX_BATCHES)):
-                # このバッチの indices をメモ（先頭サンプルの index も）
-                idx_np = batch.indices.detach().cpu().numpy().astype(np.int64)
-                print(f"[VAL][{b_idx:04d}] head_idx={idx_np[0]}  idx_sha={_sha(idx_np)}")
-
-                # 逆正規化した GT （B, T, 2）想定
-                gt_locations = val_ds.normalizer.unnormalize_location(batch.locations).cpu().numpy()
-
-                # 先頭サンプルの軌跡（T,2）
-                traj = gt_locations[0]  # 先頭だけ
-                x, y = traj[:, 0], traj[:, 1]
-
-                # プロット
-                fig = plt.figure(figsize=(5, 5), dpi=160)
-                ax = plt.gca()
-                ax.plot(x, y, marker="o", markersize=2.5, linewidth=1.0)
-                # 始点/終点にマーク
-                ax.text(x[0],  y[0],  "S", color="C0", fontsize=10, ha="center", va="center")
-                ax.text(x[-1], y[-1], "G", color="C1", fontsize=10, ha="center", va="center")
-                ax.set_title(f"val batch {b_idx:04d}  (first sample idx={idx_np[0]})")
-                ax.set_xlim(0.315, 0.715)
-                ax.set_ylim(-0.2, 0.2)
-                ax.set_xlabel("X (meters)")
-                ax.set_ylabel("Y (meters)")
-                ax.set_aspect("equal")
-                ax.grid(True, alpha=0.3)
-
-                out_path = f"vis_debug/val_batches/val_batch_{b_idx:04d}.png"
-                plt.tight_layout()
-                plt.savefig(out_path)
-                plt.close(fig)
-                print(f"[VAL][{b_idx:04d}] saved -> {out_path}")
-
-            print("[VAL] done. wrote images under vis_debug/val_batches/")
-            # ===================================================================
-
+        
+        
+        if visualize:
 
             # === 可視化入力btc の作成 === 
             from torch.utils.data import Subset, DataLoader
@@ -747,13 +684,6 @@ class ProbingEvaluator:
             from pldm.data.utils import NormalizedDataLoader
             vis_loader = NormalizedDataLoader(vis_loader_raw, val_ds.normalizer)
 
-            # print("[DBG] len(root_ds) =", len(root_ds))
-            # print("[DBG] batch_size =", B)
-            # print("[DBG] head_indices =", head_indices, "len =", len(head_indices))
-            # print("[DBG] vis_subset len =", len(vis_subset))
-            # print("[DBG] len(vis_loader_raw) =", len(vis_loader_raw))
-            # print("[DBG] len(vis_loader) =", len(vis_loader))
-
             vis_batch_idx = 0  
             itr = iter(vis_loader)
             for _ in range(vis_batch_idx + 1):
@@ -763,125 +693,121 @@ class ProbingEvaluator:
             np.save("vis_debug/vis_indices_used.npy", btc.indices.detach().cpu().numpy().astype(int))
             print("[VIS] used_idx sha:", hashlib.sha256(btc.indices.detach().cpu().numpy().astype(np.int64).tobytes()).hexdigest()[:16])
             
+            if self.config.visualize_probing:
 
-            self.plot_prober_predictions(
-                btc,
-                model,
-                prober = probers["locations"],
-                prober_open = probers_open["locations"],
-                prober_bluebox_locs = probers["bluebox_locs"],
-                prober_bluebox_locs_open = probers_open["bluebox_locs"],
-                enc_prober = enc_probers["locations"] if isinstance(enc_probers, dict) else None,
-                enc_prober_bluebox = enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
-                normalizer=val_ds.normalizer,
-                name_prefix=plot_prefix,
-                idxs=None if not quick_debug else list(range(10)),
-                pixel_mapper=pixel_mapper,
-                vis_dynamics_closed_featuremap = vis_dynamics_closed_featuremap,
-                vis_dynamics_open_featuremap = vis_dynamics_open_featuremap,
-                vis_encoder_featuremap = vis_encoder_featuremap,
-            )
-            
-            # Encoder の潜在分布が等方ガウスに近いか確認
-            self.plot_encoder_latent_gaussianity(
-                btc,
-                model,
-                name_prefix=f"{plot_prefix}_val",
-            )
-            
-            self.log_encoder_latent_variance(
+                #use_prober
+                self.plot_prober_predictions(
                     btc,
                     model,
-                    name_prefix = "",
-                    max_points = 5000,
+                    prober = probers["locations"],
+                    prober_open = probers_open["locations"],
+                    prober_bluebox_locs = probers["bluebox_locs"],
+                    prober_bluebox_locs_open = probers_open["bluebox_locs"],
+                    enc_prober = enc_probers["locations"] if isinstance(enc_probers, dict) else None,
+                    enc_prober_bluebox = enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
+                    normalizer=val_ds.normalizer,
+                    name_prefix=plot_prefix,
+                    idxs=None if not quick_debug else list(range(10)),
+                    pixel_mapper=pixel_mapper,
+                    vis_dynamics_closed_featuremap = vis_dynamics_closed_featuremap,
+                    vis_dynamics_open_featuremap = vis_dynamics_open_featuremap,
+                    vis_encoder_featuremap = vis_encoder_featuremap,
                 )
-            self.plot_encoder_latent_tsne(
+
+                # #use prober
+                # self.plot_prober_predictions_by_encprober(
+                #     btc,
+                #     model,
+                #     prober = probers["locations"],
+                #     prober_open = probers_open["locations"],
+                #     prober_bluebox_locs = probers["bluebox_locs"],
+                #     prober_bluebox_locs_open = probers_open["bluebox_locs"],
+                #     enc_prober = enc_probers["locations"] if isinstance(enc_probers, dict) else None,
+                #     enc_prober_bluebox = enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
+                #     normalizer=val_ds.normalizer,
+                #     name_prefix=plot_prefix,
+                #     idxs=None if not quick_debug else list(range(10)),
+                #     pixel_mapper=pixel_mapper,
+                #     vis_dynamics_closed_featuremap = vis_dynamics_closed_featuremap,
+                #     vis_dynamics_open_featuremap = vis_dynamics_open_featuremap,
+                #     vis_encoder_featuremap = vis_encoder_featuremap,
+                # )
+                
+                
+                #use prober
+                self.plot_prober_predictions_by_encprober_FOR_POSTER(
                     btc,
                     model,
-                    name_prefix = "",
-                    max_points = 5000,
-            )
+                    prober = probers["locations"],
+                    prober_open = probers_open["locations"],
+                    prober_bluebox_locs = probers["bluebox_locs"],
+                    prober_bluebox_locs_open = probers_open["bluebox_locs"],
+                    enc_prober = enc_probers["locations"] if isinstance(enc_probers, dict) else None,
+                    enc_prober_bluebox = enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
+                    normalizer=val_ds.normalizer,
+                    name_prefix=plot_prefix,
+                    idxs=None if not quick_debug else list(range(10)),
+                    pixel_mapper=pixel_mapper,
+                    vis_dynamics_closed_featuremap = False,
+                    vis_dynamics_open_featuremap = False,
+                    vis_encoder_featuremap = False,     
+                )
 
-            # self.plot_prober_predictions_by_encprober(
-            #     btc,
-            #     model,
-            #     prober = probers["locations"],
-            #     prober_open = probers_open["locations"],
-            #     prober_bluebox_locs = probers["bluebox_locs"],
-            #     prober_bluebox_locs_open = probers_open["bluebox_locs"],
-            #     enc_prober = enc_probers["locations"] if isinstance(enc_probers, dict) else None,
-            #     enc_prober_bluebox = enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
-            #     normalizer=val_ds.normalizer,
-            #     name_prefix=plot_prefix,
-            #     idxs=None if not quick_debug else list(range(10)),
-            #     pixel_mapper=pixel_mapper,
-            #     vis_dynamics_closed_featuremap = vis_dynamics_closed_featuremap,
-            #     vis_dynamics_open_featuremap = vis_dynamics_open_featuremap,
-            #     vis_encoder_featuremap = vis_encoder_featuremap,
-            # )
-            
-            self.plot_prober_predictions_by_encprober_FOR_POSTER(
-                btc,
-                model,
-                prober = probers["locations"],
-                prober_open = probers_open["locations"],
-                prober_bluebox_locs = probers["bluebox_locs"],
-                prober_bluebox_locs_open = probers_open["bluebox_locs"],
-                enc_prober = enc_probers["locations"] if isinstance(enc_probers, dict) else None,
-                enc_prober_bluebox = enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
-                normalizer=val_ds.normalizer,
-                name_prefix=plot_prefix,
-                idxs=None if not quick_debug else list(range(10)),
-                pixel_mapper=pixel_mapper,
-                vis_dynamics_closed_featuremap = False,
-                vis_dynamics_open_featuremap = False,
-                vis_encoder_featuremap = False,     
-            )
-            
-            # self.plot_cca(
-            #     btc,
-            #     model,
-            #     prober = None,
-            #     prober_open = None,
-            #     prober_bluebox_locs = None,
-            #     prober_bluebox_locs_open = None,
-            #     enc_prober = None,
-            #     enc_prober_bluebox = None,
-            #     normalizer = None,
-            #     name_prefix = "",
-            #     idxs = None,
-            #     notebook = False,
-            #     pixel_mapper = None,
-            #     vis_dynamics_closed_featuremap = False,
-            #     vis_dynamics_open_featuremap = False,
-            #     vis_encoder_featuremap = False,
-            # )
-            
-            self.plot_pca(
-                btc,
-                model,     
-            )
-            
-            self.plot_pca_open_closed(
-                btc,
-                model,
-                name_prefix=f"{plot_prefix}_val",
-                idxs=None if not quick_debug else list(range(10)),
-            )
 
-            
-            metrics_latent = self.log_latent_forward_mse(
-                batch=btc,
-                jepa=model,
-                prober=probers["locations"],
-                prober_open=probers_open["locations"],
-                prober_bluebox_locs=probers["bluebox_locs"],
-                prober_bluebox_locs_open=probers_open["bluebox_locs"],
-                enc_prober=enc_probers["locations"] if isinstance(enc_probers, dict) else None,
-                enc_prober_bluebox=enc_probers.get("bluebox_locs", None) if isinstance(enc_probers, dict) else None,
-                normalizer=val_ds.normalizer,
-                name_prefix=plot_prefix,
-            )
+            if self.config.visualize_dynamics:
+                #dont use prober
+                # Encoder の潜在分布が等方ガウスに近いか確認
+                self.plot_encoder_latent_gaussianity(
+                    btc,
+                    model,
+                    name_prefix=f"{plot_prefix}_val",
+                )
+                
+                #dont use prober
+                self.log_encoder_latent_variance(
+                        btc,
+                        model,
+                        name_prefix = "",
+                        max_points = 5000,
+                    )
+                #dont use prober
+                self.plot_encoder_latent_tsne(
+                        btc,
+                        model,
+                        name_prefix = "",
+                        max_points = 5000,
+                )
+
+                
+                #dont use prober
+                self.plot_pca(
+                    btc,
+                    model,     
+                )
+                
+                #dont use prober
+                self.plot_pca_open_closed(
+                    btc,
+                    model,
+                    name_prefix=f"{plot_prefix}_val",
+                    idxs=None if not quick_debug else list(range(10)),
+                )
+                
+                #dont use prober
+                self.plot_pca_encoder_open(
+                    btc,
+                    model,
+                    name_prefix=f"{plot_prefix}_val",
+                    idxs=None if not quick_debug else list(range(10)),     
+                )
+
+                #dont use prober
+                metrics_latent = self.log_latent_forward_mse(
+                    batch=btc,
+                    jepa=model,
+                    normalizer=val_ds.normalizer,
+                    name_prefix=plot_prefix,
+                )
 
 
         return
@@ -897,7 +823,9 @@ class ProbingEvaluator:
         dataset = self.ds
         quick_debug = self.quick_debug
         config = self.config
-
+        if (not config.load_prober) and (not config.train_prober):
+            print("[ProbingEvaluator] load_prober=False & train_prober=False: skip prober entirely.")
+            return {}
         test_batch = next(iter(dataset))
 
         probers = {}
@@ -946,12 +874,16 @@ class ProbingEvaluator:
                 prober_ckpt = torch.load(ckpt_path)
                 prober.load_state_dict(prober_ckpt["state_dict"])
                 print(f"loaded encoder prober from {ckpt_path}")
-            #;
+            
             
             probers[probe_target] = prober.to(self.device)
         
         if config.load_prober:
             return probers
+        
+        if not config.train_prober:
+            print("[ProbingEvaluator] train_prober=False: skip training probers.")
+            return {} 
             
 
         all_parameters = []
@@ -2158,6 +2090,7 @@ class ProbingEvaluator:
     # from matplotlib import pyplot as plt
 
 
+    #K (=CHW)個のサンプルのN (=T * B)方向の分散のヒストグラムをとっている
     @torch.no_grad()
     def log_encoder_latent_variance(
         self,
@@ -2826,7 +2759,6 @@ class ProbingEvaluator:
 
             A, *_ = np.linalg.lstsq(Z_clo, Z_enc, rcond=None)
             Z_clo_in_enc_dim = Z_clo @ A
-
         V_clo = pca.transform(Z_clo_in_enc_dim)  # [B*T, k_eff]
 
         # [B,T,k_eff] へ戻す
@@ -2849,12 +2781,12 @@ class ProbingEvaluator:
                     ax2d.plot(u2d[t:t+2, 0], u2d[t:t+2, 1], color=color_u, alpha=0.95)
                     ax2d.plot(v2d[t:t+2, 0], v2d[t:t+2, 1], color=color_v, alpha=0.95)
                 ax2d.scatter(u2d[0,0], u2d[0,1], s=12, c=color_u, label="Encoder")
-                ax2d.text(u2d[0,0], u2d[0,1], "S", fontsize=9, ha="center", va="center", color=color_u)
-                ax2d.text(u2d[-1,0], u2d[-1,1], "G", fontsize=9, ha="center", va="center", color=color_u)
+                ax2d.text(u2d[0,0], u2d[0,1], "S", fontsize=13, ha="center", va="center", color=color_u)
+                ax2d.text(u2d[-1,0], u2d[-1,1], "G", fontsize=13, ha="center", va="center", color=color_u)
 
                 ax2d.scatter(v2d[0,0], v2d[0,1], s=12, c=color_v, label="Closed")
-                ax2d.text(v2d[0,0], v2d[0,1], "S", fontsize=9, ha="center", va="center", color=color_v)
-                ax2d.text(v2d[-1,0], v2d[-1,1], "G", fontsize=9, ha="center", va="center", color=color_v)
+                ax2d.text(v2d[0,0], v2d[0,1], "S", fontsize=13, ha="center", va="center", color=color_v)
+                ax2d.text(v2d[-1,0], v2d[-1,1], "G", fontsize=13, ha="center", va="center", color=color_v)
 
                 ax2d.set_xlim(-lim, lim); ax2d.set_ylim(-lim, lim)
                 ax2d.set_aspect("equal", adjustable="box")
@@ -2868,11 +2800,13 @@ class ProbingEvaluator:
                     Line2D([0],[0], color=color_v, lw=2, label="Closed"),
                 ]
                 ax2d.legend(handles=handles, loc="best", frameon=True)
-                if not notebook:
-                    Logger.run().log_figure(fig2d, f"{name_prefix}-pca-2d-i{i}", dir_name="pca/pca2d_pertraj")
-                    plt.close(fig2d)
-                else:
-                    plt.show()
+                
+                #2dは可視化しない
+                # if not notebook:
+                #     Logger.run().log_figure(fig2d, f"{name_prefix}-pca-2d-i{i}", dir_name="pca/pca2d_pertraj")
+                #     plt.close(fig2d)
+                # else:
+                #     plt.show()
 
         #3D可視化
         if k_eff >= 3:
@@ -3127,15 +3061,16 @@ class ProbingEvaluator:
                 ]
                 ax2d.legend(handles=handles, loc="best", frameon=True)
 
-                if not notebook:
-                    Logger.run().log_figure(
-                        fig2d,
-                        f"{name_prefix}-pca_openanchor-2d-i{i}",
-                        dir_name="pca_open_anchor/pca2d_pertraj",
-                    )
-                    plt.close(fig2d)
-                else:
-                    plt.show()
+                #2dは可視化しない
+                # if not notebook:
+                #     Logger.run().log_figure(
+                #         fig2d,
+                #         f"{name_prefix}-pca_openanchor-2d-i{i}",
+                #         dir_name="pca_open_anchor/pca2d_pertraj",
+                #     )
+                #     plt.close(fig2d)
+                # else:
+                #     plt.show()
 
         # ---- 3D 可視化 ----
         if k_eff >= 3:
@@ -3231,9 +3166,212 @@ class ProbingEvaluator:
         torch.cuda.empty_cache()
 
 
+    @torch.no_grad()
+    def plot_pca_encoder_open(
+        self,
+        batch,
+        jepa: "JEPA",
+        name_prefix: str = "",
+        idxs=None,
+        notebook: bool = False,
+        pool: str = "gap",      # "gap"/"flat"
+        k: int = 3,             # PCA 次元
+    ):
+        """
+        encoder 出力を基準に PCA 軸を学習し、
+        - encoder 潜在列（基準）
+        - open-forward 潜在列
+        を同一 PCA 空間に射影して 2D/3D で可視化する。
+        """
 
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from matplotlib.lines import Line2D
+        from sklearn.decomposition import PCA
+        import gc
+        import torch
 
+        device = self.device
+        states  = batch.states.to(device).transpose(0, 1)    # [T,B,...]
+        actions = batch.actions.to(device).transpose(0, 1)   # [T,B,...]
+        optional_fields = get_optional_fields(batch, device=states.device)
 
+        # ===== encoder 潜在列（encode_only）=====
+        enc_out = jepa.forward_posterior(
+            states, actions, encode_only=True, **optional_fields
+        ).backbone_output
+        encoder_lat_seq = enc_out.obs_component  # [T,B,C,H,W] or [T,B,D]
+
+        # ===== open-forward 潜在列 =====
+        open_res = jepa.forward_open(states, actions, **optional_fields)
+        pred_open = open_res.pred_output
+        if getattr(pred_open, "obs_component", None) is not None:
+            open_lat_seq = pred_open.obs_component  # [T+1,B,...]
+        else:
+            open_lat_seq = pred_open.predictions    # [T+1,B,D] など
+
+        # open は [0]=z0(=enc0), [t]=z_hat_t なので encoder と長さ合わせ
+        # encoder_lat_seq が [T,B,...] なら open_lat_seq[:T] で揃える
+        open_lat_seq = open_lat_seq[: encoder_lat_seq.shape[0]]
+
+        T_ref, B_ref = states.shape[0], states.shape[1]
+
+        def _to_BTD(x, pool="flat"):
+            """[T,B,...] or [B,T,...] -> [B,T,D]"""
+            assert torch.is_tensor(x)
+            if x.dim() == 3:
+                # [T,B,D] or [B,T,D]
+                if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                    x = x.transpose(0, 1).contiguous()
+                return x
+            if x.dim() == 5:
+                # [T,B,C,H,W] or [B,T,C,H,W]
+                if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                    x = x.permute(1, 0, 2, 3, 4).contiguous()
+                elif not (x.shape[0] == B_ref and x.shape[1] == T_ref):
+                    x = x.transpose(0, 1).contiguous()
+                B, T = x.shape[:2]
+                if pool == "gap":
+                    x = x.mean(dim=(-2, -1)).contiguous()  # -> [B,T,C]
+                else:
+                    C, H, W = x.shape[2:]
+                    x = x.reshape(B, T, C * H * W).contiguous()
+                return x
+            # fallback
+            if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                x = x.transpose(0, 1).contiguous()
+            elif not (x.shape[0] == B_ref and x.shape[1] == T_ref):
+                x = x.transpose(0, 1).contiguous()
+            B, T = x.shape[:2]
+            return x.reshape(B, T, -1).contiguous()
+
+        encoder_lat_seq = _to_BTD(encoder_lat_seq, pool=pool)
+        open_lat_seq    = _to_BTD(open_lat_seq,    pool=pool)
+
+        B, T, De = encoder_lat_seq.shape
+        _, _, Do = open_lat_seq.shape
+        if idxs is None:
+            idxs = list(range(B))
+
+        # ===== PCA を encoder で学習 =====
+        Z_enc = encoder_lat_seq.reshape(B * T, De).detach().cpu().numpy()
+        pca = PCA(n_components=min(k, De))
+        U_enc = pca.fit_transform(Z_enc)  # [B*T, k_eff]
+        expl = pca.explained_variance_ratio_
+        k_eff = U_enc.shape[1]
+
+        # ===== open を encoder 次元へ合わせて同一基底に射影 =====
+        Z_open = open_lat_seq.reshape(B * T, Do).detach().cpu().numpy()
+        if Do != De:
+            A, *_ = np.linalg.lstsq(Z_open, Z_enc, rcond=None)
+            Z_open_in_enc = Z_open @ A
+        else:
+            Z_open_in_enc = Z_open
+
+        V_open = pca.transform(Z_open_in_enc)  # [B*T, k_eff]
+
+        # [B,T,k] に戻す
+        U_bt = U_enc.reshape(B, T, k_eff)
+        V_bt = V_open.reshape(B, T, k_eff)
+
+        # ===== 2D 可視化 =====
+        if k_eff >= 2:
+            color_enc  = "navy"
+            color_open = "darkorange"
+            lim = float(max(abs(U_bt[:, :, :2]).max(), abs(V_bt[:, :, :2]).max()))
+
+            for i in idxs:
+                fig2d, ax2d = plt.subplots(1, 1, figsize=(6, 6), dpi=140)
+                ue = U_bt[i, :, :2]
+                vo = V_bt[i, :, :2]
+
+                for t in range(T - 1):
+                    ax2d.plot(ue[t:t+2, 0], ue[t:t+2, 1], color=color_enc,  alpha=0.95)
+                    ax2d.plot(vo[t:t+2, 0], vo[t:t+2, 1], color=color_open, alpha=0.95)
+
+                ax2d.scatter(ue[0,0], ue[0,1], s=12, c=color_enc)
+                ax2d.scatter(vo[0,0], vo[0,1], s=12, c=color_open)
+                ax2d.text(ue[0,0], ue[0,1], "S", color=color_enc,  fontsize=9)
+                ax2d.text(ue[-1,0], ue[-1,1], "G", color=color_enc, fontsize=9)
+                ax2d.text(vo[0,0], vo[0,1], "S", color=color_open, fontsize=9)
+                ax2d.text(vo[-1,0], vo[-1,1], "G", color=color_open, fontsize=9)
+
+                ax2d.set_xlim(-lim, lim); ax2d.set_ylim(-lim, lim)
+                ax2d.set_aspect("equal", adjustable="box")
+                ax2d.set_xlabel("PC1"); ax2d.set_ylabel("PC2")
+                ax2d.set_title(
+                    f"{name_prefix} | idx={i} | PCA(encoder anchor) top-{k_eff}: "
+                    + ", ".join(f"{v:.2f}" for v in expl[:k_eff])
+                )
+                ax2d.legend(handles=[
+                    Line2D([0],[0], color=color_enc,  lw=2, label="Encoder"),
+                    Line2D([0],[0], color=color_open, lw=2, label="Open"),
+                ], loc="best", frameon=True)
+
+                #2d は可視化しない
+                # if not notebook:
+                #     Logger.run().log_figure(fig2d, f"{name_prefix}-pca-enc-open-2d-i{i}", dir_name="pca/encoder_open/pca2d")
+                #     plt.close(fig2d)
+                # else:
+                #     plt.show()
+
+        # ===== 3D 可視化 =====
+        if k_eff >= 3:
+            from mpl_toolkits.mplot3d import Axes3D  # noqa
+
+            color_enc  = "navy"
+            color_open = "darkorange"
+
+            for i in idxs:
+                fig3d = plt.figure(figsize=(8, 8), dpi=140)
+                ax3d = fig3d.add_subplot(111, projection="3d")
+
+                ue = U_bt[i, :, :3]
+                vo = V_bt[i, :, :3]
+
+                for t in range(T - 1):
+                    ax3d.plot(ue[t:t+2, 0], ue[t:t+2, 1], ue[t:t+2, 2], color=color_enc,  alpha=0.95)
+                    ax3d.plot(vo[t:t+2, 0], vo[t:t+2, 1], vo[t:t+2, 2], color=color_open, alpha=0.95)
+
+                s_size = 24
+                ax3d.scatter(ue[0,0],  ue[0,1],  ue[0,2],  s=s_size, c=color_enc,  depthshade=False)
+                ax3d.scatter(ue[-1,0], ue[-1,1], ue[-1,2], s=s_size, c=color_enc,  depthshade=False)
+                ax3d.text(ue[0,0],  ue[0,1],  ue[0,2],  "S", color=color_enc,  fontsize=9)
+                ax3d.text(ue[-1,0], ue[-1,1], ue[-1,2], "G", color=color_enc,  fontsize=9)
+
+                ax3d.scatter(vo[0,0],  vo[0,1],  vo[0,2],  s=s_size, c=color_open, depthshade=False)
+                ax3d.scatter(vo[-1,0], vo[-1,1], vo[-1,2], s=s_size, c=color_open, depthshade=False)
+                ax3d.text(vo[0,0],  vo[0,1],  vo[0,2],  "S", color=color_open, fontsize=9)
+                ax3d.text(vo[-1,0], vo[-1,1], vo[-1,2], "G", color=color_open, fontsize=9)
+
+                ax3d.set_xlabel("PC1"); ax3d.set_ylabel("PC2"); ax3d.set_zlabel("PC3")
+                ax3d.set_title(
+                    f"PCA(3D, encoder anchor) — {name_prefix} | var exp: "
+                    + ", ".join(f"{v:.2f}" for v in expl[:3])
+                )
+                ax3d.legend(handles=[
+                    Line2D([0],[0], color=color_enc,  lw=2, label="Encoder"),
+                    Line2D([0],[0], color=color_open, lw=2, label="Open"),
+                ], loc="upper left", frameon=True)
+
+                if not notebook:
+                    Logger.run().log_figure(fig3d, f"{name_prefix}-pca-enc-open-3d-i{i}", dir_name="pca_encoder_open/pca3d")
+                    plt.close(fig3d)
+                else:
+                    plt.show()
+
+        # ===== 後始末 =====
+        plt.close("all")
+        try:
+            del U_bt, V_bt, Z_enc, Z_open, Z_open_in_enc
+        except Exception:
+            pass
+        try:
+            del encoder_lat_seq, open_lat_seq, enc_out, open_res, pred_open, states, actions, optional_fields
+        except Exception:
+            pass
+        gc.collect()
+        torch.cuda.empty_cache()
 
 
 
@@ -4088,12 +4226,6 @@ class ProbingEvaluator:
         self,
         batch,
         jepa: JEPA,
-        prober: torch.nn.Module,
-        prober_open: torch.nn.Module,
-        prober_bluebox_locs: torch.nn.Module = None,
-        prober_bluebox_locs_open: torch.nn.Module = None,
-        enc_prober: torch.nn.Module = None,
-        enc_prober_bluebox: torch.nn.Module = None,
         normalizer: Normalizer = None,
         name_prefix: str = "",
         idxs: Optional[List[int]] = None,

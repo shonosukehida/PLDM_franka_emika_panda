@@ -443,6 +443,11 @@ def build_backbone(
             backbone_pool=config.backbone_pool,
             backbone_final_fc=config.backbone_final_fc,
         )
+    elif arch == "menet6":
+        backbone = MeNet6(
+            config=config,
+            input_dim=input_dim,
+        )
     elif arch == "vjepa2":
         backbone = VJEPA2Backbone(
             repo=config.vjepa2_repo,

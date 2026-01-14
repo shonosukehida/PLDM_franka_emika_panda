@@ -22,6 +22,8 @@ class FrankaSimEnv:
         max_dq=0.01,
         task_cfg = None,
         task_name="push_to_goal",
+        max_reset_tries=500,
+        min_start_goal_dist=0.12
     ):
         self.model_path = model_path
         self.image_size = tuple(image_size)
@@ -43,6 +45,9 @@ class FrankaSimEnv:
         # 青箱 joint / qpos index
         self.joint_id = self.physics.model.name2id("free_joint_blue_box", "joint")
         self.start_idx = self.physics.model.jnt_qposadr[self.joint_id]  # pos(xyz)=3, quat=4
+        
+        self.max_reset_tries = max_reset_tries
+        self.min_start_goal_dist = min_start_goal_dist
 
         # actuator 範囲（行動クリップ用）
         # self.ctrlrange = self.physics.model.actuator_ctrlrange.copy()
@@ -137,10 +142,29 @@ class FrankaSimEnv:
         # for _ in range(50):
         #     self.physics.step()
 
-        if start_pos is None:
-            start_pos = np.random.uniform(low=[0.415, -0.10, 0.05], high=[0.615, 0.10, 0.05])
-        if goal_pos is None:
-            goal_pos = np.random.uniform(low=[0.415, -0.10, 0.05], high=[0.615, 0.10, 0.05])
+        # if start_pos is None:
+        #     start_pos = np.random.uniform(low=[0.415, -0.10, 0.05], high=[0.615, 0.10, 0.05])
+        # if goal_pos is None:
+        #     goal_pos = np.random.uniform(low=[0.415, -0.10, 0.05], high=[0.615, 0.10, 0.05])
+
+        if (start_pos is None) or (goal_pos is None):
+            for _ in range(self.max_reset_tries):
+                sp = start_pos if start_pos is not None else np.random.uniform(
+                    low=[0.415, -0.10, 0.05], high=[0.615, 0.10, 0.05]
+                )
+                gp = goal_pos if goal_pos is not None else np.random.uniform(
+                    low=[0.415, -0.10, 0.05], high=[0.615, 0.10, 0.05]
+                )
+
+                # 距離チェック（zは固定なので xy でも3DでもOK。ここは3Dで）
+                if np.linalg.norm(sp - gp) < self.min_start_goal_dist:
+                    continue
+
+                start_pos = sp
+                goal_pos  = gp
+                break
+            else:
+                raise RuntimeError("reset: failed to sample (start_pos, goal_pos) far enough")
 
         self.start_pos = start_pos
         self.goal_pos = goal_pos
@@ -190,8 +214,6 @@ class FrankaSimEnv:
             self.physics.forward()
             
 
-
-        
 
         return self.get_obs()
 

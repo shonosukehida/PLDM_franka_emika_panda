@@ -262,9 +262,10 @@ def log_planning_plots_split(
         # 予測列：各tで H 分の予測
         single_step_preds = []
         T_loc  = len(result.locations)         # 初期+各ステップ → T+1
-        T_pred = len(result.pred_locations)    # 各ステップ → T
+        # T_pred = len(result.pred_locations)    # 各ステップ → T
+        T_act  = len(getattr(result, "action_history", []))
         t_term = getattr(report, "terminations", [T_loc-1])[idx]
-        t_max = min(T_pred, T_loc - 1, t_term + 1)
+        t_max = min(T_act, T_loc - 1, t_term + 1)
         
         env.reset()
         for t in range(t_max):
@@ -792,6 +793,12 @@ def log_planning_traj_plots_split(
     （MuJoCo 世界座標 (X: 上, Y: 左) を, plot 上で
      「上=+X, 左=+Y」になるように変換して描画する）
     """
+    
+    print("[DBG][pldm/planning/plotting.py] locations:", len(result.locations) if getattr(result, "locations", None) is not None else None)
+    print("[DBG][pldm/planning/plotting.py] pred_locations:", len(getattr(result, "pred_locations", [])))
+    print("[DBG][pldm/planning/plotting.py] action_history:", len(getattr(result, "action_history", [])))
+    print("[DBG][pldm/planning/plotting.py] object_history:", len(getattr(result, "object_history", [])))
+
     if idxs is None:
         idxs = default_plot_idxs
 
@@ -817,9 +824,10 @@ def log_planning_traj_plots_split(
         # ---- 1step 予測列 ----
         single_step_preds = []
         T_loc  = len(result.locations)         # 初期+各ステップ → T+1
-        T_pred = len(result.pred_locations)    # 各ステップ → T
+        # T_pred = len(result.pred_locations)
+        T_act  = len(getattr(result, "action_history", []))
         t_term = getattr(report, "terminations", [T_loc - 1])[idx]
-        t_max = min(T_pred, T_loc - 1, t_term + 1)
+        t_max = min(T_act, T_loc - 1, t_term + 1)
 
         if env is not None:
             env.reset()
@@ -869,11 +877,11 @@ def log_planning_traj_plots_split(
         sx, sy = px_traj[0], py_traj[0]
         gx, gy = px_traj[-1], py_traj[-1]
         ax.text(sx, sy, "S",
-                fontsize=10, color="black",
+                fontsize=15, color="black",
                 ha="center", va="center",
                 fontweight="bold", zorder=7)
         ax.text(gx, gy, "G",
-                fontsize=10, color="black",
+                fontsize=15, color="black",
                 ha="center", va="center",
                 fontweight="bold", zorder=7)
 
@@ -900,7 +908,7 @@ def log_planning_traj_plots_split(
                     s=10, c="lime", marker="o", zorder=1
                 )
 
-        # ====== bluebox の中心軌跡 + box 枠 ======
+        # ====== bluebox の中心軌跡 + box 枠（start/end）======
         if obj_traj is not None and len(obj_traj) > 0 and use_box:
             obj_np = obj_traj.numpy()            # (T_obj,2) world
             px_obj, py_obj = world_to_plot_xy(obj_np)
@@ -909,16 +917,18 @@ def log_planning_traj_plots_split(
                     lw=1.2, c="tab:blue",
                     label="bluebox_center", zorder=4)
             ax.scatter(px_obj[0], py_obj[0],
-                       s=14, c="tab:blue",
-                       marker="x", label="bluebox_start", zorder=3)
+                    s=14, c="tab:blue",
+                    marker="x", label="bluebox_start", zorder=3)
 
-            # 終端の bluebox 枠
-            hx, hy = 0.05, 0.05  # world 空間での半径（X,Yとも）
-            cx_world, cy_world = obj_np[-1, 0].item(), obj_np[-1, 1].item()
-            cx_plot, cy_plot = world_to_plot_xy([cx_world, cy_world])
+            # box half-size (world coordinates)
+            hx, hy = 0.05, 0.05
 
-            rect_bb = Rectangle(
-                (cx_plot - hx, cy_plot - hy),
+            # ---- start box ----
+            sx_world, sy_world = obj_np[0, 0].item(), obj_np[0, 1].item()
+            sx_plot, sy_plot = world_to_plot_xy([sx_world, sy_world])
+
+            rect_bb_start = Rectangle(
+                (sx_plot - hx, sy_plot - hy),
                 2 * hx, 2 * hy,
                 fill=False,
                 linewidth=1.2,
@@ -926,7 +936,36 @@ def log_planning_traj_plots_split(
                 alpha=0.8,
                 zorder=4.5,
             )
-            ax.add_patch(rect_bb)
+            ax.add_patch(rect_bb_start)
+
+            ax.text(
+                sx_plot, sy_plot, "S",
+                fontsize=15, color="tab:blue",
+                ha="center", va="center",
+                fontweight="bold", zorder=6
+            )
+
+            # ---- end box ----
+            gx_world, gy_world = obj_np[-1, 0].item(), obj_np[-1, 1].item()
+            gx_plot, gy_plot = world_to_plot_xy([gx_world, gy_world])
+
+            rect_bb_end = Rectangle(
+                (gx_plot - hx, gy_plot - hy),
+                2 * hx, 2 * hy,
+                fill=False,
+                linewidth=1.2,
+                edgecolor="tab:blue",
+                alpha=0.8,
+                zorder=4.5,
+            )
+            ax.add_patch(rect_bb_end)
+
+            ax.text(
+                gx_plot, gy_plot, "G",
+                fontsize=15, color="tab:blue",
+                ha="center", va="center",
+                fontweight="bold", zorder=6
+            )
 
         # ====== ワークスペース枠 ======
         if world_xlim is not None and world_ylim is not None:
@@ -956,8 +995,8 @@ def log_planning_traj_plots_split(
         ax.legend(fontsize=8, loc="best")
 
         # 軸ラベル（MuJoCo座標との対応を明示）
-        ax.set_xlabel("Horizontal: -Y (left is +Y)")
-        ax.set_ylabel("Vertical: X (up is +X)")
+        ax.set_xlabel("Y [m]")
+        ax.set_ylabel("X [m]")
 
         if plot_action:
             Logger.run().log_figure(figB, f"mpc/prediction_seq_{idx}_actionplot")

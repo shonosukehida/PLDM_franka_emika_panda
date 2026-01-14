@@ -178,6 +178,7 @@ class JEPA(torch.nn.Module):
         chunked_propio_vel: Optional[torch.Tensor] = None,
         goal: Optional[torch.Tensor] = None,
         encode_only: bool = False,
+        alpha: float = 0.0,
     ):
         """
         input_states:
@@ -237,7 +238,7 @@ class JEPA(torch.nn.Module):
         T = input_states.shape[0] - 1
 
         pred_output = self.predictor.forward_multiple(
-            state_encs, actions, T, compute_posterior=True
+            state_encs, actions, T, compute_posterior=True, alpha=alpha,
         )
 
         return ForwardResult(

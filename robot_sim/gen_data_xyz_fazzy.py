@@ -76,15 +76,36 @@ class FrankaDatasetGenerator:
         # )
         
         
-        ratio_tag = "_".join(f"{r:.2f}".replace(".", "p") for r in self.sample_method_ratio)
-
-        if self.IS_VAL:
-            if "mix" not in self.sample_tag:
-                self.SAVE_PATH = f".../val_pairs_{...}_sample_{self.sample_tag}"
-            else:
-                self.SAVE_PATH = f".../val_pairs_{...}_sample_{self.sample_tag}_{ratio_tag}"
+        # sample_tag を決めたあと
+        if self.sample_method_ratio is None:
+            ratio_tag = ""
         else:
-            self.SAVE_PATH = f".../pairs_{...}_sample_{self.sample_tag}"
+            ratio_tag = "_".join(f"{r:.2f}".replace(".", "p") for r in self.sample_method_ratio)
+
+
+        # if self.IS_VAL:
+        #     if "mix" not in self.sample_tag:
+        #         self.SAVE_PATH = f".../val_pairs_{...}_sample_{self.sample_tag}"
+        #     else:
+        #         self.SAVE_PATH = f".../val_pairs_{...}_sample_{self.sample_tag}_{ratio_tag}"
+        # else:
+        #     if "mix" not in self.sample_tag:
+        #         self.SAVE_PATH = f".../pairs_{...}_sample_{self.sample_tag}"
+        #     else:
+        #         self.SAVE_PATH = f".../pairs_{...}_sample_{self.sample_tag}_{ratio_tag}"
+
+        base = self.config.get("save_dir", "pldm_envs/franka/presaved_datasets")
+
+        if self.sample_method_list is None:
+            prefix = f"{'val_' if self.IS_VAL else ''}pairs_{self.PAIRS}_ep_{self.EPISODES_PER_PAIR}_timestep_{self.STEPS_PER_EPISODE}_sample_{self.sample_tag}"
+        else:
+            ratio_tag = "_".join(f"{r:.2f}".replace(".", "p") for r in self.sample_method_ratio)
+            prefix = f"{'val_' if self.IS_VAL else ''}pairs_{self.PAIRS}_ep_{self.EPISODES_PER_PAIR}_timestep_{self.STEPS_PER_EPISODE}_sample_{self.sample_tag}_{ratio_tag}"
+
+        self.SAVE_PATH = os.path.join(base, prefix)
+        print("SAVE_PATH =", os.path.abspath(self.SAVE_PATH))
+
+
 
         
         #データ確認のみの場合, 確認パスを指定
@@ -1401,5 +1422,8 @@ if __name__ == "__main__":
     if config['make_video']: 
         dataset_generator.make_video()
     if config['confirm_ee_trajectory']:
-        dataset_generator.confirm_endeffector_trajectory('xy', config['visualize_target_trajectory'])
-        dataset_generator.confirm_endeffector_trajectory('xz', config['visualize_target_trajectory'])
+        vis_target_traj = (not config['eval_only']) and config['visualize_target_trajectory']
+        dataset_generator.confirm_endeffector_trajectory('xy', vis_target_traj)
+        if config['confirm_ee_traj_xz']: 
+            dataset_generator.confirm_endeffector_trajectory('xz', vis_target_traj)   
+    print("finished!!")

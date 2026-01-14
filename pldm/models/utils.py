@@ -6,10 +6,10 @@ def flatten_conv_output(x):
     if len(x.shape) > 3:
         if len(x.shape) == 4:
             bs, ch, h, w = x.shape
-            return x.view(bs, -1)
+            return x.reshape(bs, -1)
         elif len(x.shape) == 5:
             t, bs, ch, h, w = x.shape
-            return x.view(t, bs, -1)
+            return x.reshape(t, bs, -1)
     else:
         return x
 

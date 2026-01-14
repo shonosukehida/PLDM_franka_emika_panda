@@ -17,7 +17,7 @@ class VJEPA2Backbone(SequenceBackbone):
         freeze: bool = True,
         img_size: int = 64,
         propio_dim: int | None = None,
-        propio_encoder_arch: str | None = "id",  # 例: "75-64-14" とか
+        propio_encoder_arch: str | None = "id",  # "75-64-14" 
         chunk_size: int = 2,
     ):
         super().__init__()

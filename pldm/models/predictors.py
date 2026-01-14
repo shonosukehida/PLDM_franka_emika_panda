@@ -96,6 +96,7 @@ class SequencePredictor(torch.nn.Module):
         latents=None,
         flatten_output=False,
         compute_posterior=False,
+        alpha=0.0
     ):
         """
         This does multiple steps
@@ -119,9 +120,10 @@ class SequencePredictor(torch.nn.Module):
         posterior_logits = []
         posteriors = []
 
+        # print("[DBG][pldm/models/predictors.py] self.prior_model is not None:", self.prior_model is not None)
         for i in range(T):
             predictor_input = []
-            if self.prior_model is not None:
+            if self.prior_model is not None: #x
                 prior_stats = self.prior_model(flatten_conv_output(current_state))
                 # z is of shape BxD
 
@@ -201,6 +203,11 @@ class SequencePredictor(torch.nn.Module):
                 next_state = self.forward(
                     current_state, torch.cat(predictor_input, dim=-1)
                 )
+                # === scheduled sampling (teacher mixing) ===
+                # alpha: 0→完全closed, 1→完全open(teacher forcing)
+                if alpha is not None and alpha > 0 and (i + 1) < state_encs.shape[0]:
+                    teacher_next = state_encs[i + 1]          # z_{i+1} (encoder output)
+                    next_state = (1 - alpha) * next_state + alpha * teacher_next
                 current_state = next_state
 
             state_predictions.append(next_state)

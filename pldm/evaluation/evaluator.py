@@ -120,6 +120,7 @@ class Evaluator:
 
 
 
+            # if self.config.probing.probe_preds and ("locations" in probers):
             if self.config.probing.probe_preds:
                 self.probing_evaluator.evaluate_all(
                     probers=probers,
@@ -131,6 +132,8 @@ class Evaluator:
                     vis_dynamics_open_featuremap = self.config.probing.vis_dynamics_open_featuremap,
                     vis_encoder_featuremap = self.config.probing.vis_encoder_featuremap, 
                 )
+            else:
+                print("[Evaluator] No probers -> skip probe-based visualization/eval.")
         return probers, None
 
     def _create_pixel_mapper(self):
@@ -216,7 +219,7 @@ class Evaluator:
                 config=mpc_config,
                 normalizer=self.normalizer,
                 jepa=self.model.level1,
-                prober=self.probers["locations"],
+                prober=self.probers.get("locations", None),
                 prefix=f"franka_{level}",
                 quick_debug=self.quick_debug,
                 pixel_mapper=self.pixel_mapper,

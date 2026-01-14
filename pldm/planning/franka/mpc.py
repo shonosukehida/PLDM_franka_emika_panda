@@ -119,8 +119,16 @@ class FrankaMPCEvaluator(MPCEvaluator):
                 env=self.envs[0],
             )
 
-            use_box = False
-            if self.config.task.name == "reach_no_touch" and self.config.task.reach_no_touch.use_box:
+
+            
+            if self.config.task.name == "push_to_goal": 
+                use_box = True
+            elif self.config.task.name == "reach_no_touch":
+                if self.config.task.reach_no_touch.use_box:
+                    use_box = True 
+                else:
+                    use_box = False 
+            else: 
                 use_box = True
                 
             #行動列の出力あり
@@ -140,19 +148,19 @@ class FrankaMPCEvaluator(MPCEvaluator):
             )
 
             #行動列の出力なし
-            # log_planning_traj_plots_split(
-            #     result=mpc_data,
-            #     report=report,
-            #     idxs=list(range(self.config.n_envs)) if not self.quick_debug else [0],
-            #     plot_every=self.config.plot_every,
-            #     plot_failure_only=self.config.plot_failure_only,
-            #     world_xlim=[0.315, 0.715],
-            #     world_ylim=[-0.2, 0.2],
-            #     use_pixel_mapper=False,
-            #     pixel_mapper=self.pixel_mapper,
-            #     env=self.envs[0],
-            #     plot_action = False
-            # )
+            log_planning_traj_plots_split(
+                result=mpc_data,
+                report=report,
+                idxs=list(range(self.config.n_envs)) if not self.quick_debug else [0],
+                plot_every=self.config.plot_every,
+                plot_failure_only=self.config.plot_failure_only,
+                world_xlim=[0.315, 0.715],
+                world_ylim=[-0.2, 0.2],
+                use_pixel_mapper=False,
+                pixel_mapper=self.pixel_mapper,
+                env=self.envs[0],
+                plot_action = False
+            )
 
             log_planning_joint_angle_plots_split(
                 result=mpc_data,

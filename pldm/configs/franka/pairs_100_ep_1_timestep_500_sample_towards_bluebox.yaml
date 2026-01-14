@@ -99,11 +99,13 @@ objectives_l1:
   clsd_objectives: #実際はclosed
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
+  # - ObjectiveType.SIGReg
   - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   opn_objectives:
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
+  # - ObjectiveType.SIGReg
   - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   vicreg_obs:
@@ -165,7 +167,10 @@ eval_cfg:
     max_samples: 2000000
     max_samples_enc: 2000000
     schedule: Cosine
-    visualize_probing: true
+    visualize_probing: false #proberを用いたダイナミクスの可視化をするか否か
+    visualize_dynamics: true #proberを用いないダイナミクスの可視化をするか否か ##
+    load_prober: false
+    train_prober: true #load_prober:falseの場合にproberをtrainさせるか否かを指定
     load_prober: false
   disable_planning: false
   franka_planning:

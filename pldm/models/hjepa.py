@@ -67,6 +67,7 @@ class HJEPA(torch.nn.Module):
         chunked_propio_pos: Optional[torch.Tensor] = None,
         chunked_propio_vel: Optional[torch.Tensor] = None,
         goal: Optional[torch.Tensor] = None,
+        alpha: float = 0.0,
     ) -> ForwardResult:
         forward_result_l1 = None
 
@@ -88,6 +89,7 @@ class HJEPA(torch.nn.Module):
                 chunked_propio_pos=chunked_propio_pos,
                 chunked_propio_vel=chunked_propio_vel,
                 encode_only=False,
+                alpha = alpha,
             )
 
         return ForwardResult(level1=forward_result_l1)

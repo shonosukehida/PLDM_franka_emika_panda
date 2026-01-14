@@ -101,6 +101,7 @@ class TrainConfig(ConfigBase):
     
     use_opn_loss_func: bool = False
     confirm_normalize: bool = True
+    alpha: float = 0.0
 
     def __post_init__(self):
         if self.quick_debug:
@@ -528,7 +529,7 @@ class Trainer:
                     Logger.run().commit()
                 
                 
-                forward_result = self.model.forward_posterior(s.to(self.device), a.to(self.device), **optional_fields)
+                forward_result = self.model.forward_posterior(s.to(self.device), a.to(self.device), alpha = self.config.alpha, **optional_fields)
                 mem("after forward closed")
                 
                 print('[DBG][pldm/train.py] pred_output.obs_component.shape:', forward_result.level1.pred_output.obs_component.shape) #[70, 16, 16, 26, 26]=[T,B,C,H,W]

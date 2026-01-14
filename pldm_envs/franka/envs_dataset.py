@@ -109,7 +109,21 @@ class FrankaSimEnv:
         action = np.asarray(action, dtype=np.float32).reshape(-1)
         qpos = self.physics.data.qpos[:7].copy()
 
-        dq = np.clip(action - qpos, -max_dq, max_dq)
+        dq_raw = action - qpos
+        dq = np.clip(dq_raw, -max_dq, max_dq)
+        
+        # ===== DEBUG LOG (一時的) =====
+        raw_norm = np.linalg.norm(dq_raw)
+        clipped_norm = np.linalg.norm(dq)
+        clip_ratio = np.mean(np.abs(dq_raw) > max_dq)
+
+        print(
+            f"[dq] raw_norm={raw_norm:.5f}, "
+            f"clipped_norm={clipped_norm:.5f}, "
+            f"clip_ratio={clip_ratio:.2f}"
+        )
+        # ==============================
+        
         target = qpos + dq
 
         low, high = self.ctrlrange[:, 0], self.ctrlrange[:, 1]
@@ -143,9 +157,9 @@ class FrankaSimEnv:
             dist_steps.append(np.abs(ee_pos - target_pos))
 
             dist = np.linalg.norm(ee_pos - target_pos)
-            if dist < tol:
-                objective_reached = True
-                break
+            # if dist < tol:
+            #     objective_reached = True
+            #     break
 
         site_pos = ee_pos.copy()
         return joint_angles, site_pos, dist_steps, objective_reached
