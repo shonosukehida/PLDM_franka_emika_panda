@@ -430,6 +430,12 @@ class FrankaSimEnv:
             self.physics.data.ctrl[:] = ctrl_bk
             self.physics.forward()
 
+
+    def get_target(self):
+        if self.task_name == "reach_no_touch":
+            return self.ee_goal_pos
+        return self.goal_pos
+
     def _get_goal_obs_vec(self, goal_pos):
         # --- backup ---
         qpos_bk = self.physics.data.qpos.copy()
@@ -450,6 +456,74 @@ class FrankaSimEnv:
             self.physics.data.qvel[:] = qvel_bk
             self.physics.forward()
 
+    def _get_goal_propio_reach_no_touch(self):
+        # --- backup ---
+        qpos_bk = self.physics.data.qpos.copy()
+        qvel_bk = self.physics.data.qvel.copy()
+        ctrl_bk = self.physics.data.ctrl.copy()
+        try:
+            # 箱の扱いは get_target_obs() と揃える（必要なら）
+            if self.use_box and (not self.robot_only):
+                box_pos = self.box_init_pos if self.box_init_pos is not None else self.start_pos
+                self.physics.data.qpos[self.start_idx:self.start_idx+3] = box_pos
+                self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0])
+                self.physics.data.qvel[self.start_idx:self.start_idx+6] = 0.0
+            else:
+                self.physics.data.qpos[self.start_idx:self.start_idx+3] = np.array([100.0, 100.0, 0.05], dtype=np.float32)
+                self.physics.data.qpos[self.start_idx+3:self.start_idx+7] = np.array([1, 0, 0, 0], dtype=np.float32)
+                self.physics.data.qvel[self.start_idx:self.start_idx+6] = 0.0
+
+            # EEをゴールへ（IK）
+            result = self.calc_inverse_kinematic(self.ee_goal_pos, rot_weight=0.1)
+            q_des = result.qpos[:7].copy()
+
+            self.physics.data.qpos[:7] = q_des
+            self.physics.data.qvel[:7] = 0.0  # goal速度は0が自然
+            self.physics.data.ctrl[:] = 0.0
+            self.physics.data.ctrl[self.arm_actuator_ids] = q_des
+            self.physics.forward()
+
+            qpos = self.physics.data.qpos[:7].copy()
+            qvel = self.physics.data.qvel[:7].copy()
+            return np.concatenate([qpos, qvel]).astype(np.float32)
+
+        finally:
+            # --- restore ---
+            self.physics.data.qpos[:] = qpos_bk
+            self.physics.data.qvel[:] = qvel_bk
+            self.physics.data.ctrl[:] = ctrl_bk
+            self.physics.forward()
+
+       
+    def get_target_propio(self):
+        """
+        Returns goal proprio in the SAME normalization space as training.
+        shape: (14,) = [qpos(7), qvel(7)]
+        """
+        # goal を仮想的に配置して、そのときの関節状態を取得
+        if self.task_name == "push_to_goal":
+            vec = self._get_goal_obs_vec(self.goal_pos)   # (14,) numpy
+        elif self.task_name == "reach_no_touch":
+            # reach_no_touch は「EEをゴールへ」なので、
+            # get_target_obs() と同じく IK した姿勢から qpos/qvel を作るのが筋
+            vec = self._get_goal_propio_reach_no_touch()
+        else:
+            raise NotImplementedError(f"get_target_propio not implemented for {self.task_name}")
+
+        # torchへ
+        vec = torch.from_numpy(vec).float()
+
+        # ここで正規化（学習と同じ空間に合わせる）
+        if self.use_normalize:
+            qpos = self.normalizer.normalize_propio_pos(vec[:7])
+            qvel = self.normalizer.normalize_propio_vel(vec[7:])
+            vec = torch.cat([qpos, qvel], dim=0)
+
+        return vec
+
+
+
+
 
     def _is_success(self, object_pos):
         if self.task_name == "reach_no_touch":
@@ -469,10 +543,7 @@ class FrankaSimEnv:
         return float(np.linalg.norm(object_pos - self.goal_pos) < self.success_thresh)
 
 
-    def get_target(self):
-        if self.task_name == "reach_no_touch":
-            return self.ee_goal_pos
-        return self.goal_pos
+
 
 
     def get_ee_position(self):

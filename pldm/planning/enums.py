@@ -10,6 +10,7 @@ import torch
 @dataclass
 class LevelConfig(ConfigBase):
     n_steps: int = 30
+    pred_steps: int = 30
     n_envs: int = 4
     max_plan_length: int = 10
     offline_T: int = 10  # timesteps between start and goal

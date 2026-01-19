@@ -96,7 +96,7 @@ class SequencePredictor(torch.nn.Module):
         latents=None,
         flatten_output=False,
         compute_posterior=False,
-        alpha=0.0
+        alpha=0.0,
     ):
         """
         This does multiple steps
@@ -206,7 +206,7 @@ class SequencePredictor(torch.nn.Module):
                 # === scheduled sampling (teacher mixing) ===
                 # alpha: 0→完全closed, 1→完全open(teacher forcing)
                 if alpha is not None and alpha > 0 and (i + 1) < state_encs.shape[0]:
-                    teacher_next = state_encs[i + 1]          # z_{i+1} (encoder output)
+                    teacher_next = state_encs[i + 1].detach()          # z_{i+1} (encoder output)
                     next_state = (1 - alpha) * next_state + alpha * teacher_next
                 current_state = next_state
 

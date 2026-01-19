@@ -36,3 +36,5 @@ class FrankaMPCConfig(MPCConfig):
     reach_eps: float = 1e-3
     
     task: TaskConfig = TaskConfig()
+    
+    pred_steps: int = 50

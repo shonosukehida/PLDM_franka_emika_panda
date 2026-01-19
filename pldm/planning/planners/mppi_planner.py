@@ -49,20 +49,27 @@ class LearnedDynamics:
                 T=T,
                 latents=action.float(),
             )
-
+        
         preds = pred_output.predictions
         pred_obs = pred_output.obs_component
+        pred_propio = pred_output.propio_component
 
         if flatten_output:
             preds = flatten_conv_output(preds)  # required for 3rd party MPPI code...
             pred_obs = flatten_conv_output(pred_obs)
+            pred_propio = flatten_conv_output(pred_propio)
 
         if only_return_last:
             preds = preds[-1]
             pred_obs = pred_obs[-1]
+            pred_propio = pred_propio[-1]
+        print('[DBG][pldm/planning/planners/mppi_planner.py] preds.shape:', preds.shape)
+        print('[DBG][pldm/planning/planners/mppi_planner.py] pred_obs.shape:', pred_obs.shape)
+        print('[DBG][pldm/planning/planners/mppi_planner.py] pred_propio.shape:', pred_propio.shape)
+        
 
         # we need to return both. preds is used to propagate the state forward. pred_obs is used to take cost
-        return preds, pred_obs
+        return preds, pred_obs, pred_propio
 
     def before_planning_callback(self):
         self.orig_training_state = self.model.training
@@ -73,25 +80,56 @@ class LearnedDynamics:
 
 
 class RunningCost:
-    def __init__(self, objective, idx=None, projector=None):
+    def __init__(
+        self, 
+        objective, 
+        idx=None, 
+        obs_projector=None, 
+        propio_projector=None,
+        obs_coeff = 1.0,
+        propio_coeff = 0.0,
+        ):
+        
         self.objective = objective
         self.idx = idx
-        self.projector = nn.Identity() if projector is None else projector
+        self.obs_projector = nn.Identity() if obs_projector is None else obs_projector
+        self.propio_projector = nn.Identity() if propio_projector is None else propio_projector
+        self.obs_coeff = obs_coeff
+        self.propio_coeff = propio_coeff
+        
 
-    def __call__(self, state, action):
+    def __call__(
+        self, 
+        state_obs, 
+        state_propio = None, 
+        action = None,
+        ):
         """encoding shape is B X D
         Note that B are samples for the same environment
         You want to diff against target_enc of shape (D) retrieved from objective
         """
+        print("[DBG][pldm/planning/planners/mppi_planner.py]state_propio.shape:", state_propio.shape)
+        print("[DBG][pldm/planning/planners/mppi_planner.py]state_obs.shape:", state_obs.shape)
         objective = self.objective
-        target = objective.target_enc[self.idx]
+        target_obs = objective.target_enc[self.idx]
 
-        state = self.projector(state)
-        target = self.projector(target)
+        state_obs = self.obs_projector(state_obs)
+        target_obs = self.obs_projector(target_obs)
 
-        diff = (state - target).pow(2)
+        obs_diff = (state_obs - target_obs).pow(2).mean(dim=1)
+        
+        if state_propio is not None:
+            target_propio = objective.target_propio_enc[self.idx]   
+            state_propio = self.propio_projector(state_propio)
+            target_propio = self.propio_projector(target_propio)
+            propio_diff = (state_propio - target_propio).pow(2).mean(dim=1)
+        else:
+            propio_diff = torch.zeros_like(obs_diff)
+        
+        all_diff = self.obs_coeff * obs_diff + self.propio_coeff * propio_diff
+        
 
-        return diff.mean(dim=1)
+        return all_diff
 
 
 class MPPIPlanner:
@@ -131,13 +169,17 @@ class MPPIPlanner:
                 device=device,
             )
         )
-        self.objective = objective
+        self.objective = objective  
+        print("[DBG][pldm/planning/planners/mppi_planner.py]config.obs_coeff:", config.obs_coeff)
+        print("[DBG][pldm/planning/planners/mppi_planner.py]config.propio_coeff:", config.propio_coeff)
 
         self.mppi_costs = [
             RunningCost(
                 objective,
                 idx=i,
-                projector=prober if projected_cost else None,
+                obs_projector=prober if projected_cost else None,
+                obs_coeff=config.obs_coeff,
+                propio_coeff=config.propio_coeff
             )
             for i in range(n_envs)
         ]
@@ -230,12 +272,13 @@ class MPPIPlanner:
 
         actions = torch.stack(actions)
 
-        pred_encs, pred_obs = self.dynamics(
+        pred_encs, pred_obs, pred_propio = self.dynamics(
             state=current_state,
             action=actions.permute(1, 0, 2),
             only_return_last=False,
             flatten_output=False,
         )
+        print("[DBG][pldm/planning/planners/mppi_planner.py]正常にpred_propio を受け取りました。")
 
         if self.action_normalizer is not None:
             actions = self.action_normalizer(actions)
@@ -266,3 +309,6 @@ class MPPIPlanner:
 
     def reset_targets(self, targets: torch.Tensor, repr_input: bool = True):
         self.objective.set_target(targets, repr_input=repr_input)
+    
+    def reset_targets_propio(self, targets_propio: torch.Tensor, targets_obs: torch.Tensor, repr_input: bool = True):
+        self.objective.set_target_propio(targets_propio, targets_obs, repr_input=repr_input)

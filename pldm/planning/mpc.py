@@ -219,6 +219,10 @@ class MPCEvaluator(ABC):
 
         #ゴール画像
         targets_t = torch.stack([e.get_target_obs() for e in envs]).to(self.device)
+        targets_propio_t = torch.stack([e.get_target_propio() for e in envs]).to(self.device).float()
+        print("[DBG][pldm/planning/mpc.py] targets_t.device:", targets_t.device)
+        print("[DBG][pldm/planning/mpc.py] targets_propio_t.device:", targets_propio_t.device)
+
         
         
         # ===== DEBUG: 目標画像を書き出す（timestamp付き）=====
@@ -252,20 +256,42 @@ class MPCEvaluator(ABC):
         # =====================================================
                         
 
+        print('[DBG][pldm/planning/mpc.py] self.model.config.backbone.propio_dim is not None: ', self.model.config.backbone.propio_dim is not None)
+        use_propio = True
+        
         # encode target obs
         if self.model.config.backbone.propio_dim is not None:
-            # for target we don't care about the proprioceptive states. just make it zero.
-            propio_states = torch.zeros(
-                (targets_t.shape[0], self.model.config.backbone.propio_dim)
-            ).to(self.device)
-            targets_t = self.model.backbone(
+            if not use_propio:
+                # for target we don't care about the proprioceptive states. just make it zero.
+                propio_states = torch.zeros(
+                    (targets_t.shape[0], self.model.config.backbone.propio_dim)
+                ).to(self.device)
+            else:
+                propio_states = targets_propio_t
+                
+            target_states = self.model.backbone(
                 targets_t, propio=propio_states
-            ).obs_component.detach()
+            )
+            
+            targets_t = target_states.obs_component.detach()
+            targets_propio_t = target_states.propio_component.detach()
         else:
             targets_t = self.model.backbone(targets_t).obs_component.detach()
 
         targets_t = flatten_conv_output(targets_t)
+        print('[DBG][pldm/planning/mpc.py] targets_t.shape:', targets_t.shape)
+        
+        
         planner.reset_targets(targets_t, repr_input=True)
+        print('[DBG][pldm/planning/mpc.py] planner.objective.target_enc.shape:', planner.objective.target_enc.shape)
+        
+        if targets_propio_t is not None:
+            targets_propio_t = flatten_conv_output(targets_propio_t)
+            planner.reset_targets_propio(targets_propio_t, targets_t, repr_input=True)
+        print("[DBG][pldm/planning/mpc.py] planner.objective.target_propio_enc is not None", planner.objective.target_propio_enc is not None)
+        if planner.objective.target_propio_enc is not None:
+            print("[DBG][pldm/planning/mpc.py] planner.objective.target_propio_enc.shape: ", planner.objective.target_propio_enc.shape)
+            
 
         observation_history = [torch.stack([e.get_obs() for e in envs])]
 
@@ -330,7 +356,7 @@ class MPCEvaluator(ABC):
                     curr_propio_pos=curr_propio_pos,
                     curr_propio_vel=curr_propio_vel,
                     plan_size=min(
-                        self.config.n_steps - i, self.config.level1.max_plan_length
+                        self.config.n_steps - i, self.config.level1.max_plan_length, self.config.pred_steps
                     ),
                     repr_input=False,
                 )

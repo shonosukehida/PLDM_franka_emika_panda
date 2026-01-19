@@ -89,6 +89,7 @@ hjepa:
 load_checkpoint_path: pldm/checkpoints/franka_20251111_170230/epoch=10_sample_step=10240912.ckpt #pldm/checkpoints/franka_20250913_125623/epoch=10_sample_step=110000.ckpt
 load_l1_only: false
 
+alpha: 0.0 #0.0 #current_state = (1 - alpha) * next_state + alpha * teacher_state
 use_opn_loss_func: &use_opn_loss_func false #現在はopen_objectives を共通の損失関数として使用
 objectives_l1:
   idm:
@@ -183,6 +184,7 @@ eval_cfg:
     levels: "easy"
     easy:
       n_steps: 200 #タスクのタイムステップ
+      pred_steps: 50 #その時刻の予測タイムステップ数 (学習時のタイムステップに合わせる)
       n_envs: 4 #80
       max_plan_length: 100 
       plot_every: 1
@@ -233,6 +235,8 @@ eval_cfg:
         noise_sigma: 0.01 #5 #ノイズ共分散 0.01
         num_samples: 500 #500.  #ランダム行動列のサンプル数
         lambda_: 0.0025 #温度
+        obs_coeff: 1.0 #1.0
+        propio_coeff: 0.0 #0.0
   # d4rl_planning:
   #   n_envs: 10 #85
   #   n_envs_batch_size: 4 #16

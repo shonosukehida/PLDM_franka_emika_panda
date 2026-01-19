@@ -24,6 +24,8 @@ class MPPIConfig(ConfigBase):
     num_samples: int = 500
     lambda_: float = 0.005
     z_reg_coeff: float = 0
+    obs_coeff: float = 1.0 
+    propio_coeff: float = 0.0
 
 
 @dataclass

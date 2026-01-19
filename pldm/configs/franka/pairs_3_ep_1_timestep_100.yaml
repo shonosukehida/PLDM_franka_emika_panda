@@ -46,7 +46,7 @@ eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
 eval_mpcs: 20
-eval_only: false
+eval_only: true
 hjepa:
   l1_n_steps: *n_steps
   train_l1: true
@@ -85,8 +85,9 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: null #pldm/checkpoints/franka_20250730_112342/epoch=10_sample_step=1584.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20260115_180104/epoch=5_sample_step=864.ckpt #pldm/checkpoints/franka_20250730_112342/epoch=10_sample_step=1584.ckpt
 
+alpha: 0.0 #0.0 #current_state = (1 - alpha) * next_state + alpha * teacher_state
 use_opn_loss_func: &use_opn_loss_func false
 objectives_l1:
   idm:
@@ -155,9 +156,9 @@ eval_cfg:
     probe_encoder: true
     probe_preds: true
     use_opn_loss_func: *use_opn_loss_func
-    vis_dynamics_closed_featuremap: true
-    vis_dynamics_open_featuremap: true
-    vis_encoder_featuremap: true
+    vis_dynamics_closed_featuremap: false
+    vis_dynamics_open_featuremap: false
+    vis_encoder_featuremap: false
     epochs: 1 #5
     epochs_enc: 1 #5
     epochs_latent: 1 #5
@@ -166,10 +167,10 @@ eval_cfg:
     max_samples: 10 #2000000
     max_samples_enc: null #2000000
     schedule: Cosine 
-    visualize_probing: true #proberを用いたダイナミクスの可視化をするか否か
-    visualize_dynamics: true #proberを用いないダイナミクスの可視化をするか否か
+    visualize_probing: false #proberを用いたダイナミクスの可視化をするか否か
+    visualize_dynamics: false #proberを用いないダイナミクスの可視化をするか否か
     load_prober: false
-    train_prober: true #load_prober:falseの場合にproberをtrainさせるか否かを指定
+    train_prober: false #load_prober:falseの場合にproberをtrainさせるか否かを指定
   disable_planning: false 
   franka_planning:
     n_envs: 10 #85
@@ -178,6 +179,7 @@ eval_cfg:
     levels: "easy"
     easy:
       n_steps: 200 #タスクのタイムステップ
+      pred_steps: 50 #その時刻の予測タイムステップ数 (学習時のタイムステップに合わせる)
       n_envs: 4 #80
       max_plan_length: 100 
       plot_every: 1
@@ -228,6 +230,8 @@ eval_cfg:
         noise_sigma: 5 #5
         num_samples: 5 #500
         lambda_: 0.0025
+        obs_coeff: 1.0 #1.0
+        propio_coeff: 0.0 #0.0
   # d4rl_planning:
   #   n_envs: 10 #85
   #   n_envs_batch_size: 4 #16

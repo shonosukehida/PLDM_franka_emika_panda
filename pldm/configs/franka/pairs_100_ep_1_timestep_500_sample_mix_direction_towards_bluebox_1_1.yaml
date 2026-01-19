@@ -46,7 +46,7 @@ eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
 eval_mpcs: 20
-eval_only: true
+eval_only: false
 hjepa:
   l1_n_steps: *n_steps
   train_l1: true
@@ -85,10 +85,10 @@ hjepa:
     action_dim: 7
     momentum: 0.99
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20260107_160630/epoch=5_sample_step=270528.ckpt #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
+load_checkpoint_path: null #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
 load_l1_only: false
 
-alpha: 0.0 #0.0 #current_state = (1 - alpha) * next_state + alpha * teacher_state
+alpha: 0.5 #0.0 #current_state = (1 - alpha) * next_state + alpha * teacher_state
 use_opn_loss_func: &use_opn_loss_func false #現在はopen_objectives を共通の損失関数として使用
 objectives_l1:
   idm:
@@ -157,9 +157,9 @@ eval_cfg:
     probe_encoder: true
     probe_preds: true
     use_opn_loss_func: *use_opn_loss_func
-    vis_dynamics_closed_featuremap: false
-    vis_dynamics_open_featuremap: false
-    vis_encoder_featuremap: false
+    vis_dynamics_closed_featuremap: true
+    vis_dynamics_open_featuremap: true
+    vis_encoder_featuremap: true
     epochs: 5 #5
     epochs_enc: 5 #5
     epochs_latent: 5 #5
@@ -168,7 +168,7 @@ eval_cfg:
     max_samples: 2000000
     max_samples_enc: 2000000
     schedule: Cosine
-    visualize_probing: true #proberを用いたダイナミクスの可視化をするか否か
+    visualize_probing: false #proberを用いたダイナミクスの可視化をするか否か
     visualize_dynamics: true #proberを用いないダイナミクスの可視化をするか否か ##
     load_prober: false
     train_prober: false #load_prober:falseの場合にproberをtrainさせるか否かを指定
@@ -180,14 +180,14 @@ eval_cfg:
     levels: "easy"
     easy:
       n_steps: 200
-      n_envs: 2 #80
+      n_envs: 4 #80
       max_plan_length: 50 #タスク時に使われる
       plot_every: 10
       min_block_radius: 4
       max_block_radius: 9999
       override_config: true
-    visualize_planning: false
-    visualize_planning_videos: false
+    visualize_planning: true
+    visualize_planning_videos: true
     log_pred_dist_every: 9999999
     plot_every: 16
     set_start_target_path: null #"../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
@@ -275,5 +275,5 @@ run_name: pldm_franka
 run_project: Franka
 save_every_n_epochs: 1
 seed: 246
-wandb: false
+wandb: true
 confirm_normalize: true

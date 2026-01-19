@@ -32,6 +32,7 @@ class ReprTargetMPCObjective(BaseMPCObjective):
         loss_coeff_first: float = 1,
         loss_coeff_last: float = 1,
         target_enc: Optional[torch.Tensor] = None,
+        target_propio_enc: Optional[torch.Tensor] = None,
         idx: Optional[Union[int, List[int]]] = None,
         pred_encoder: Optional[torch.nn.Module] = None,
         propio_cost: bool = False,
@@ -40,6 +41,7 @@ class ReprTargetMPCObjective(BaseMPCObjective):
         self.sum_all_diffs = sum_all_diffs
         self.model = model
         self.target_enc = target_enc
+        self.target_propio_enc = target_propio_enc
         self.idx = idx
         self.loss_coeff_first = loss_coeff_first
         self.loss_coeff_last = loss_coeff_last
@@ -53,6 +55,15 @@ class ReprTargetMPCObjective(BaseMPCObjective):
             self.target_enc = self.model.backbone(
                 target_obs.float().to(self.device)
             ).encodings.detach()
+
+    def set_target_propio(self, target_propio: torch.Tensor, target_obs: torch.Tensor, repr_input: bool):
+        if repr_input:
+            self.target_propio_enc = target_propio 
+        else:
+            self.target_propio_enc = self.model.encoder(
+                target_obs.float().to(self.device), propio=target_propio.float().to(self.device)).detach()
+        
+
 
     def set_idx(self, idx: Union[int, List[int]]):
         self.idx = idx
@@ -130,12 +141,14 @@ class ReprTargetMPCObjective2(BaseMPCObjective):
         model: Optional[torch.nn.Module] = None,
         sum_all_diffs: bool = False,
         target_enc: Optional[torch.Tensor] = None,
+        target_propio_enc: Optional[torch.Tensor] = None,
         idx: Optional[Union[int, List[int]]] = None,
         sum_last_n: int = 3,
     ):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = model
         self.target_enc = target_enc
+        self.target_propio_enc = target_propio_enc
         self.sum_all_diffs = sum_all_diffs
         self.sum_last_n = sum_last_n
 
@@ -144,6 +157,14 @@ class ReprTargetMPCObjective2(BaseMPCObjective):
             self.target_enc = target_obs
         else:
             self.target_enc = self.model.encoder(target_obs.float().to(self.device)).detach()
+    
+    def set_target_propio(self, target_propio: torch.Tensor, target_obs: torch.Tensor, repr_input: bool):
+        if repr_input:
+            self.target_propio_enc = target_propio 
+        else:
+            self.target_propio_enc = self.model.encoder(
+                target_obs.float().to(self.device), propio=target_propio.float().to(self.device)).detach()
+        
 
     def set_idx(self, idx: Union[int, List[int]]):
         self.idx = idx

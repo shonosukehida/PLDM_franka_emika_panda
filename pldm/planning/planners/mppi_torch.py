@@ -207,11 +207,21 @@ class MPPI:
         return self.F(state, u, t) if self.step_dependency else self.F(state, u)
 
     @handle_batch_input(n=2)
-    def _running_cost(self, state, u, t):
+    def _running_cost(self, state_obs, cur_ac, cur_t, state_propio=None):
+        # print("[DBG][pldm/planning/planners/mppi_torch.py]self.step_dependency: ", self.step_dependency)
+        
+        if state_obs.dim() == 3:
+            state_obs = state_obs.mean(dim=0)
+            
+        if state_propio is not None:
+            if state_propio.dim() == 3:
+                state_propio = state_propio.mean(dim=0)
+            
+        
         return (
-            self.running_cost(state, u, t)
-            if self.step_dependency
-            else self.running_cost(state, u)
+            self.running_cost(state_obs, cur_ac, cur_t)
+            if self.step_dependency #False
+            else self.running_cost(state_obs = state_obs, state_propio=state_propio, action = cur_ac)
         )
 
     def shift_nominal_trajectory(self):
@@ -283,7 +293,6 @@ class MPPI:
 
     def _compute_rollout_costs(self, perturbed_actions):
         torch.cuda.reset_peak_memory_stats()
-        print("[MEM] start MB=", torch.cuda.memory_allocated()/1024**2)
 
         K, T, nu = perturbed_actions.shape
         assert nu == self.nu
@@ -305,8 +314,8 @@ class MPPI:
         actions = []
         for t in range(T):
             u = self.u_scale * perturbed_actions[:, t].repeat(self.M, 1, 1)
-            state, state_obs = self._dynamics(state, u, t)
-            c = self._running_cost(state_obs, u, t)
+            state, state_obs, state_propio = self._dynamics(state, u, t)
+            c = self._running_cost(state_obs=state_obs, cur_ac=u, cur_t=t, state_propio=state_propio)
             cost_samples = cost_samples + c
             if self.M > 1:
                 cost_var += c.var(dim=0) * (self.rollout_var_discount**t)
