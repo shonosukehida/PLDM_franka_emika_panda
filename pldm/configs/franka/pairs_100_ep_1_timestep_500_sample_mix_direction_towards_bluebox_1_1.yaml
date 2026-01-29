@@ -171,7 +171,7 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: false #proberを用いたダイナミクスの可視化をするか否か
-    visualize_dynamics: true #proberを用いないダイナミクスの可視化をするか否か ##
+    visualize_dynamics: false #proberを用いないダイナミクスの可視化をするか否か ##
     load_prober: false
     train_prober: false #load_prober:falseの場合にproberをtrainさせるか否かを指定
   disable_planning: false
@@ -189,8 +189,8 @@ eval_cfg:
       min_block_radius: 4
       max_block_radius: 9999
       override_config: true
-    visualize_planning: false
-    visualize_planning_videos: false
+    visualize_planning: true
+    visualize_planning_videos: true
     log_pred_dist_every: 9999999
     plot_every: 16
     set_start_target_path: null #"../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
@@ -235,6 +235,7 @@ eval_cfg:
         lambda_: 0.0025 #温度
         obs_coeff: 0.2 #1.0
         propio_coeff: 0.8 #0.0
+        w_du: 1.0 #1.0 #MPPIの予測列の時間的変化をなめらかにする
       cem:
         num_samples: 500 #500 #1度にサンプリングする行動列の本数
         num_elites: 50 #50 #サンプルの中から成績上位として残す本数

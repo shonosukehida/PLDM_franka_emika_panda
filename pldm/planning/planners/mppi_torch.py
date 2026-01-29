@@ -51,6 +51,7 @@ class MPPI:
         rollout_var_discount=0.95,
         sample_null_action=False,
         noise_abs_cost=False,
+        w_du=1.0,
     ):
         """
         :param dynamics: function(state, action) -> next_state (K x nx) taking in batch state (K x nx) and action (K x nu)
@@ -201,6 +202,9 @@ class MPPI:
         self.omega = None
         self.states = None
         self.actions = None
+        
+        self.w_du = w_du
+        
 
     @handle_batch_input(n=2)
     def _dynamics(self, state, u, t):
@@ -420,6 +424,13 @@ class MPPI:
             self.perturbed_action
         )
         self.actions = actions / self.u_scale
+
+
+        u = self.perturbed_action  # (K,T,nu)
+        du = u[:, 1:] - u[:, :-1]  # (K,T-1,nu)
+        smooth_cost = self.w_du * du.pow(2).sum(dim=(1,2))  # (K,)
+
+        rollout_cost = rollout_cost + smooth_cost
 
         # action perturbation cost
         perturbation_cost = torch.sum(self.U * action_cost, dim=(1, 2))

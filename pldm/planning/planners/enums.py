@@ -27,6 +27,7 @@ class MPPIConfig(ConfigBase):
     z_reg_coeff: float = 0
     obs_coeff: float = 1.0 
     propio_coeff: float = 0.0
+    w_du: float = 1.0
 
 
 @dataclass

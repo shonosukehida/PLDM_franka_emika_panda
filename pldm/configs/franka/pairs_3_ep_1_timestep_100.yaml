@@ -233,6 +233,7 @@ eval_cfg:
         lambda_: 0.0025
         obs_coeff: 1.0 #1.0
         propio_coeff: 0.0 #0.0
+        w_du: 1.0 #1.0 #MPPIの予測列の時間的変化をなめらかにする
       cem:
         num_samples: 500 #500 #1度にサンプリングする行動列の本数
         num_elites: 50 #50 #サンプルの中から成績上位として残す本数

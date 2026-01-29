@@ -139,8 +139,8 @@ eval_cfg:
     l1_depth: *n_steps
     train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300_sample_direction_view_default/images.npy
     train_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300_sample_direction_view_default/data.p
-    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300_sample_direction_view_default/images.npy
-    val_path: pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_300_sample_direction_view_default/data.p
+    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_towards_bluebox/images.npy
+    val_path: pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_towards_bluebox/data.p
     probe_targets: 'locations,propio_vel,bluebox_locs' 
     locations:
       arch: 'conv'
@@ -235,6 +235,7 @@ eval_cfg:
         lambda_: 0.0025 #温度
         obs_coeff: 1.0 #1.0
         propio_coeff: 0.0 #0.0
+        w_du: 1.0 #1.0 #MPPIの予測列の時間的変化をなめらかにする
       cem:
         num_samples: 500 #500 #1度にサンプリングする行動列の本数
         num_elites: 50 #50 #サンプルの中から成績上位として残す本数

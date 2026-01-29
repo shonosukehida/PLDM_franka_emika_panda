@@ -201,6 +201,7 @@ class MPPIPlanner:
                 u_per_command=-1,
                 latent_actions=latent_actions,
                 z_reg_coeff=config.z_reg_coeff,
+                w_du=config.w_du
             )
             for i in range(n_envs)
         ]
