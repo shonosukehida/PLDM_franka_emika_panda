@@ -909,8 +909,11 @@ class FrankaDatasetGenerator:
         DATA_PATH = self.SAVE_PATH
         SAVE_DIR = "robot_sim/analyze/video"
 
-        timestep = self.env.physics.model.opt.timestep
-        FPS = 1 / (timestep * self.mjc_steps)
+        # timestep = self.env.physics.model.opt.timestep
+        # FPS = 1 / (timestep * self.mjc_steps)
+        
+        FPS = self.actual_dataset_hz
+
 
         #LOAD
         print("📦 Loading dataset...")

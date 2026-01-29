@@ -7,6 +7,7 @@ class PlannerType(enum.Enum):
     SGD = enum.auto()
     MPPI = enum.auto()
     BeamSearch = enum.auto()
+    CEM = enum.auto()
 
 
 @dataclass
@@ -33,6 +34,19 @@ class LFBGSConfig(ConfigBase):
     history_size: int = 10
     max_iter: int = 20
 
+@dataclass
+class CEMConfig(ConfigBase):
+    num_samples: int = 500
+    num_elites: int = 50
+    init_std: float = 1.0
+    n_iters: int = 5
+    alpha: float = 0.1
+
+    max_batch_size: int = 64      # chunk size
+    clamp_actions: bool = False
+    action_low: float = -1.0
+    action_high: float = 1.0
+
 
 @dataclass
 class PlannerConfig(ConfigBase):
@@ -40,6 +54,7 @@ class PlannerConfig(ConfigBase):
     sgd: SGDConfig = field(default_factory=SGDConfig)
     mppi: MPPIConfig = field(default_factory=MPPIConfig)
     lfgbs: LFBGSConfig = field(default_factory=LFBGSConfig)
+    cem: CEMConfig = field(default_factory=CEMConfig)
     clamp_actions: bool = False
     min_step: float = 0.1
     max_step: float = 1.0

@@ -53,6 +53,9 @@ class LearnedDynamics:
         preds = pred_output.predictions
         pred_obs = pred_output.obs_component
         pred_propio = pred_output.propio_component
+        print('[DBG][pldm/planning/planners/mppi_planner.py] preds.shape:', preds.shape)
+        print('[DBG][pldm/planning/planners/mppi_planner.py] pred_obs.shape:', pred_obs.shape)
+        print('[DBG][pldm/planning/planners/mppi_planner.py] pred_propio.shape:', pred_propio.shape)
 
         if flatten_output:
             preds = flatten_conv_output(preds)  # required for 3rd party MPPI code...
@@ -63,9 +66,6 @@ class LearnedDynamics:
             preds = preds[-1]
             pred_obs = pred_obs[-1]
             pred_propio = pred_propio[-1]
-        print('[DBG][pldm/planning/planners/mppi_planner.py] preds.shape:', preds.shape)
-        print('[DBG][pldm/planning/planners/mppi_planner.py] pred_obs.shape:', pred_obs.shape)
-        print('[DBG][pldm/planning/planners/mppi_planner.py] pred_propio.shape:', pred_propio.shape)
         
 
         # we need to return both. preds is used to propagate the state forward. pred_obs is used to take cost
@@ -108,8 +108,7 @@ class RunningCost:
         Note that B are samples for the same environment
         You want to diff against target_enc of shape (D) retrieved from objective
         """
-        print("[DBG][pldm/planning/planners/mppi_planner.py]state_propio.shape:", state_propio.shape)
-        print("[DBG][pldm/planning/planners/mppi_planner.py]state_obs.shape:", state_obs.shape)
+
         objective = self.objective
         target_obs = objective.target_enc[self.idx]
 

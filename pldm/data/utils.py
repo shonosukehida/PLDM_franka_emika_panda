@@ -123,9 +123,10 @@ def make_dataloader(ds, loader_config, normalizer=None, suffix="", train=True):
         pin_memory=False,
     )
     loader.config = config
+    print("[DBG][pldm/data/utils.py] loader_config.normalize:", loader_config.normalize)
     
     if loader_config.normalize:
-        if normalizer is None: #probe_ds を作成する際にこのif 文を通っていない --> OK? 先のtrain-dataset作成時にnormalizerを作っている
+        if normalizer is None: 
             normalizer = Normalizer.build_normalizer(
                 loader,
                 n_samples=1 if loader_config.quick_debug else 100,

@@ -11,17 +11,17 @@ specify_init_position: true #初期姿勢を指定するか
 specify_goal_position: true #ゴール状態のFranka の位置を中点に指定するか
 goal_offset: [0.2, -0.2, 0.2]
 
-eval_only: false
-data_dir: null #pldm_envs/franka/presaved_datasets/pairs_100_ep_1_timestep_500_sample_mix_direction_towards_bluebox_1_1 #null
+eval_only: true
+data_dir: pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_towards_bluebox #pldm_envs/franka/presaved_datasets/pairs_100_ep_1_timestep_500_sample_mix_direction_towards_bluebox_1_1 #null
 
 #データ確認するか
 confirm_ik_result: false
 confirm_dist: false
-make_video: false #false
+make_video: true #false
 confirm_ee_trajectory: true
 confirm_ee_traj_xz: false #false
 confirm_data: false
-count_contact: false
+count_contact: true
 
 visualize_target_trajectory: false #target_xyz軌跡の可視化
 

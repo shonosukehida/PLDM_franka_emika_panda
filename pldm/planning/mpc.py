@@ -5,6 +5,7 @@ from pldm_envs.utils.normalizer import Normalizer
 from pldm.planning.planners.enums import PlannerType
 from pldm.planning.planners.mppi_planner import MPPIPlanner
 from pldm.planning.planners.sgd_planner import SGDPlanner
+from pldm.planning.planners.cem_planner import CEMPlanner
 from pldm.planning.utils import normalize_actions
 from abc import ABC
 from pldm.planning.enums import MPCResult, PooledMPCResult
@@ -100,6 +101,17 @@ class MPCEvaluator(ABC):
                 objective=objective,
                 prober=self.prober,
                 action_normalizer=None, #diverse_maze の時は, action_normalizer を使用
+            )
+        elif config.level1.planner_type == PlannerType.CEM:
+            planner = CEMPlanner(
+                config.level1.cem,
+                model=self.model,
+                normalizer=self.normalizer,
+                objective=objective,
+                prober=self.prober,
+                action_normalizer=None,
+                n_envs=n_envs,
+                projected_cost=config.level1.projected_cost,  # ← CEM側が受けるなら
             )
         else:
             raise NotImplementedError(
@@ -211,6 +223,36 @@ class MPCEvaluator(ABC):
 
 
         for e in envs: e.reset()
+        # ===== DEBUG: 初期画像を書き出す（timestamp付き）=====
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_dir = "debug_init_obs"
+        os.makedirs(save_dir, exist_ok=True)
+
+        # reset直後の初期観測を取得
+        init_obs_t = torch.stack([e.get_obs() for e in envs]).to(self.device)  # (B,C,H,W)
+
+        dbg = init_obs_t.detach().cpu()
+
+        # 正規化されてるなら戻す（targetと揃える）
+        try:
+            dbg = self.normalizer.unnormalize_state(dbg)
+        except Exception:
+            pass
+
+        for i in range(min(5, dbg.shape[0])):  # 先頭5環境だけ
+            img = dbg[i].numpy()  # (C,H,W)
+            img = np.transpose(img, (1, 2, 0))  # (H,W,C)
+
+            if img.max() <= 1.0:
+                img = (img * 255.0)
+
+            img = np.clip(img, 0, 255).astype(np.uint8)
+            imageio.imwrite(os.path.join(save_dir, f"init_obs_env{i}_{ts}.png"), img)
+
+        print(f"[DBG][pldm/planning/mpc.py] saved init_obs images to {save_dir}/")
+        # =====================================================
+
         
             
         #ゴール位置

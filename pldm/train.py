@@ -532,9 +532,11 @@ class Trainer:
                 forward_result = self.model.forward_posterior(s.to(self.device), a.to(self.device), alpha = self.config.alpha, **optional_fields)
                 mem("after forward closed")
                 
-                print('[DBG][pldm/train.py] pred_output.obs_component.shape:', forward_result.level1.pred_output.obs_component.shape) #[70, 16, 16, 26, 26]=[T,B,C,H,W]
-                print('[DBG][pldm/train.py] pred_output.predictions: ', forward_result.level1.pred_output.predictions.shape) #[70, 16, 30, 26, 26]=[T,B,C,H,W]
-                print('[DBG][pldm/train.py] pred_output.propio_component: ', forward_result.level1.pred_output.propio_component.shape) #[70, 16, 14, 26, 26]=[T,B,C,H,W]
+                # print('[DBG][pldm/train.py] pred_output.obs_component.shape:', forward_result.level1.pred_output.obs_component.shape) #[70, 16, 16, 26, 26]=[T,B,C,H,W]
+                # print('[DBG][pldm/train.py] pred_output.predictions: ', forward_result.level1.pred_output.predictions.shape) #[70, 16, 30, 26, 26]=[T,B,C,H,W]
+                # print('[DBG][pldm/train.py] pred_output.propio_component: ', forward_result.level1.pred_output.propio_component.shape) #[70, 16, 14, 26, 26]=[T,B,C,H,W]
+
+
                 
                 
                 loss_infos = []
@@ -554,10 +556,13 @@ class Trainer:
                     raise RuntimeError("NaN loss")
                 total_loss.backward()
                 mem("after calc backward")
+                for n, p in self.model.level1.backbone.named_parameters():
+                    if "obs_adapter" in n:
+                        print("obs_adapter requires_grad:", p.requires_grad, "grad is None?", p.grad is None)
+                        
                 self.optimizer.step()
                 mem("after opt step")
                 self.model.update_ema()  # if ema is enabled, update ema encoder
-
 
                 
                 self.validate_loss_val_ds() 

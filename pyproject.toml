@@ -28,6 +28,7 @@ dependencies = [
     "ipython>=8.12.3",
     "jax>=0.6.2",
     "joblib>=1.4.2",
+    "matplotlib>=3.10.3",
     "mediapy>=1.2.4",
     "mujoco==3.3.3",
     "mujoco-py>=2.1.2.14",

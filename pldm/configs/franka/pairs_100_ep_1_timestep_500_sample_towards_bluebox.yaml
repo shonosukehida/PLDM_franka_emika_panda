@@ -160,6 +160,7 @@ eval_cfg:
     vis_dynamics_closed_featuremap: true
     vis_dynamics_open_featuremap: true
     vis_encoder_featuremap: true
+    vis_sample_length: 100 #50 #probing評価するときのタイムステップ(基本モデルの予測ステップに合わせる)
     epochs: 5 #5
     epochs_enc: 5 #5
     epochs_latent: 5 #5
@@ -234,6 +235,16 @@ eval_cfg:
         lambda_: 0.0025 #温度
         obs_coeff: 1.0 #1.0
         propio_coeff: 0.0 #0.0
+      cem:
+        num_samples: 500 #500 #1度にサンプリングする行動列の本数
+        num_elites: 50 #50 #サンプルの中から成績上位として残す本数
+        init_std: 0.1 #1.0 #初期の行動分布の標準偏差
+        n_iters: 5 #5 #CEMの反復回数
+        alpha: 0.1 #0.1 #分布更新の慣性
+        clamp_actions: false 
+        action_low: -1.0
+        action_high: 1.0
+        max_batch_size: 64
   # d4rl_planning:
   #   n_envs: 10 #85
   #   n_envs_batch_size: 4 #16

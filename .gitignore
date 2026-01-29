@@ -24,3 +24,4 @@ audit_out_first_batch_indices.npy
 audit_out_first_batch_pairs.json
 audit_out_flattened_sha.txt
 debug_target_obs/**
+debug_init_obs/**

@@ -263,7 +263,7 @@ class DatasetFactory:
                 sample_length=self.probing_cfg.l1_depth,
                 train=False,
                 crop_length=50000,
-                batch_size=64,
+                batch_size=8,
             ),
         )
         

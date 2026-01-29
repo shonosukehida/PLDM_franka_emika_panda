@@ -23,7 +23,7 @@ class FrankaConfig:
     goal_images_path: Optional[str] = None
 
     num_workers: int = 0
-    batch_size: int = 64
+    batch_size: int = 8
     seed: int = 0
     normalize: bool = True
     quick_debug: bool = False

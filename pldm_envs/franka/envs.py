@@ -560,11 +560,15 @@ class FrankaSimEnv:
         return self.physics.data.qpos[self.start_idx : self.start_idx + 3].copy()
 
     def get_info(self):
+        qfrc = self.physics.data.qfrc_actuator[:7].copy()
+        afrc = self.physics.data.actuator_force[self.arm_actuator_ids].copy()
         return {
             "location": self.get_ee_position(),
             "qpos": self.physics.data.qpos[:7].copy(),
             "qvel": self.physics.data.qvel[:7].copy(),
             "object_pos": self.get_object_position().copy(),
+            "qfrc_actuator": qfrc,
+            "actuator_force": afrc,
         }
 
     def get_propio_pos(self):
