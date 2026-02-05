@@ -6,6 +6,13 @@ from typing import Optional, List
 
 
 @dataclass
+class DesignateStartGoalPosConfig:
+    valid: bool = False
+    start_pos: Optional[List[float]] = None
+    goal_pos: Optional[List[float]] = None
+
+
+@dataclass
 class ReachNoTouchConfig:
     ee_goal_xyz: List[float] = (0.55, 0.0, 0.10)
     box_init_xyz: Optional[List[float]] = None
@@ -38,3 +45,8 @@ class FrankaMPCConfig(MPCConfig):
     task: TaskConfig = TaskConfig()
     
     pred_steps: int = 50
+    val_from_train_ds: bool = False
+    designate_start_goal_pos: Optional[DesignateStartGoalPosConfig] = field(
+        default_factory=DesignateStartGoalPosConfig
+    )
+    

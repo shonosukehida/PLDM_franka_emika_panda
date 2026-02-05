@@ -6,7 +6,7 @@ import dataclasses
 
 from pldm.probing.evaluator import ProbingConfig, ProbingEvaluator
 from pldm.planning.wall.enums import WallMPCConfig
-from pldm.data.enums import ProbingDatasets, DatasetType
+from pldm.data.enums import ProbingDatasets, DatasetType, Datasets
 from pldm.planning.d4rl.enums import D4RLMPCConfig
 from pldm.planning.franka.enums import FrankaMPCConfig
 from pldm.planning.enums import LevelConfig
@@ -55,6 +55,7 @@ class Evaluator:
         load_checkpoint_path: "",
         output_path: "",
         data_config=None,
+        train_ds: Optional[Datasets]=None,
     ):
         self.config = config
         self.model = model
@@ -78,6 +79,7 @@ class Evaluator:
         self.pixel_mapper = franka_pixel_mapper
         self.planning_config = self._get_planning_config()
         self.objectives_l1 = objectives_l1
+        self.train_ds = train_ds 
 
     def _get_planning_config(self):
         if "diverse" in self.config.env_name or "maze" in self.config.env_name:
@@ -223,6 +225,7 @@ class Evaluator:
                 prefix=f"franka_{level}",
                 quick_debug=self.quick_debug,
                 pixel_mapper=self.pixel_mapper,
+                train_ds=self.train_ds,
             )
         else:
             raise NotImplementedError

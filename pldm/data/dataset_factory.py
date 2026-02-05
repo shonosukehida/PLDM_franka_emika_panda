@@ -234,6 +234,7 @@ class DatasetFactory:
         val_ds = make_dataloader(
             ds=val_ds, 
             loader_config=self.config, 
+            normalizer=ds.normalizer,
             train=False,
             )
 
@@ -250,7 +251,7 @@ class DatasetFactory:
         probe_ds = make_dataloader(
             ds=probe_ds,
             loader_config=self.config,
-            # normalizer=ds.normalizer,
+            normalizer=ds.normalizer,
             suffix="probe_train",
         )
         
@@ -263,7 +264,7 @@ class DatasetFactory:
                 sample_length=self.probing_cfg.l1_depth,
                 train=False,
                 crop_length=50000,
-                batch_size=8,
+                batch_size=self.config.franka_config.batch_size,
             ),
         )
         
@@ -271,7 +272,7 @@ class DatasetFactory:
         probe_val_ds = make_dataloader(
             ds=probe_val_ds,
             loader_config=self.config,
-            # normalizer=ds.normalizer,
+            normalizer=ds.normalizer,
             suffix="probe_val",
             train=False,
         )

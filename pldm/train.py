@@ -691,6 +691,7 @@ class Trainer:
             load_checkpoint_path=self.config.load_checkpoint_path,
             output_path=self.config.output_path,
             data_config=self.config.data.wall_config,  # TODO: refactor name to data_config
+            train_ds=self.datasets.ds,
         )
 
         log_dict = self.evaluator.evaluate()

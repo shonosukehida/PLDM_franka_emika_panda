@@ -16,6 +16,9 @@ from pldm.planning.franka.env_wrapper import HoldUntilReachWrapper, ActionRepeat
 import os
 import imageio
 from datetime import datetime
+from pldm.data.enums import ProbingDatasets, DatasetType, Datasets
+from typing import Optional
+from pldm.planning.franka.enums import DesignateStartGoalPosConfig
 
 class MPCEvaluator(ABC):
     def __init__(
@@ -28,6 +31,7 @@ class MPCEvaluator(ABC):
         prefix: str = "",
         pixel_mapper=None,
         image_based=True,
+        train_ds: Optional[Datasets] = None,
     ):
         self.config = config
         self.model = model
@@ -38,6 +42,7 @@ class MPCEvaluator(ABC):
         self.pixel_mapper = pixel_mapper
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.image_based = image_based
+        self.train_ds = train_ds
 
     def close(self):
         pass
@@ -219,10 +224,106 @@ class MPCEvaluator(ABC):
         print(f"[MPC] timestep={physic_timestep:.6f}s  substeps={substeps}  "
             f"repeat={repeat}  → effective_dt={effective_dt:.3f}s "
             f"({1.0/effective_dt:.2f} Hz)")
+
         
+        
+        dsg = self.config.designate_start_goal_pos
+        if isinstance(dsg, dict): 
+            dsg = DesignateStartGoalPosConfig(**dsg)
+        print("[DBG][pldm/planning/mpc.py] self.config.val_from_train_ds:", self.config.val_from_train_ds)
+        print("[DBG][pldm/planning/mpc.py] self.config.designate_start_goal_pos.valid:", dsg.valid)
+        if dsg and dsg.valid:
+            box_start_pos = dsg.start_pos 
+            if box_start_pos is not None: 
+                box_start_pos = np.array(box_start_pos)
+            box_goal_pos = dsg.goal_pos 
+            if box_goal_pos is not None:
+                box_goal_pos = np.array(box_goal_pos)
+            print("[DBG][pldm/planning/mpc.py] box_start_pos:", box_start_pos)
+            print("[DBG][pldm/planning/mpc.py] box_goal_pos:", box_goal_pos)
+            
+            if (box_start_pos is not None) and (box_goal_pos is not None):
+                for e in envs: 
+                    e.reset(start_pos=box_start_pos, goal_pos=box_goal_pos)
+            else:
+                for e in envs:
+                    e.reset()            
 
+        elif self.config.val_from_train_ds:
+            t0 = 0
+            threshold = getattr(self.config, "bluebox_move_threshold", 0.01)
+            max_batches = getattr(self.config, "val_scan_max_batches", 200)  # 走査上限（無限防止）
+            tg_cap = 40  # 今まで通り
+            need = len(envs)
 
-        for e in envs: e.reset()
+            assert hasattr(self.normalizer, "unnormalize_bluebox_locs"), \
+                "Normalizer に unnormalize_bluebox_locs が無い！"
+
+            def unnorm_traj(traj: torch.Tensor) -> torch.Tensor:
+                """
+                traj: (L,3) on CPU
+                Normalizer が (L,3) を一括で受けられない場合に備えてフォールバックする
+                """
+                try:
+                    out = self.normalizer.unnormalize_bluebox_locs(traj)
+                    if isinstance(out, torch.Tensor) and out.shape == traj.shape:
+                        return out
+                except Exception:
+                    pass
+                return torch.stack([self.normalizer.unnormalize_bluebox_locs(traj[i]) for i in range(traj.shape[0])], dim=0)
+
+            candidates = []  # (start_pos_np, goal_pos_np)
+
+            for bi, ds_btc in enumerate(self.train_ds):
+                blue = ds_btc.bluebox_locs.detach().cpu()  # (B,T,3)
+                B, T, D = blue.shape
+                assert D == 3
+
+                tg = min(T - 1, tg_cap)
+
+                # バッチ内の各軌跡をチェックして候補追加
+                for b in range(B):
+                    traj = blue[b, t0:tg+1]          # (L,3)
+                    traj_u = unnorm_traj(traj)       # (L,3)
+
+                    start_pos_t = traj_u[0]
+                    dist = torch.norm(traj_u - start_pos_t.unsqueeze(0), dim=1)  # (L,)
+
+                    idx = torch.nonzero(dist >= threshold, as_tuple=False).view(-1)
+                    if idx.numel() == 0:
+                        continue
+
+                    k = int(idx[0].item())  # 最初に threshold 超えた時刻
+                    goal_pos_t = traj_u[k]
+
+                    candidates.append((start_pos_t.numpy(), goal_pos_t.numpy()))
+                    if len(candidates) >= need:
+                        break
+
+                if len(candidates) >= need:
+                    break
+
+                if bi + 1 >= max_batches:
+                    break
+
+            # env に割り当て
+            if len(candidates) >= need:
+                for j, e in enumerate(envs):
+                    start_pos, goal_pos = candidates[j]
+                    e.reset(start_pos=start_pos, goal_pos=goal_pos)
+                print(f"[MPC] sampled {need}/{need} tasks from train_ds (threshold={threshold}) ✅")
+            else:
+                # fallback（見つからなかった場合）
+                print(f"[MPC] only {len(candidates)}/{need} tasks found (threshold={threshold}). fallback reset() ⚠️")
+                for e in envs:
+                    e.reset()
+
+        else:
+            for e in envs:
+                e.reset()
+
+        
+        
         # ===== DEBUG: 初期画像を書き出す（timestamp付き）=====
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -262,8 +363,6 @@ class MPCEvaluator(ABC):
         #ゴール画像
         targets_t = torch.stack([e.get_target_obs() for e in envs]).to(self.device)
         targets_propio_t = torch.stack([e.get_target_propio() for e in envs]).to(self.device).float()
-        print("[DBG][pldm/planning/mpc.py] targets_t.device:", targets_t.device)
-        print("[DBG][pldm/planning/mpc.py] targets_propio_t.device:", targets_propio_t.device)
 
         
         

@@ -50,11 +50,23 @@ class FrankaSimEnv:
         self.substeps = config.get("substeps", 200)
 
         self.control_dt = float(self.physics.model.opt.timestep) * int(self.substeps)
+        
+        self.bluebox_geom_id = self.physics.model.name2id("blue_box", mujoco.mjtObj.mjOBJ_GEOM)
+
 
 
 
     def reset_and_place_all(self, box_pos, start_marker_pos=None, goal_marker_pos=None, init_position=None):
         self.physics.reset()
+        
+        
+        ## reset直後
+        blue = self.bluebox_geom_id
+        self.physics.forward()
+        p0 = self.physics.data.geom_xpos[blue].copy()
+        print("box pos after reset:", p0)
+        ###
+
         
         if init_position is not None:
             self.physics.data.qpos[:7] = init_position
@@ -65,6 +77,20 @@ class FrankaSimEnv:
         self.physics.data.qpos[start_idx:start_idx+3] = box_pos
         self.physics.data.qpos[start_idx+3:start_idx+7] = np.array([1, 0, 0, 0])
         self.physics.data.qvel[start_idx:start_idx+6] = 0
+
+
+        # 3) セット直後の確認
+        self.physics.forward()
+        p_set = self.physics.data.geom_xpos[blue].copy()
+        print("[DBG] box after set:", p_set, "delta_from_target:", p_set - box_pos)
+
+        # # 4) 1 step後に動くか
+        # self.physics.step()
+        # self.physics.forward()
+        # p1 = self.physics.data.geom_xpos[blue].copy()
+        # print("[DBG] box after 1 step:", p1, "delta:", p1 - p_set)
+
+
 
         if start_marker_pos is not None:
             model_id = self.physics.model.name2id('start_marker', 'geom')
@@ -111,18 +137,7 @@ class FrankaSimEnv:
 
         dq_raw = action - qpos
         dq = np.clip(dq_raw, -max_dq, max_dq)
-        
-        # ===== DEBUG LOG (一時的) =====
-        raw_norm = np.linalg.norm(dq_raw)
-        clipped_norm = np.linalg.norm(dq)
-        clip_ratio = np.mean(np.abs(dq_raw) > max_dq)
 
-        print(
-            f"[dq] raw_norm={raw_norm:.5f}, "
-            f"clipped_norm={clipped_norm:.5f}, "
-            f"clip_ratio={clip_ratio:.2f}"
-        )
-        # ==============================
         
         target = qpos + dq
 

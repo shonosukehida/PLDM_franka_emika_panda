@@ -16,6 +16,11 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import glob
 
+from matplotlib.patches import Rectangle
+import matplotlib.pyplot as plt
+
+
+
 
 class FrankaDatasetGenerator:
     def __init__(self, config):
@@ -39,6 +44,14 @@ class FrankaDatasetGenerator:
         # self.STEPS = config["steps"]
         self.MAX_DQ = config["max_dq"]
         self.SETTLE_STEPS = config["settle_steps"]
+        self.box_start_pos = config.get("box_start_pos", None)
+        if self.box_start_pos is not None: self.box_start_pos = np.array(self.box_start_pos)
+        self.box_goal_pos = config.get("box_goal_pos", None)
+        if self.box_goal_pos is not None: self.box_goal_pos = np.array(self.box_goal_pos)
+        # print("[DBG] self.box_start_pos:", self.box_start_pos)
+        # print("[DBG] self.box_start_pos.type:", type(self.box_start_pos))
+        # print("[DBG] self.box_goal_pos:", self.box_goal_pos)
+        # print("[DBG] self.box_goal_pos.type:", type(self.box_goal_pos))
 
 
         #単一/ミックスかを判定
@@ -97,10 +110,10 @@ class FrankaDatasetGenerator:
         base = self.config.get("save_dir", "pldm_envs/franka/presaved_datasets")
 
         if self.sample_method_list is None:
-            prefix = f"{'val_' if self.IS_VAL else ''}pairs_{self.PAIRS}_ep_{self.EPISODES_PER_PAIR}_timestep_{self.STEPS_PER_EPISODE}_sample_{self.sample_tag}"
+            prefix = f"{'val_' if self.IS_VAL else ''}pairs_{self.PAIRS}_ep_{self.EPISODES_PER_PAIR}_timestep_{self.STEPS_PER_EPISODE}_sample_{self.sample_tag}_view_{self.CAMERA_NAME}"
         else:
             ratio_tag = "_".join(f"{r:.2f}".replace(".", "p") for r in self.sample_method_ratio)
-            prefix = f"{'val_' if self.IS_VAL else ''}pairs_{self.PAIRS}_ep_{self.EPISODES_PER_PAIR}_timestep_{self.STEPS_PER_EPISODE}_sample_{self.sample_tag}_{ratio_tag}"
+            prefix = f"{'val_' if self.IS_VAL else ''}pairs_{self.PAIRS}_ep_{self.EPISODES_PER_PAIR}_timestep_{self.STEPS_PER_EPISODE}_sample_{self.sample_tag}_{ratio_tag}_view_{self.CAMERA_NAME}"
 
         self.SAVE_PATH = os.path.join(base, prefix)
         print("SAVE_PATH =", os.path.abspath(self.SAVE_PATH))
@@ -157,6 +170,7 @@ class FrankaDatasetGenerator:
             self.env.physics.model.name2id("fingertip_pad_collision_5", mujoco.mjtObj.mjOBJ_GEOM),
         ]
 
+        print("[DBG] self.CAMERA_NAME:", self.CAMERA_NAME)
         if self.CAMERA_NAME == 'default':
             self.camera_id = -1
         else:
@@ -353,7 +367,7 @@ class FrankaDatasetGenerator:
                                 raise ValueError(
                                     f"Unknown sampling method '{current_method}'. "
                                     f"Expected one of ['uniform', 'direction', 'uniform_constrain', 'towards_bluebox']."
-    )
+                                    )
                     
                     try:
                         mjc_tol = float(self.config['tol'])
@@ -500,11 +514,17 @@ class FrankaDatasetGenerator:
     def get_start_goal_pairs(self):
         print("📦 Sampling XYZ pairs...")
         pair_list = []
+
         
         while len(pair_list) < self.PAIRS:
-            start = self.sample_goal_xyz()
-            goal = self.sample_goal_xyz()
-            if np.linalg.norm(start - goal) >= self.MIN_DIST:
+            if (self.box_start_pos is None) or (self.box_goal_pos is None):
+                start = self.sample_goal_xyz()
+                goal = self.sample_goal_xyz()
+                if np.linalg.norm(start - goal) >= self.MIN_DIST:
+                    pair_list.append((start, goal))
+            else:
+                start = self.box_start_pos 
+                goal = self.box_goal_pos
                 pair_list.append((start, goal))
         
         return pair_list
@@ -1233,6 +1253,204 @@ class FrankaDatasetGenerator:
 
         return
 
+    def plot_all_endeffector_trajectories(
+        self,
+        axes: str = "xy",
+        stride: int = 1,              # 点を間引いて軽くする（例: 2, 5, 10）
+        max_episodes: int | None = None,  # 多すぎるとき上限
+        alpha: float = 1.0,          # 重ね描きの濃さ
+        lw: float = 1.8,
+        show_workspace: bool = True,
+        save_dir: str = "robot_sim/analyze/endeffector_trajectory_all",
+        filename: str | None = None,
+    ):
+        """
+        data.p の全エピソードについて EE 軌跡を1枚の図に重ね描きする。
+        """
+        data_path = os.path.join(self.SAVE_PATH, "data.p")
+        print(f"[EE-ALL] Loading: {data_path}")
+        data_list = torch.load(data_path, map_location="cpu", weights_only=False)
+
+        if max_episodes is not None:
+            data_list = data_list[:max_episodes]
+
+        axes_to_num = {'x': 0, 'y': 1, 'z': 2}
+        a0, a1 = axes[0], axes[1]
+        i0, i1 = axes_to_num[a0], axes_to_num[a1]
+
+        # 描画範囲（mgn を優先して見やすく）
+        ranges = {'x': self.mgn_x_range, 'y': self.mgn_y_range, 'z': self.mgn_z_range}
+        xlim = list(ranges[a0])
+        ylim = list(ranges[a1])
+
+        # 余白ちょい足し（見切れ防止）
+        pad_x = 0.02 * (xlim[1] - xlim[0] + 1e-9)
+        pad_y = 0.02 * (ylim[1] - ylim[0] + 1e-9)
+        xlim = (xlim[0] - pad_x, xlim[1] + pad_x)
+        ylim = (ylim[0] - pad_y, ylim[1] + pad_y)
+
+        segments = []
+        for ep in data_list:
+            obs = ep["observations"]           # (T+1, obs_dim)
+            ee_xyz = obs[:, -6:-3]             # (T+1, 3)
+            pts = ee_xyz[::stride, :][:, [i0, i1]]   # (N, 2)
+
+            # 短すぎる軌跡はスキップ
+            if len(pts) < 2:
+                continue
+
+            seg = np.stack([pts[:-1], pts[1:]], axis=1)  # (N-1, 2, 2)
+            segments.append(seg)
+
+        if len(segments) == 0:
+            print("[EE-ALL] No segments to plot.")
+            return
+
+        segments = np.concatenate(segments, axis=0)
+        print(f"[EE-ALL] total segments: {len(segments)}")
+
+        fig, ax = plt.subplots(figsize=(7, 7))
+        lc = LineCollection(segments, linewidths=lw, alpha=alpha, colors="black")
+        ax.add_collection(lc)
+
+        # ワークスペース矩形（mgn範囲）を表示
+        if show_workspace:
+            rect = Rectangle(
+                (self.mgn_x_range[0], self.mgn_y_range[0]),
+                self.mgn_x_range[1] - self.mgn_x_range[0],
+                self.mgn_y_range[1] - self.mgn_y_range[0],
+                linewidth=1.2,
+                edgecolor="black",
+                facecolor="none",
+                linestyle="--",
+                alpha=0.6,
+            )
+            # xy以外のときは適切に作り直す
+            if axes != "xy":
+                # 左下座標と幅高さを axes に合わせる
+                low = {'x': self.mgn_x_range[0], 'y': self.mgn_y_range[0], 'z': self.mgn_z_range[0]}
+                high = {'x': self.mgn_x_range[1], 'y': self.mgn_y_range[1], 'z': self.mgn_z_range[1]}
+                rect = Rectangle(
+                    (low[a0], low[a1]),
+                    high[a0] - low[a0],
+                    high[a1] - low[a1],
+                    linewidth=1.2,
+                    edgecolor="black",
+                    facecolor="none",
+                    linestyle="--",
+                    alpha=0.6,
+                )
+            ax.add_patch(rect)
+
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+        ax.set_xlabel(a0.upper())
+        ax.set_ylabel(a1.upper())
+        ax.set_title(f"All End-Effector Trajectories ({axes})")
+        ax.set_aspect("equal", adjustable="box")
+        ax.grid(True, alpha=0.2)
+
+        os.makedirs(save_dir, exist_ok=True)
+        if filename is None:
+            filename = f"ee_traj_all_{axes}_stride{stride}_ep{len(data_list)}.png"
+        save_path = os.path.join(save_dir, filename)
+        fig.savefig(save_path, dpi=300)
+        plt.close(fig)
+        print(f"[EE-ALL] Saved: {save_path}")
+
+
+    def plot_all_bluebox_trajectories(
+        self,
+        axes: str = "xy",
+        stride: int = 1,
+        max_episodes: int | None = None,
+        alpha: float = 0.25,
+        lw: float = 1.6,
+        show_workspace: bool = True,
+        save_dir: str = "robot_sim/analyze/bluebox_trajectory_all",
+        filename: str | None = None,
+    ):
+        """
+        data.p の全エピソードについて bluebox 軌跡を1枚の図に重ね描きする。
+        """
+        data_path = os.path.join(self.SAVE_PATH, "data.p")
+        print(f"[BOX-ALL] Loading: {data_path}")
+        data_list = torch.load(data_path, map_location="cpu", weights_only=False)
+
+        if max_episodes is not None:
+            data_list = data_list[:max_episodes]
+
+        axes_to_num = {'x': 0, 'y': 1, 'z': 2}
+        a0, a1 = axes[0], axes[1]
+        i0, i1 = axes_to_num[a0], axes_to_num[a1]
+
+        ranges = {'x': self.mgn_x_range, 'y': self.mgn_y_range, 'z': self.mgn_z_range}
+        xlim = list(ranges[a0])
+        ylim = list(ranges[a1])
+
+        pad_x = 0.02 * (xlim[1] - xlim[0] + 1e-9)
+        pad_y = 0.02 * (ylim[1] - ylim[0] + 1e-9)
+        xlim = (xlim[0] - pad_x, xlim[1] + pad_x)
+        ylim = (ylim[0] - pad_y, ylim[1] + pad_y)
+
+        segments = []
+        for ep in data_list:
+            obs = ep["observations"]
+            box_xyz = obs[:, -3:]  # ★ bluebox xyz
+            pts = box_xyz[::stride, :][:, [i0, i1]]
+
+            if len(pts) < 2:
+                continue
+
+            seg = np.stack([pts[:-1], pts[1:]], axis=1)
+            segments.append(seg)
+
+        if len(segments) == 0:
+            print("[BOX-ALL] No segments to plot.")
+            return
+
+        segments = np.concatenate(segments, axis=0)
+        print(f"[BOX-ALL] total segments: {len(segments)}")
+
+        fig, ax = plt.subplots(figsize=(7, 7))
+        lc = LineCollection(segments, linewidths=lw, alpha=alpha)  # 必要なら colors="tab:orange"
+        ax.add_collection(lc)
+
+        if show_workspace:
+            low = {'x': self.mgn_x_range[0], 'y': self.mgn_y_range[0], 'z': self.mgn_z_range[0]}
+            high = {'x': self.mgn_x_range[1], 'y': self.mgn_y_range[1], 'z': self.mgn_z_range[1]}
+            rect = Rectangle(
+                (low[a0], low[a1]),
+                high[a0] - low[a0],
+                high[a1] - low[a1],
+                linewidth=1.2,
+                edgecolor="black",
+                facecolor="none",
+                linestyle="--",
+                alpha=0.6,
+            )
+            ax.add_patch(rect)
+
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+        ax.set_xlabel(a0.upper())
+        ax.set_ylabel(a1.upper())
+        ax.set_title(f"All Bluebox Trajectories ({axes})")
+        ax.set_aspect("equal", adjustable="box")
+        ax.grid(True, alpha=0.2)
+
+        os.makedirs(save_dir, exist_ok=True)
+        if filename is None:
+            filename = f"bluebox_traj_all_{axes}_stride{stride}_ep{len(data_list)}.png"
+        save_path = os.path.join(save_dir, filename)
+        fig.savefig(save_path, dpi=300)
+        plt.close(fig)
+        print(f"[BOX-ALL] Saved: {save_path}")
+
+
+
+
+
 
 
         # def confirm_endeffector_trajectory(self, axes: str, visualize_target_trj=True):
@@ -1428,5 +1646,22 @@ if __name__ == "__main__":
         vis_target_traj = (not config['eval_only']) and config['visualize_target_trajectory']
         dataset_generator.confirm_endeffector_trajectory('xy', vis_target_traj)
         if config['confirm_ee_traj_xz']: 
-            dataset_generator.confirm_endeffector_trajectory('xz', vis_target_traj)   
+            dataset_generator.confirm_endeffector_trajectory('xz', vis_target_traj)  
+    if config.get("plot_all_ee_traj", False):
+        dataset_generator.plot_all_endeffector_trajectories(
+            axes="xy",
+            stride=1,         # 重いなら 5 や 10 に
+            max_episodes=None, # 重すぎるなら 2000 とか
+            alpha = 1.0,          # 重ね描きの濃さ
+            lw = 1.8,
+        )
+    
+    if config.get("plot_all_bluebox_traj", False):
+        dataset_generator.plot_all_bluebox_trajectories(
+            axes="xy", 
+            stride=1, 
+            alpha=1.0, 
+            lw=1.8,
+            )
+ 
     print("finished!!")

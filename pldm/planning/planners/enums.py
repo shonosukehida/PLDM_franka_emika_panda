@@ -28,6 +28,7 @@ class MPPIConfig(ConfigBase):
     obs_coeff: float = 1.0 
     propio_coeff: float = 0.0
     w_du: float = 1.0
+    lpf_alpha: float = 1.0
 
 
 @dataclass
@@ -70,3 +71,4 @@ class PlannerConfig(ConfigBase):
     sum_last_n: int = 3
     propio_cost: bool = False
     projected_cost: bool = False
+    val_from_train_ds: bool = False

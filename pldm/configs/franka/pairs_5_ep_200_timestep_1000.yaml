@@ -239,6 +239,7 @@ eval_cfg:
         obs_coeff: 1.0 #1.0
         propio_coeff: 0.0 #0.0
         w_du: 1.0 #1.0 #MPPIの予測列の時間的変化をなめらかにする
+        lpf_alpha: 0.0 #1.0 #ローパスフィルタ係数 #1.0: フィルタなし, 0.0: 前の行動を完全に引き継ぐ
       cem:
         num_samples: 500 #500 #1度にサンプリングする行動列の本数
         num_elites: 50 #50 #サンプルの中から成績上位として残す本数
@@ -249,6 +250,11 @@ eval_cfg:
         action_low: -1.0
         action_high: 1.0
         max_batch_size: 64
+    val_from_train_ds: true #学習データセットで評価
+    designate_start_goal_pos:  #タスク時にstart,goal_posを指定するか否か
+      valid: true
+      start_pos: [0.50, -0.05, 0.05] 
+      goal_pos: [0.50, -0.15, 0.05]
   # d4rl_planning:
   #   n_envs: 10 #85
   #   n_envs_batch_size: 4 #16

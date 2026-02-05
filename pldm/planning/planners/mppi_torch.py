@@ -52,6 +52,7 @@ class MPPI:
         sample_null_action=False,
         noise_abs_cost=False,
         w_du=1.0,
+        lpf_alpha=1.0,
     ):
         """
         :param dynamics: function(state, action) -> next_state (K x nx) taking in batch state (K x nx) and action (K x nu)
@@ -205,6 +206,10 @@ class MPPI:
         
         self.w_du = w_du
         
+        self.u_prev_exec = None
+        self.lpf_alpha = lpf_alpha  # 1.0:フィルタ無し, 0.0:完全に前の行動に従う
+
+        
 
     @handle_batch_input(n=2)
     def _dynamics(self, state, u, t):
@@ -255,7 +260,6 @@ class MPPI:
         
         print("[pldm/planning/planners/mppi_torch.py, 242] self.state.shape:", self.state.shape)
         with torch.inference_mode():
-            print("[pldm/planning/planners/mppi_torch.py, 244] before cost:", torch.cuda.memory_allocated()/1024**2, "MB")
             cost_total = self._compute_total_cost_batch()
             torch.cuda.empty_cache()
             beta = torch.min(cost_total)
@@ -269,13 +273,45 @@ class MPPI:
                 )
             perturbations = torch.stack(perturbations)
             self.U = self.U + perturbations
+            
+            print("[DBG][pldm/planning/planners/mppi_torch.py]self.u_per_command:", self.u_per_command)
+            print("[DBG][pldm/planning/planners/mppi_torch.py]self.lpf_alpha:", self.lpf_alpha)
             if self.u_per_command == -1:
-                # return all the actions
+                if self.lpf_alpha < 1.0:
+                    u_cmd = self.U[0]
+                    if self.u_prev_exec is None:
+                        self.u_prev_exec = u_cmd.detach()
+                    a = float(self.lpf_alpha)
+                    u_exec = (1 - a) * self.u_prev_exec + a * u_cmd
+                    self.u_prev_exec = u_exec.detach()
+                    self.U[0] = u_exec.detach()   # warm start整合
+                else:
+                    self.u_prev_exec = self.U[0].detach()
                 return self.U
             action = self.U[: self.u_per_command]
-            # reduce dimensionality if we only need the first command
+
             if self.u_per_command == 1:
-                action = action[0]
+                u_cmd = action[0]  # (nu,) にする
+
+                if self.lpf_alpha < 1.0:
+                    if self.u_prev_exec is None:
+                        self.u_prev_exec = u_cmd.detach()
+
+                    a = float(self.lpf_alpha)
+                    u_exec = (1 - a) * self.u_prev_exec + a * u_cmd
+
+                    self.u_prev_exec = u_exec.detach()
+
+                    # ★重要：実際に出した値でUも更新（warm start整合）
+                    self.U[0] = u_exec.detach()
+
+                    return u_exec
+                else:
+                    # フィルタ無しでも prev を更新しとくと後で切り替えやすい
+                    self.u_prev_exec = u_cmd.detach()
+                    return u_cmd
+
+            # u_per_command > 1 のときは、そのまま返すか、同様に各tへ適用
             return action
 
     def change_horizon(self, horizon):
@@ -294,6 +330,8 @@ class MPPI:
         Clear controller state after finishing a trial
         """
         self.U = self.noise_dist.sample((self.T,))
+        
+        self.u_prev_exec = None #ローパスフィルタ計算用前時刻の行動
 
     def _compute_rollout_costs(self, perturbed_actions):
         torch.cuda.reset_peak_memory_stats()

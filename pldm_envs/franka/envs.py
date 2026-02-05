@@ -106,7 +106,7 @@ class FrankaSimEnv:
         return result
 
     # ========== 基本I/O ==========
-    def reset(self, start_pos=None, goal_pos=None, robot_only = False):
+    def reset(self, start_pos=None, goal_pos=None, robot_only = False, init_qpos=None, init_qvel=None, sync_ctrl=True):
         self.physics.reset()
         self.t = 0
         
@@ -131,6 +131,20 @@ class FrankaSimEnv:
         self.physics.data.ctrl[:] = 0.0
         self.physics.data.ctrl[self.arm_actuator_ids] = init_joint
 
+
+        if init_qpos is not None:
+            self.physics.data.qpos[:7] = np.asarray(init_qpos, dtype=np.float32)
+        if init_qvel is not None:
+            self.physics.data.qvel[:7] = np.asarray(init_qvel, dtype=np.float32)
+        else:
+            if init_qpos is not None:
+                self.physics.data.qvel[:7] = 0.0
+
+        if sync_ctrl and (init_qpos is not None):
+            self.physics.data.ctrl[:] = 0.0
+            self.physics.data.ctrl[self.arm_actuator_ids] = self.physics.data.qpos[:7].copy()
+        self.physics.forward()
+
         ##### IK計算デバッグ
         sid = self.physics.model.name2id("ee_target", "site")
         ee_now = self.physics.data.site_xpos[sid].copy()
@@ -138,14 +152,6 @@ class FrankaSimEnv:
         print("IK success:", result.success)
         #####
 
-        #時間を回して落ち着かせる
-        # for _ in range(50):
-        #     self.physics.step()
-
-        # if start_pos is None:
-        #     start_pos = np.random.uniform(low=[0.415, -0.10, 0.05], high=[0.615, 0.10, 0.05])
-        # if goal_pos is None:
-        #     goal_pos = np.random.uniform(low=[0.415, -0.10, 0.05], high=[0.615, 0.10, 0.05])
 
         if (start_pos is None) or (goal_pos is None):
             for _ in range(self.max_reset_tries):

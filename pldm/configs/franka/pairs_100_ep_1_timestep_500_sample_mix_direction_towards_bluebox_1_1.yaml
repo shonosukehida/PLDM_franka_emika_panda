@@ -138,8 +138,8 @@ eval_cfg:
     l1_depth: *n_steps
     train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_mix_direction_towards_bluebox_1_1/images.npy
     train_path: pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_mix_direction_towards_bluebox_1_1/data.p
-    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_towards_bluebox/images.npy
-    val_path: pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_towards_bluebox/data.p
+    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_towards_bluebox/images.npy #pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_mix_direction_towards_bluebox_1_1/images.npy #pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_towards_bluebox/images.npy
+    val_path: pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_towards_bluebox/data.p #pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_mix_direction_towards_bluebox_1_1/data.p 
     probe_targets: 'locations,propio_vel,bluebox_locs' 
     locations:
       arch: 'conv'
@@ -161,7 +161,7 @@ eval_cfg:
     vis_dynamics_open_featuremap: false
     vis_encoder_featuremap: false
     
-    vis_sample_length: 150
+    vis_sample_length: 50 #ダイナミクス可視化時のタイムステップ
     epochs: 5 #5
     epochs_enc: 5 #5
     epochs_latent: 5 #5
@@ -171,7 +171,8 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: false #proberを用いたダイナミクスの可視化をするか否か
-    visualize_dynamics: false #proberを用いないダイナミクスの可視化をするか否か ##
+    visualize_dynamics: false #proberを用いないダイナミクスの可視化をするか否か 
+    vis_long_horizon_eval: false #全てのval_dataset を使ったpca評価をするか否か
     load_prober: false
     train_prober: false #load_prober:falseの場合にproberをtrainさせるか否かを指定
   disable_planning: false
@@ -197,7 +198,7 @@ eval_cfg:
     action_repeat: 1
     action_repeat_mode: 'id'
     img_size: 64
-    replan_every: 4
+    replan_every: 1
     image_obs: true
     stack_states: 1
     data_path: 'pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_mix_direction_towards_bluebox_1_1/'
@@ -220,7 +221,7 @@ eval_cfg:
 
 
     level1:
-      planner_type: PlannerType.CEM
+      planner_type: PlannerType.MPPI
       min_step: 0
       max_step: 1
       max_plan_length: 50 #128 #一度に予測するホライズン
@@ -233,9 +234,10 @@ eval_cfg:
         noise_sigma: 0.01 #5 #ノイズ共分散 0.01
         num_samples: 500 #500.  #ランダム行動列のサンプル数
         lambda_: 0.0025 #温度
-        obs_coeff: 0.2 #1.0
-        propio_coeff: 0.8 #0.0
+        obs_coeff: 0.5 #1.0
+        propio_coeff: 0.5 #0.0
         w_du: 1.0 #1.0 #MPPIの予測列の時間的変化をなめらかにする
+        lpf_alpha: 1.0 #1.0 #ローパスフィルタ係数 #1.0: フィルタなし, 0.0: 前の行動を完全に引き継ぐ
       cem:
         num_samples: 500 #500 #1度にサンプリングする行動列の本数
         num_elites: 50 #50 #サンプルの中から成績上位として残す本数
@@ -246,6 +248,11 @@ eval_cfg:
         action_low: -1.0
         action_high: 1.0
         max_batch_size: 64
+    val_from_train_ds: true #学習データセットで評価
+    designate_start_goal_pos:  #タスク時にstart,goal_posを指定するか否か
+      valid: true
+      start_pos: [0.50, -0.05, 0.05] 
+      goal_pos: [0.50, -0.15, 0.05]
   # d4rl_planning:
   #   n_envs: 10 #85
   #   n_envs_batch_size: 4 #16

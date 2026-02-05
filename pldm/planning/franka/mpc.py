@@ -13,7 +13,7 @@ from pldm.planning.plotting import log_planning_plots, log_l1_planning_loss, log
 from pldm.planning.plotting import log_planning_obs_plots_split, log_planning_traj_plots_split, log_planning_joint_angle_plots_split, log_planning_torque_plots_split
 from pldm.planning.d4rl.enums import MPCReport  
 
-
+from pldm.data.enums import ProbingDatasets, DatasetType, Datasets
 from pldm_envs.franka.envs import FrankaSimEnv
 from pldm_envs.franka.evaluation.envs_generator import FrankaEnvsGenerator
 
@@ -27,7 +27,8 @@ class FrankaMPCEvaluator(MPCEvaluator):
         prober: Optional[torch.nn.Module] = None,
         quick_debug: bool = False,
         prefix: str = "franka_",
-        pixel_mapper = None
+        pixel_mapper = None,
+        train_ds: Optional[Datasets] = None,
     ):
         super().__init__(
             config=config,
@@ -36,7 +37,8 @@ class FrankaMPCEvaluator(MPCEvaluator):
             normalizer=normalizer,
             quick_debug=quick_debug,
             prefix=prefix,
-            pixel_mapper=pixel_mapper
+            pixel_mapper=pixel_mapper,
+            train_ds=train_ds,
         )
 
         print("[DBG][pldm/planning/franka/mpc.py]: task_name:", self.config.task.name)

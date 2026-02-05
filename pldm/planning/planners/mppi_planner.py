@@ -53,9 +53,6 @@ class LearnedDynamics:
         preds = pred_output.predictions
         pred_obs = pred_output.obs_component
         pred_propio = pred_output.propio_component
-        print('[DBG][pldm/planning/planners/mppi_planner.py] preds.shape:', preds.shape)
-        print('[DBG][pldm/planning/planners/mppi_planner.py] pred_obs.shape:', pred_obs.shape)
-        print('[DBG][pldm/planning/planners/mppi_planner.py] pred_propio.shape:', pred_propio.shape)
 
         if flatten_output:
             preds = flatten_conv_output(preds)  # required for 3rd party MPPI code...
@@ -201,7 +198,8 @@ class MPPIPlanner:
                 u_per_command=-1,
                 latent_actions=latent_actions,
                 z_reg_coeff=config.z_reg_coeff,
-                w_du=config.w_du
+                w_du=config.w_du,
+                lpf_alpha=config.lpf_alpha
             )
             for i in range(n_envs)
         ]
@@ -278,7 +276,6 @@ class MPPIPlanner:
             only_return_last=False,
             flatten_output=False,
         )
-        print("[DBG][pldm/planning/planners/mppi_planner.py]正常にpred_propio を受け取りました。")
 
         if self.action_normalizer is not None:
             actions = self.action_normalizer(actions)

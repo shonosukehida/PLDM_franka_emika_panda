@@ -68,6 +68,8 @@ from pldm.data.utils import NormalizedDataLoader
 from pldm_envs.franka.franka_dataset import FrankaDataset
 import dataclasses
 
+from pldm_envs.franka.franka_dataset import FrankaEpisodeDataset
+
 @dataclass
 class ProbeTargetConfig(ConfigBase):
     arch: Optional[str] = None
@@ -104,6 +106,7 @@ class ProbingConfig(ConfigBase):
     probe_expert: bool = False
     visualize_probing: bool = True
     visualize_dynamics: bool = True
+    vis_long_horizon_eval: bool = False
     load_prober: bool = False
     train_prober: bool = True
     arch_subclass: str = "a"
@@ -725,16 +728,12 @@ class ProbingEvaluator:
 
             inner_loader = _unwrap_loader(val_ds)   # DataLoader or NormalizedDataLoader
             base_cfg = inner_loader.config          # FrankaDatasetのconfig相当（sample_length含む）
-            print("[DBG][pldm/probing/evaluator.py]", base_cfg)
 
-            # 可視化だけ長くしたいT（Noneなら従来通り）
             vis_T = self.config.vis_sample_length
             if vis_T is None:
                 vis_T = getattr(base_cfg, "sample_length", None)
             print("[DBG][pldm/probing/evaluator.py] vis_T:", vis_T)
-
-            # ★FrankaDatasetを作り直す（sample_lengthだけ差し替え）
-            # val_path/val_images_path は ProbingConfig 側のものを優先
+            
             vis_cfg = dataclasses.replace(
                 base_cfg,
                 sample_length=vis_T,
@@ -745,6 +744,7 @@ class ProbingEvaluator:
             vis_root_ds = FrankaDataset(vis_cfg)
 
             # DataLoader（batch_sizeはbase_cfgに入っている想定）
+            print("[DBG][pldm/probing/evaluator.py] base_cfg.batch_size:", base_cfg.batch_size)
             vis_loader_raw = DataLoader(
                 vis_root_ds,
                 batch_size=base_cfg.batch_size,
@@ -754,7 +754,7 @@ class ProbingEvaluator:
             )
             vis_loader_raw.config = base_cfg
 
-            # ★正規化は既存の val_ds.normalizer を使う（再推定しない）
+            # 正規化は既存の val_ds.normalizer を使う（再推定しない）
             vis_loader = NormalizedDataLoader(vis_loader_raw, val_ds.normalizer)
 
             vis_batch_idx = getattr(self.config, "vis_batch_idx", 0)
@@ -764,12 +764,6 @@ class ProbingEvaluator:
             print("[DBG][pldm/probing/evaluator.py] btc.shape:", btc.states.shape)
             print(f"[VIS] visualize sample_length={vis_T}, batch_idx={vis_batch_idx}")
             ###
-
-
-
-
-
-
 
 
 
@@ -911,6 +905,41 @@ class ProbingEvaluator:
 
 
             if self.config.visualize_dynamics:
+                print('[DBG][pldm/probing/evaluator.py] vis_long_horizon_eval:', self.config.vis_long_horizon_eval)
+                if self.config.vis_long_horizon_eval: 
+                    # 疑似ロング軌道としてPCA可視化 ###
+                    #episodeを抜き取るデータセットを作成
+                    vis_root_ds_per_epi = FrankaEpisodeDataset(
+                        vis_cfg,
+                        pick_mode="first",   # "middle"/"random"/"last" もOK
+                    )
+
+                    vis_loader_raw_per_epi = DataLoader(
+                        vis_root_ds_per_epi,
+                        batch_size=5,        # ← ここはお好み
+                        shuffle=False,       # episode順固定が良いならFalse
+                        num_workers=0,
+                        drop_last=False,
+                    )
+                    vis_loader_raw_per_epi.config = base_cfg
+
+                    vis_loader_per_epi = NormalizedDataLoader(vis_loader_raw_per_epi, val_ds.normalizer)
+                    
+                    self.plot_pca_long_horizon(
+                        loader=vis_loader_per_epi,
+                        jepa=model,
+                        name_prefix=f"{plot_prefix}_val",
+                        pool="flat",
+                        k=3,
+                        take_per_batch=999999,  # ★ batch内(B=8)を全部拾う
+                        pick_mode="first",      # ここは関係薄い（take_per_batch>=Bなら使われない）
+                        max_batches=None,       # ★ 全batch回す → 全episode拾う
+                    )
+                    #######
+                
+                
+                
+                
                 #dont use prober
                 # Encoder の潜在分布が等方ガウスに近いか確認
                 self.plot_encoder_latent_gaussianity(
@@ -2923,7 +2952,7 @@ class ProbingEvaluator:
         V_bt = V_clo.reshape(B, T, k_eff)
 
         #2D可視化
-        color_u = "navy"       # Encoder
+        color_u = "black"       # Encoder
         color_v = "firebrick"  # Closed
         if k_eff >= 2:
             U2 = U_bt[:, :, :2]
@@ -3432,7 +3461,7 @@ class ProbingEvaluator:
 
         # ===== 2D 可視化 =====
         if k_eff >= 2:
-            color_enc  = "navy"
+            color_enc  = "black"
             color_open = "darkorange"
             lim = float(max(abs(U_bt[:, :, :2]).max(), abs(V_bt[:, :, :2]).max()))
 
@@ -3476,7 +3505,7 @@ class ProbingEvaluator:
         if k_eff >= 3:
             from mpl_toolkits.mplot3d import Axes3D  # noqa
 
-            color_enc  = "navy"
+            color_enc  = "black"
             color_open = "darkorange"
 
             for i in idxs:
@@ -4437,6 +4466,16 @@ class ProbingEvaluator:
             # a,b: [T,...]
             return torch.sqrt(F.mse_loss(a, b)).item()
 
+        def rms_all_traj(x: torch.Tensor) -> float:
+            # x: [T, ...]
+            return torch.sqrt((x.float().pow(2)).mean()).item()
+
+        def nrmse_all_traj_pct(pred: torch.Tensor, ref: torch.Tensor, eps: float = 1e-8) -> float:
+            # pred, ref: [T, ...]
+            rmse = rmse_all_traj(pred, ref)
+            scale = rms_all_traj(ref)   # ★ここが分母
+            return 100.0 * rmse / (scale + eps)
+
         def mse_per_timestep_traj(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
             # a,b: [T,...]
             diff = F.mse_loss(a, b, reduction="none")      # [T,...]
@@ -4449,6 +4488,18 @@ class ProbingEvaluator:
             mse_t = diff.mean(dim=reduce_dims)             # [T]
             rmse_t = torch.sqrt(mse_t)                     # [T]
             return rmse_t.detach().cpu()
+        
+        def rms_per_timestep_traj(x: torch.Tensor) -> torch.Tensor:
+            # x: [T, ...] -> [T]
+            x2 = x.float().pow(2)
+            reduce_dims = tuple(range(1, x2.ndim))
+            return torch.sqrt(x2.mean(dim=reduce_dims)).detach().cpu()
+
+        def nrmse_per_timestep_traj_pct(pred: torch.Tensor, ref: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+            rmse_t = rmse_per_timestep_traj(pred, ref)   # [T]
+            scale_t = rms_per_timestep_traj(ref)         # ★ ref の RMS
+            return (100.0 * rmse_t / (scale_t + eps)).detach().cpu()
+
 
         # ===== 5. trajごとに計算 =====
         T, B = encoder_encs_cpu.shape[:2]
@@ -4471,6 +4522,11 @@ class ProbingEvaluator:
             rmse_open_enc    = rmse_all_traj(open_i, enc_i)
             rmse_closed_enc  = rmse_all_traj(closed_i, enc_i)
 
+            # ===== Error rate (%) : NRMSE =====
+            nrmse_closed_open_pct = nrmse_all_traj_pct(closed_i, open_i)   # ref=open
+            nrmse_open_enc_pct    = nrmse_all_traj_pct(open_i, enc_i)      # ref=enc
+            nrmse_closed_enc_pct  = nrmse_all_traj_pct(closed_i, enc_i)    # ref=enc
+
             rmse_t_closed_open = rmse_per_timestep_traj(closed_i, open_i)  # [T]
             rmse_t_open_enc    = rmse_per_timestep_traj(open_i, enc_i)     # [T]
             rmse_t_closed_enc  = rmse_per_timestep_traj(closed_i, enc_i)   # [T]
@@ -4479,17 +4535,22 @@ class ProbingEvaluator:
             if out_dir is not None:
                 out_path = out_dir / f"traj{bi:03d}_latent_mse.txt"
                 with open(out_path, "w") as f:
-                    f.write(f"[LATENT MSE PER TRAJ] {name_prefix} | traj={bi}\n")
+                    f.write(f"[LATENT RMSE PER TRAJ] {name_prefix} | traj={bi}\n")
                     f.write(f"closed-open={rmse_closed_open:.6e}\n")
                     f.write(f"open-enc   ={rmse_open_enc:.6e}\n")
                     f.write(f"closed-enc ={rmse_closed_enc:.6e}\n\n")
 
-                    f.write("=== timestep MSE (len=T) ===\n")
+                    f.write("\n=== NRMSE (%) PER TRAJ ===\n")
+                    f.write(f"closed-open={nrmse_closed_open_pct:.3f}%\n")
+                    f.write(f"open-enc   ={nrmse_open_enc_pct:.3f}%\n")
+                    f.write(f"closed-enc ={nrmse_closed_enc_pct:.3f}%\n\n")
+
+                    f.write("=== timestep RMSE (len=T) ===\n")
                     f.write("closed-open: " + ", ".join(f"{v:.6e}" for v in rmse_t_closed_open.tolist()) + "\n")
                     f.write("open-enc   : " + ", ".join(f"{v:.6e}" for v in rmse_t_open_enc.tolist()) + "\n")
                     f.write("closed-enc : " + ", ".join(f"{v:.6e}" for v in rmse_t_closed_enc.tolist()) + "\n")
 
-                print(f"[LATENT MSE PER TRAJ] saved → {out_path.resolve()}")
+                print(f"[LATENT RMSE PER TRAJ] saved → {out_path.resolve()}")
 
         # ===== 掃除 =====
         del encoder_encs_cpu, closed_encs_cpu, open_encs_cpu
@@ -4780,5 +4841,243 @@ class ProbingEvaluator:
             del closed_cpu, open_cpu
         except Exception:
             pass
+        gc.collect()
+        torch.cuda.empty_cache()
+
+
+    @torch.no_grad()
+    def plot_pca_long_horizon(
+        self,
+        loader,                 # ★ DataLoader / NormalizedDataLoader
+        jepa: "JEPA",
+        name_prefix: str = "",
+        notebook: bool = False,
+        pool: str = "gap",      # "gap"/"flat"
+        k: int = 3,
+        take_per_batch: int = 1,        # ★ 各batchから何本取るか（おすすめ1）
+        pick_mode: str = "first",       # "first" or "random"
+        max_batches: int = None,        # ★ Noneなら全部
+        align_closed: bool = True,
+    ):
+        """
+        loader から複数 batch を順に取り、
+        各batchから take_per_batch 本のtrajを抜いて時間方向に連結し、
+        その“疑似ロング軌道”を PCA 空間で可視化する。
+        """
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from matplotlib.lines import Line2D
+        from sklearn.decomposition import PCA
+
+        device = self.device
+
+        # ---------- helper: [T,B,...] or [B,T,...] を [B,T,D] に ----------
+        def _to_BTD(x, T_ref, B_ref, pool="flat"):
+            assert torch.is_tensor(x)
+            if x.dim() == 3:
+                # [T,B,D] or [B,T,D]
+                if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                    x = x.transpose(0, 1).contiguous()
+                return x
+
+            if x.dim() == 5:
+                # [T,B,C,H,W] or [B,T,C,H,W]
+                if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                    x = x.permute(1, 0, 2, 3, 4).contiguous()
+                elif not (x.shape[0] == B_ref and x.shape[1] == T_ref):
+                    x = x.transpose(0, 1).contiguous()
+
+                B, T = x.shape[:2]
+                if pool == "gap":
+                    x = x.mean(dim=(-2, -1)).contiguous()   # -> [B,T,C]
+                else:
+                    C, H, W = x.shape[2:]
+                    x = x.reshape(B, T, C * H * W).contiguous()
+                return x
+
+            # general
+            if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                x = x.transpose(0, 1).contiguous()
+            elif not (x.shape[0] == B_ref and x.shape[1] == T_ref):
+                x = x.transpose(0, 1).contiguous()
+
+            B, T = x.shape[:2]
+            D = int(np.prod(x.shape[2:]))
+            return x.reshape(B, T, D).contiguous()
+
+        # ---------- 収集：疑似ロングにするため、CPU上に [sumT, D] を作る ----------
+        enc_chunks = []     # list of [T,De] on CPU
+        clo_chunks = []     # list of [T,Dc] on CPU
+        seg_ends = []       # 境界可視化用（連結点のインデックス）
+        total_T = 0
+
+        itr = iter(loader)
+        n_batch = 0
+
+        while True:
+            if max_batches is not None and n_batch >= max_batches:
+                break
+            try:
+                batch = next(itr)
+            except StopIteration:
+                break
+
+            # ---- states/actions: [T,B,...] へ ----
+            states  = batch.states.to(device).transpose(0, 1)   # [T,B,...]
+            actions = batch.actions.to(device).transpose(0, 1)
+            optional_fields = get_optional_fields(batch, device=states.device)
+            T_ref, B_ref = states.shape[0], states.shape[1]
+
+            # ★ forward_posterior を1回だけ呼ぶ（closed と encoder を同時に取る）
+            res = jepa.forward_posterior(states, actions, **optional_fields)
+            pred_output = res.pred_output
+            enc_output  = res.backbone_output
+
+            if getattr(pred_output, "obs_component", None) is not None:
+                closed_lat_seq = pred_output.obs_component
+            else:
+                closed_lat_seq = pred_output.predictions
+
+            encoder_lat_seq = enc_output.obs_component
+
+            # ---- [B,T,D] に整形 ----
+            closed_bt = _to_BTD(closed_lat_seq,  T_ref, B_ref, pool=pool)   # [B,T,Dc]
+            enc_bt    = _to_BTD(encoder_lat_seq, T_ref, B_ref, pool=pool)   # [B,T,De]
+
+            B, T, Dc = closed_bt.shape
+            _, _, De = enc_bt.shape
+
+            # ---- このbatchから取るtraj indexを決める ----
+            if take_per_batch >= B:
+                pick_idxs = list(range(B))
+            else:
+                if pick_mode == "random":
+                    pick_idxs = np.random.choice(B, size=take_per_batch, replace=False).tolist()
+                else:
+                    pick_idxs = list(range(take_per_batch))  # first
+
+            # ---- 連結（時間方向に append）----
+            #   例: take_per_batch=1 なら 1本ずつ連結される
+            for bi in pick_idxs:
+                enc_i = enc_bt[bi].detach().float().cpu()     # [T,De]
+                clo_i = closed_bt[bi].detach().float().cpu()  # [T,Dc]
+                enc_chunks.append(enc_i)
+                clo_chunks.append(clo_i)
+                total_T += T
+                seg_ends.append(total_T)  # ここが境界（次が別traj）
+
+            # ---- 掃除 ----
+            del res, pred_output, enc_output, closed_lat_seq, encoder_lat_seq
+            del closed_bt, enc_bt, states, actions, optional_fields
+            torch.cuda.empty_cache()
+
+            n_batch += 1
+
+        if len(enc_chunks) == 0:
+            print("[plot_pca_pseudo_long] No data collected from loader.")
+            return
+
+        # ---------- CPUで連結 ----------
+        enc_long = torch.cat(enc_chunks, dim=0)   # [sumT, De]
+        clo_long = torch.cat(clo_chunks, dim=0)   # [sumT, Dc]
+
+        # ---------- PCAは encoder で学習 ----------
+        Z_enc = enc_long.numpy()
+        pca = PCA(n_components=min(k, Z_enc.shape[1]))
+        U_enc = pca.fit_transform(Z_enc)          # [sumT, k_eff]
+        expl = pca.explained_variance_ratio_
+        k_eff = U_enc.shape[1]
+
+        # ---------- closed を同一基底へ射影 ----------
+        Z_clo = clo_long.numpy()
+        if Z_clo.shape[1] == Z_enc.shape[1]:
+            Z_clo_in_enc_dim = Z_clo
+        else:
+            if not align_closed:
+                raise ValueError(f"Dc({Z_clo.shape[1]}) != De({Z_enc.shape[1]}). align_closed=Falseなら次元一致が必要。")
+            A, *_ = np.linalg.lstsq(Z_clo, Z_enc, rcond=None)
+            Z_clo_in_enc_dim = Z_clo @ A
+
+        V_clo = pca.transform(Z_clo_in_enc_dim)   # [sumT, k_eff]
+
+        # ---------- 可視化：疑似ロング1本として描く ----------
+        color_u = "black"       # Encoder
+        color_v = "firebrick"  # Closed
+
+        # 2D
+        if k_eff >= 2:
+            fig2d, ax2d = plt.subplots(1, 1, figsize=(7, 7), dpi=140)
+            u2 = U_enc[:, :2]
+            v2 = V_clo[:, :2]
+            lim = float(max(np.abs(u2).max(), np.abs(v2).max()))
+
+            # 線で描く
+            ax2d.plot(u2[:,0], u2[:,1], color=color_u, alpha=0.95, linewidth=1.2)
+            ax2d.plot(v2[:,0], v2[:,1], color=color_v, alpha=0.95, linewidth=1.2)
+
+            # start / end
+            ax2d.scatter(u2[0,0], u2[0,1], s=18, c=color_u); ax2d.text(u2[0,0], u2[0,1], "S", color=color_u)
+            ax2d.scatter(u2[-1,0], u2[-1,1], s=18, c=color_u); ax2d.text(u2[-1,0], u2[-1,1], "G", color=color_u)
+
+            ax2d.scatter(v2[0,0], v2[0,1], s=18, c=color_v); ax2d.text(v2[0,0], v2[0,1], "S", color=color_v)
+            ax2d.scatter(v2[-1,0], v2[-1,1], s=18, c=color_v); ax2d.text(v2[-1,0], v2[-1,1], "G", color=color_v)
+
+            # 境界（traj切替点）を薄い点でマーキング（見た目で「連結」を意識できる）
+            for s in seg_ends[:-1]:
+                ax2d.scatter(u2[s-1,0], u2[s-1,1], s=10, c=color_u, alpha=0.35)
+                ax2d.scatter(v2[s-1,0], v2[s-1,1], s=10, c=color_v, alpha=0.35)
+
+            ax2d.set_xlim(-lim, lim); ax2d.set_ylim(-lim, lim)
+            ax2d.set_aspect("equal", adjustable="box")
+            ax2d.set_xlabel("PC1"); ax2d.set_ylabel("PC2")
+            ax2d.set_title(
+                f"{name_prefix} | pseudo-long PCA (top-{k_eff}) var exp: " +
+                ", ".join(f"{v:.2f}" for v in expl[:k_eff])
+            )
+            handles = [
+                Line2D([0],[0], color=color_u, lw=2, label="Encoder"),
+                Line2D([0],[0], color=color_v, lw=2, label="Closed"),
+            ]
+            ax2d.legend(handles=handles, loc="best", frameon=True)
+
+            if not notebook:
+                Logger.run().log_figure(fig2d, f"{name_prefix}-pca-2d-pseudo-long", dir_name="pca_pseudolong/2d")
+                plt.close(fig2d)
+            else:
+                plt.show()
+                plt.close(fig2d)
+
+        # 3D
+        if k_eff >= 3:
+            from mpl_toolkits.mplot3d import Axes3D  # noqa
+            fig3d = plt.figure(figsize=(8, 8), dpi=140)
+            ax3d = fig3d.add_subplot(111, projection="3d")
+            u3 = U_enc[:, :3]
+            v3 = V_clo[:, :3]
+
+            ax3d.plot(u3[:,0], u3[:,1], u3[:,2], color=color_u, alpha=0.95, linewidth=1.1)
+            ax3d.plot(v3[:,0], v3[:,1], v3[:,2], color=color_v, alpha=0.95, linewidth=1.1)
+
+            ax3d.set_xlabel("PC1"); ax3d.set_ylabel("PC2"); ax3d.set_zlabel("PC3")
+            ax3d.set_title(
+                f"{name_prefix} | pseudo-long PCA (3D) var exp: " +
+                ", ".join(f"{v:.2f}" for v in expl[:3])
+            )
+            handles = [
+                Line2D([0],[0], color=color_u, lw=2, label="Encoder"),
+                Line2D([0],[0], color=color_v, lw=2, label="Closed"),
+            ]
+            ax3d.legend(handles=handles, loc="upper left", frameon=True)
+
+            if not notebook:
+                Logger.run().log_figure(fig3d, f"{name_prefix}-pca-3d-pseudo-long", dir_name="pca_pseudolong/3d")
+                plt.close(fig3d)
+            else:
+                plt.show()
+                plt.close(fig3d)
+
+        plt.close("all")
+        del enc_long, clo_long, U_enc, V_clo
         gc.collect()
         torch.cuda.empty_cache()
