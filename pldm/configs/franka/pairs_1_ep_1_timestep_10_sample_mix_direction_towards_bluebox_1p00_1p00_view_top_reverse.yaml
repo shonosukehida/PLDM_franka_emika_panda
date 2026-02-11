@@ -28,8 +28,8 @@ data:
     batch_size: 16 #128
     beta: 0.4
     crop_length: null
-    images_path: pldm_envs/franka/presaved_datasets/pairs_1_ep_1_timestep_10_sample_mix_direction_towards_bluebox_1p00_1p00_view_top_reverse/images.npy
-    path: pldm_envs/franka/presaved_datasets/pairs_1_ep_1_timestep_10_sample_mix_direction_towards_bluebox_1p00_1p00_view_top_reverse/data.p
+    images_path: pldm_envs/franka/presaved_datasets/pairs_100_ep_1_timestep_500_sample_mix_direction_towards_bluebox_1p00_1p00_view_top_reverse/images.npy
+    path: pldm_envs/franka/presaved_datasets/pairs_100_ep_1_timestep_500_sample_mix_direction_towards_bluebox_1p00_1p00_view_top_reverse/data.p
     location_only: false
     # normalize: true
     num_workers: 0 #10
