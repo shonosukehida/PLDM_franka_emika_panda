@@ -74,6 +74,7 @@ class Evaluator:
             load_checkpoint_path=load_checkpoint_path,
             output_path=output_path,
             objectives_l1=objectives_l1,
+            train_ds=train_ds,
         )
 
         self.pixel_mapper = franka_pixel_mapper

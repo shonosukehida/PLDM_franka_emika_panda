@@ -16,7 +16,7 @@ import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 import matplotlib.animation as animation
-from pldm.data.enums import ProbingDatasets, DatasetType
+from pldm.data.enums import ProbingDatasets, Datasets, DatasetType
 from pldm.data.utils import get_optional_fields
 from pldm.optimizers.schedulers import Scheduler, LRSchedule
 import glob
@@ -155,6 +155,7 @@ class ProbingEvaluator:
         config: ProbingConfig = default_config,
         quick_debug: bool = False,
         objectives_l1: Optional[ObjectivesConfig] = None,
+        train_ds: Optional[Datasets] = None,
     ):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.config = config
@@ -164,6 +165,8 @@ class ProbingEvaluator:
         self.ds = probing_datasets.ds
         self.val_ds = probing_datasets.val_ds
         self.extra_val_ds = probing_datasets.extra_datasets
+        
+        self.train_ds = train_ds
 
         self.load_checkpoint_path = load_checkpoint_path
         self.output_path = output_path
@@ -553,6 +556,7 @@ class ProbingEvaluator:
                 probers=probers,
                 epoch=epoch,
                 val_ds=val_ds,
+                train_ds=self.train_ds,
                 pixel_mapper=pixel_mapper,
                 visualize=visualize,
                 probers_open=probers_open,
@@ -568,6 +572,7 @@ class ProbingEvaluator:
         probers,
         epoch,
         val_ds: DatasetType,
+        train_ds: DatasetType = None,
         pixel_mapper=None,
         visualize=True,
         probers_open=None,
@@ -744,7 +749,6 @@ class ProbingEvaluator:
             vis_root_ds = FrankaDataset(vis_cfg)
 
             # DataLoader（batch_sizeはbase_cfgに入っている想定）
-            print("[DBG][pldm/probing/evaluator.py] base_cfg.batch_size:", base_cfg.batch_size)
             vis_loader_raw = DataLoader(
                 vis_root_ds,
                 batch_size=base_cfg.batch_size,
@@ -763,7 +767,37 @@ class ProbingEvaluator:
                 btc = next(itr)
             print("[DBG][pldm/probing/evaluator.py] btc.shape:", btc.states.shape)
             print(f"[VIS] visualize sample_length={vis_T}, batch_idx={vis_batch_idx}")
+
+
+            inner_train_loader = _unwrap_loader(train_ds)   # DataLoader or NormalizedDataLoader
+            print("[DBG][pldm/probing/evaluator.py] train_ds:", train_ds)
+            base_train_cfg = inner_train_loader.config          # FrankaDatasetのconfig相当（sample_length含む）
+            vis_train_cfg = dataclasses.replace(
+                base_train_cfg,
+                sample_length=vis_T,
+                path=base_train_cfg.path,
+                images_path=base_train_cfg.images_path,
+            )
+            
+            vis_root_train_ds = FrankaDataset(vis_train_cfg)
+            vis_loader_raw_train = DataLoader(
+                vis_root_train_ds,
+                batch_size=base_train_cfg.batch_size,
+                shuffle=False,
+                num_workers=0,
+                drop_last=False,
+            )
+            vis_loader_raw_train.config = base_train_cfg
+            vis_train_loader = NormalizedDataLoader(vis_loader_raw_train, train_ds.normalizer)
+            vis_train_batch_idx = getattr(self.config, "vis_train_batch_idx", 0)
+            itr = iter(vis_train_loader)
+            for _ in range(vis_train_batch_idx + 1):
+                train_btc = next(itr)
+            
+            
             ###
+            
+            
 
 
 
@@ -989,15 +1023,27 @@ class ProbingEvaluator:
                     idxs=None if not quick_debug else list(range(5)),
                     pool = 'flat',      
                 )
+
+                #train_ds
+                self.plot_pca(
+                    train_btc,
+                    model,  
+                    idxs=None if not quick_debug else list(range(5)),
+                    pool = 'flat',   
+                    is_train=True,
+                ) 
+                self.plot_pca_encoder_open(
+                    train_btc,
+                    model,
+                    name_prefix=f"{plot_prefix}_val",
+                    idxs=None if not quick_debug else list(range(5)),
+                    pool = 'flat',   
+                    is_train=True   
+                )
                 
-                # self.plot_pca_open_closed_anchor_closed(
-                #     btc,
-                #     model,
-                #     name_prefix=f"{plot_prefix}_val",
-                #     idxs=None if not quick_debug else list(range(10)),   
-                #     pool="gap",
-                #     k=3,  
-                # )
+                
+                
+                
 
                 #dont use prober
                 metrics_latent = self.log_latent_forward_rmse(
@@ -2850,7 +2896,8 @@ class ProbingEvaluator:
         notebook: bool = False,
         pool: str = "gap",              # "gap"/"flat"
         k: int = 3,                     
-        align_closed: bool = True,     
+        align_closed: bool = True,  
+        is_train: bool = False,   
     ):
         """
         encoder の潜在列で PCA 軸を学習し、同じ PCA 基底へ
@@ -2989,7 +3036,10 @@ class ProbingEvaluator:
                 
                 #2dは可視化しない
                 # if not notebook:
-                #     Logger.run().log_figure(fig2d, f"{name_prefix}-pca-2d-i{i}", dir_name="pca/pca2d_pertraj")
+                #     if not is_train:
+                #         Logger.run().log_figure(fig2d, f"{name_prefix}-pca-2d-i{i}", dir_name="pca_val/pca2d_pertraj")
+                #     else:
+                #         Logger.run().log_figure(fig2d, f"{name_prefix}-pca-2d-i{i}", dir_name="pca_train/pca2d_pertraj")
                 #     plt.close(fig2d)
                 # else:
                 #     plt.show()
@@ -3030,7 +3080,10 @@ class ProbingEvaluator:
                 ]
                 ax3d.legend(handles=handles, loc="upper left", frameon=True)
                 if not notebook:
-                    Logger.run().log_figure(fig3d, f"{name_prefix}-pca-3d-i{i}", dir_name="pca/pca3d_pertraj")
+                    if not is_train:
+                        Logger.run().log_figure(fig3d, f"{name_prefix}-pca-3d-i{i}", dir_name="pca_val/pca3d_pertraj")
+                    else:
+                        Logger.run().log_figure(fig3d, f"{name_prefix}-pca-3d-i{i}", dir_name="pca_train/pca3d_pertraj")
                     plt.close(fig3d)
                 else:
                     plt.show()
@@ -3058,7 +3111,10 @@ class ProbingEvaluator:
             )
             figc.tight_layout()
             if not notebook:
-                Logger.run().log_figure(figc, f"{name_prefix}-pca-timewise-cosine", dir_name="pca/pca_cos")
+                if not is_train:
+                    Logger.run().log_figure(figc, f"{name_prefix}-pca-timewise-cosine", dir_name="pca_val/pca_cos")
+                else:
+                    Logger.run().log_figure(figc, f"{name_prefix}-pca-timewise-cosine", dir_name="pca_train/pca_cos")
                 plt.close(figc)
             else:
                 plt.show()
@@ -3090,6 +3146,7 @@ class ProbingEvaluator:
         notebook: bool = False,
         pool: str = "gap",      # "gap"/"flat"
         k: int = 3,             # PCA 次元
+        is_train: bool = False,
     ):
         """
         open-forward 列を基準に PCA 軸を学習し、
@@ -3249,16 +3306,23 @@ class ProbingEvaluator:
                 ax2d.legend(handles=handles, loc="best", frameon=True)
 
                 #2dは可視化しない
-                # if not notebook:
-                #     Logger.run().log_figure(
-                #         fig2d,
-                #         f"{name_prefix}-pca_openanchor-2d-i{i}",
-                #         dir_name="pca_open_anchor/pca2d_pertraj",
-                #     )
-                #     plt.close(fig2d)
-                # else:
-                #     plt.show()
-                #     plt.close(fig2d)
+                if not notebook:
+                    # if not is_train:
+                    #     Logger.run().log_figure(
+                    #         fig2d,
+                    #         f"{name_prefix}-pca_openanchor-2d-i{i}",
+                    #         dir_name="pca_open_closed_val/pca2d_pertraj",
+                    #     )
+                    # else:
+                    #     Logger.run().log_figure(
+                    #         fig2d,
+                    #         f"{name_prefix}-pca_openanchor-2d-i{i}",
+                    #         dir_name="pca_open_closed_train/pca2d_pertraj",
+                    #     )
+                    plt.close(fig2d)
+                else:
+                    plt.show()
+                    plt.close(fig2d)
                 plt.close(fig2d)
 
         # ---- 3D 可視化 ----
@@ -3298,11 +3362,18 @@ class ProbingEvaluator:
                 ]
                 ax3d.legend(handles=handles, loc="upper left", frameon=True)
                 if not notebook:
-                    Logger.run().log_figure(
-                        fig3d,
-                        f"{name_prefix}-pca_openanchor-3d-i{i}",
-                        dir_name="pca_open_anchor/pca3d_pertraj",
-                    )
+                    if not is_train:
+                        Logger.run().log_figure(
+                            fig3d,
+                            f"{name_prefix}-pca_openanchor-3d-i{i}",
+                            dir_name="pca_open_closed_val/pca3d_pertraj",
+                        )
+                    else:
+                        Logger.run().log_figure(
+                            fig3d,
+                            f"{name_prefix}-pca_openanchor-3d-i{i}",
+                            dir_name="pca_open_close_train/pca3d_pertraj",
+                        )
                     plt.close(fig3d)
                 else:
                     plt.show()
@@ -3332,11 +3403,18 @@ class ProbingEvaluator:
             )
             figc.tight_layout()
             if not notebook:
-                Logger.run().log_figure(
-                    figc,
-                    f"{name_prefix}-pca_openanchor-timewise-cosine",
-                    dir_name="pca_open_anchor/pca_cos",
-                )
+                if not is_train:
+                    Logger.run().log_figure(
+                        figc,
+                        f"{name_prefix}-pca_openanchor-timewise-cosine",
+                        dir_name="pca_open_closed_val/pca_cos",
+                    )
+                else:
+                    Logger.run().log_figure(
+                        figc,
+                        f"{name_prefix}-pca_openanchor-timewise-cosine",
+                        dir_name="pca_open_closed_train/pca_cos",
+                    )
                 plt.close(figc)
             else:
                 plt.show()
@@ -3367,6 +3445,7 @@ class ProbingEvaluator:
         notebook: bool = False,
         pool: str = "gap",      # "gap"/"flat"
         k: int = 3,             # PCA 次元
+        is_train: bool = False,
     ):
         """
         encoder 出力を基準に PCA 軸を学習し、
@@ -3495,7 +3574,10 @@ class ProbingEvaluator:
 
                 #2d は可視化しない
                 # if not notebook:
-                #     Logger.run().log_figure(fig2d, f"{name_prefix}-pca-enc-open-2d-i{i}", dir_name="pca/encoder_open/pca2d")
+                #     if not is_train:
+                #         Logger.run().log_figure(fig2d, f"{name_prefix}-pca-enc-open-2d-i{i}", dir_name="pca_encoder_open_val/pca2d")
+                #     else:
+                #         Logger.run().log_figure(fig2d, f"{name_prefix}-pca-enc-open-2d-i{i}", dir_name="pca_encoder_open_train/pca2d")
                 #     plt.close(fig2d)
                 # else:
                 #     plt.show()
@@ -3541,7 +3623,11 @@ class ProbingEvaluator:
                 ], loc="upper left", frameon=True)
 
                 if not notebook:
-                    Logger.run().log_figure(fig3d, f"{name_prefix}-pca-enc-open-3d-i{i}", dir_name="pca_encoder_open/pca3d")
+                    if not is_train:
+                        Logger.run().log_figure(fig3d, f"{name_prefix}-pca-enc-open-3d-i{i}", dir_name="pca_encoder_open_val/pca3d")
+                    else:
+                        Logger.run().log_figure(fig3d, f"{name_prefix}-pca-enc-open-3d-i{i}", dir_name="pca_encoder_open_train/pca3d")
+                        
                 else:
                     plt.show()
                 plt.close(fig3d)

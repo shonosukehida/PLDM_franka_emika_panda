@@ -47,6 +47,7 @@ class JEPA(torch.nn.Module):
         l2: bool = False,
         use_propio_pos: bool = False,
         use_propio_vel: bool = False,
+        normalizer = None,
     ):
         super().__init__()
         self.config = config
@@ -55,6 +56,7 @@ class JEPA(torch.nn.Module):
         self.backbone = build_backbone(
             config.backbone,
             input_dim=input_dim,
+            normalizer=normalizer,
         )
         self.l2 = l2
 
@@ -74,6 +76,7 @@ class JEPA(torch.nn.Module):
             bb = build_backbone(
                 config.backbone,
                 input_dim=input_dim,
+                normalizer=normalizer,
             )
             self.backbone_ema = bb[0] if isinstance(bb, tuple) else bb
             self.backbone_ema.load_state_dict(self.backbone.state_dict())

@@ -79,6 +79,8 @@ class FrankaDatasetGenerator:
         # self.SAMPLE_METHOD = config['sample_method']
 
         self.specify_init_position = config['specify_init_position']
+        self.init_joint_method = config['init_joint_method']
+        print("[DBG] init_joint_method:", self.init_joint_method)
         
         self.eval_only = self.config['eval_only']
 
@@ -266,8 +268,10 @@ class FrankaDatasetGenerator:
                         current_method = self.method_schedule_per_pair[pair_idx][ep_idx - 1]
 
                 
-                init_xyz = self.sample_uniform_xyz(self.mgn_x_range, self.mgn_y_range, self.mgn_z_range)
-                init_xyz = self._get_center_of_cube()
+                if self.init_joint_method == 'random':
+                    init_xyz = self.sample_uniform_xyz(self.mgn_x_range, self.mgn_y_range, self.mgn_z_range)
+                elif self.init_joint_method == 'center':
+                    init_xyz = self._get_center_of_cube()
 
                 try:
                     result = self.env.calc_inverse_kinematic(init_xyz, target_rotmat=self.target_rotmat)

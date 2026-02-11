@@ -5,10 +5,11 @@ episodes_per_pair: 1 #2000
 steps_per_episode: 500 ##100
 image_size: [64, 64] #[64, 64]
 model_path: mujoco_menagerie/franka_emika_panda/scene.xml
-camera_name: diagonal_view #top_view, default, diagonal_view
+camera_name: top_reverse #top_view, default, diagonal_view, top_reverse
 save_dir: pldm_envs/franka/presaved_datasets
 specify_init_position: true #初期姿勢を指定するか
 specify_goal_position: true #ゴール状態のFranka の位置を中点に指定するか
+init_joint_method: random #Franka初期位置の取得方法, random/center
 goal_offset: [0.2, -0.2, 0.2]
 box_start_pos: null #データセット生成時のbluebox のstart位置 #[0.50, -0.05, 0.05]
 box_goal_pos: null #データセット生成時のbluebox のgoal位置 #[0.50, -0.10, 0.05]
@@ -43,8 +44,8 @@ z_range: [0.1, 0.1]
 #uniform --> 一様分布
 #uniform_constrain --> 一様分布だが, 現在の位置との距離がmax_dist 未満になるまで繰り返す
 
-sample_method_list: null #["direction", "towards_bluebox"] #null 単一のsampleメソッド
-sample_method_ratio: null #[1, 1]
+sample_method_list: ["direction", "towards_bluebox"] #["direction", "towards_bluebox"] #null 単一のsampleメソッド
+sample_method_ratio: [1, 1] #[1, 1]
 
 sample_method: 'towards_bluebox' #'direction' or 'uniform' or 'uniform_constrain' or 'towards_bluebox'
 margin_ratio: 0.80

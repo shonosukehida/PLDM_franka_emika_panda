@@ -38,6 +38,7 @@ class HJEPA(torch.nn.Module):
             input_dim=input_dim,
             use_propio_pos=use_propio_pos,
             use_propio_vel=use_propio_vel,
+            normalizer=normalizer,
         )
 
         self.normalizer = normalizer

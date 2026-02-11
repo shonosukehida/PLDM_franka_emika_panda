@@ -414,6 +414,7 @@ class ObPropioEncoder2(SequenceBackbone):
 def build_backbone(
     config: BackboneConfig,
     input_dim,
+    normalizer = None,
 ):
     backbone, embedding = None, None
     arch = config.arch
@@ -459,6 +460,7 @@ def build_backbone(
             propio_dim=config.propio_dim,
             propio_encoder_arch=config.propio_encoder_arch,
             chunk_size=config.vjepa2_chunk_size,
+            normalizer=normalizer,
         )
     elif arch == "mlp":
         backbone = MLPEncoder(

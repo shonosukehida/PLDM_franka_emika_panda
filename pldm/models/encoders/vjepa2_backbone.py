@@ -1,10 +1,12 @@
 import torch
 import torch.nn as nn
-from transformers import AutoModel
+from transformers import AutoModel, AutoVideoProcessor
 
 from pldm.models.encoders.base_class import SequenceBackbone
 from pldm.models.encoders.enums import BackboneOutput
 from pldm.models.utils import Expander2D
+import torch.nn.functional as F
+import math
 
 
 class VJEPA2Backbone(SequenceBackbone):
@@ -19,6 +21,7 @@ class VJEPA2Backbone(SequenceBackbone):
         propio_dim: int | None = None,
         propio_encoder_arch: str | None = "id",  # "75-64-14" 
         chunk_size: int = 2,
+        normalizer = None,
     ):
         super().__init__()
         self.freeze = freeze
@@ -32,8 +35,11 @@ class VJEPA2Backbone(SequenceBackbone):
 
         self.propio_dim = propio_dim
         self.propio_encoder_arch = propio_encoder_arch
+        self.normalizer = normalizer
+        print("[pldm/models/encoders/vjepa2_backbone.py] self.normalizer:", self.normalizer)
 
         self.vjepa2 = AutoModel.from_pretrained(repo)
+        self.processor = AutoVideoProcessor.from_pretrained(repo)
 
         if self.freeze:
             self.vjepa2.eval()
@@ -42,7 +48,13 @@ class VJEPA2Backbone(SequenceBackbone):
 
 
         # --- obs adapter（VJEPA2 token D -> out_obs_channels）---
-        self.obs_adapter = self._build_obs_adapter_with_dummy_forward(out_obs_channels)
+        # self.obs_adapter = self._build_obs_adapter_with_dummy_forward(out_obs_channels)
+        
+        vj2_n, vj2_b, vj2_d = self._infer_vjepa2_shape_with_dummy_forward(out_obs_channels)
+        p = next(self.vjepa2.parameters())
+        dev, dtype = p.device, p.dtype
+        self.obs_adapter = nn.Conv2d(vj2_d, self.out_obs_channels, kernel_size=1).to(dev)
+        # self.obs_adapter = nn.Linear(vj2_d, self.out_obs_channels).to(dev)
 
         # --- propio encoder（propio -> out_propio_channels -> spatial）---
         if self.propio_dim and self.out_propio_channels > 0:
@@ -73,6 +85,28 @@ class VJEPA2Backbone(SequenceBackbone):
         h = out.last_hidden_state if hasattr(out, "last_hidden_state") else out[0]
         D = h.shape[-1]
         return nn.Linear(D, out_obs_channels).to(dev)
+
+    def _infer_vjepa2_shape_with_dummy_forward(self, out_obs_channels: int) -> nn.Linear:
+        # dummy: (B,T,C,H,W) で まずは T=1 で軽く通す（T=64はVRAM重い）
+        p = next(self.vjepa2.parameters())
+        dev, dtype = p.device, p.dtype
+
+        dummy = torch.zeros(
+            1, 1, 3, self.img_size, self.img_size,
+            device=dev,
+            dtype=dtype if dtype.is_floating_point else torch.float32,
+        ).clamp(0, 1)
+
+        was_training = self.vjepa2.training
+        self.vjepa2.eval()
+        with torch.no_grad():
+            out = self.vjepa2(pixel_values_videos=dummy)
+        if was_training and not self.freeze:
+            self.vjepa2.train()
+
+        h = out.last_hidden_state if hasattr(out, "last_hidden_state") else out[0]
+        B, N, D = h.shape
+        return B, N, D
 
     def _build_propio_encoder(self) -> nn.Module:
         # MeNet6 と同じノリ：
@@ -110,30 +144,29 @@ class VJEPA2Backbone(SequenceBackbone):
         """
         if x.dim() != 4:
             raise ValueError(f"expects (BS,C,H,W), got {tuple(x.shape)}")
-        # print("VJEPA2Backbone.forward x:", x.shape)
 
         BS, C, H, W = x.shape
+        # x = self.normalizer.unnormalize_state(x)
+        x_vid = x.unsqueeze(1) 
+        
 
-        # (BS,1,3,H,W) を作って VJEPA2 に入れる（T=1で軽量）
-        x_vid = x.unsqueeze(1).clamp(0, 1)
-
-        # dev = x_vid.device
-        # if self.obs_adapter.weight.device != dev:
-        #     self.obs_adapter = self.obs_adapter.to(dev)
-        # if self.propio_encoder is not None:
-        #     self.propio_encoder = self.propio_encoder.to(dev)
-        # # vjepa2本体も必要ならデバイス合わせ（※すでに .to(device) 済みなら不要）
-        # self.vjepa2 = self.vjepa2.to(dev)
 
         with torch.no_grad() if self.freeze else torch.enable_grad():
             out = self.vjepa2(pixel_values_videos=x_vid)
+        
+        # print("[DBG][pldm/models/encoders/vjepa2_backbone.py] out:", out)
+        # for key, value in out.__dict__.items(): 
+        #     print("[DBG][pldm/models/encoders/vjepa2_backbone.py] key:", key)
+        # print("[DBG][pldm/models/encoders/vjepa2_backbone.py]out.last_hidden_state.shape:", out.last_hidden_state.shape)
 
         h = out.last_hidden_state if hasattr(out, "last_hidden_state") else out[0]
-        pooled = h.mean(dim=1)                    # (BS, D)
-        z_obs = self.obs_adapter(pooled)          # (BS, out_obs_channels)
-
-        z_obs = z_obs.view(BS, self.out_obs_channels, 1, 1)
-        z_obs = z_obs.expand(BS, self.out_obs_channels, self.out_hw, self.out_hw)
+        B, N, D = h.shape 
+        
+        g = int(math.sqrt(N))
+        assert g * g == N, f"Expected N to be square, got N={N}"
+        feat = h.transpose(1, 2).reshape(B, D, g, g) 
+        feat = F.interpolate(feat, size=(self.out_hw, self.out_hw), mode="bilinear", align_corners=False)
+        z_obs = self.obs_adapter(feat)
 
         if self.propio_encoder is not None and (propio is not None):
             z_prop = self.propio_encoder(propio)  # (BS, out_propio_channels, out_hw, out_hw)

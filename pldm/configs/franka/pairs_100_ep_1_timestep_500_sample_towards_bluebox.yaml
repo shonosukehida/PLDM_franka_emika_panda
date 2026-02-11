@@ -171,6 +171,7 @@ eval_cfg:
     schedule: Cosine
     visualize_probing: false #proberを用いたダイナミクスの可視化をするか否か
     visualize_dynamics: true #proberを用いないダイナミクスの可視化をするか否か ##
+    vis_long_horizon_eval: false #全てのval_dataset を使ったpca評価をするか否か
     load_prober: false
     train_prober: true #load_prober:falseの場合にproberをtrainさせるか否かを指定
     load_prober: false
@@ -209,7 +210,6 @@ eval_cfg:
       name: reach_no_touch   # push_to_goal / reach_no_touch
 
       reach_no_touch:
-        ee_goal_xyz: [0.55, 0.0, 0.10]      # 例: EEを置きたい位置
         box_init_xyz: null                  # nullならresetで使うstart_posを採用
         box_hold_eps: 0.02                  # 成功判定: 箱が動いてない閾値(m)
         ee_success_eps: 0.03                # 成功判定: EE到達閾値(m)

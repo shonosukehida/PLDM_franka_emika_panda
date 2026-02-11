@@ -1,4 +1,4 @@
-n_steps: &n_steps 50
+n_steps: &n_steps 2
 val_n_steps: *n_steps
 env_name: &env_name franka
 
@@ -6,7 +6,7 @@ base_lr: 0.041037
 data:
   dataset_type: DatasetType.Franka
   normalize_mode: "zscore" # minmax / zscore
-  normalize_actions_mode: "minmax"
+  normalize_actions_mode: "zscore"
   normalize: true
   min_states_val: 0.0
   max_states_val: 1.0
@@ -41,7 +41,7 @@ data:
     train: true
     val_fraction: 0.2
     
-epochs: 5
+epochs: 1
 eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
@@ -85,14 +85,14 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20260115_180104/epoch=5_sample_step=864.ckpt #pldm/checkpoints/franka_20250730_112342/epoch=10_sample_step=1584.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20260211_154154/epoch=1_sample_step=576.ckpt #pldm/checkpoints/franka_20250730_112342/epoch=10_sample_step=1584.ckpt
 
 alpha: 0.0 #0.0 #current_state = (1 - alpha) * next_state + alpha * teacher_state
 use_opn_loss_func: &use_opn_loss_func false
 objectives_l1:
   idm:
     action_dim: 7
-    coeff: 5.3964
+    coeff: 0.0 #5.3964
     arch: 'conv'
     use_pred: false
     arch_subclass: a
@@ -100,26 +100,26 @@ objectives_l1:
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   # - ObjectiveType.SIGReg
-  - ObjectiveType.IDM
+  # - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   opn_objectives:
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   # - ObjectiveType.SIGReg
-  - ObjectiveType.IDM
+  # - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   vicreg_obs:
     adjust_cov: true
     cov_chunk_size: null
-    cov_coeff: 11.925
+    cov_coeff: 0.0 #11.925
     cov_coeff_t: 0
     cov_per_feature: false
     projector: id
     random_projector: false
     sim_coeff: 1
-    std_coeff: 35.026
-    std_coeff_t: 2.9199
-    sim_coeff_t: 0.10193
+    std_coeff: 0.0 #35.026
+    std_coeff_t: 0.0 #2.9199
+    sim_coeff_t: 0.0 #0.10193
   prediction_propio:
     global_coeff: 1.4108
   sigreg:
@@ -159,7 +159,7 @@ eval_cfg:
     vis_dynamics_closed_featuremap: false
     vis_dynamics_open_featuremap: false
     vis_encoder_featuremap: false
-    vis_sample_length: 100 #50 #probing評価するときのタイムステップ(基本モデルの予測ステップに合わせる)
+    vis_sample_length: 2 #50 #probing評価するときのタイムステップ(基本モデルの予測ステップに合わせる)
     epochs: 1 #5
     epochs_enc: 1 #5
     epochs_latent: 1 #5
@@ -170,6 +170,7 @@ eval_cfg:
     schedule: Cosine 
     visualize_probing: false #proberを用いたダイナミクスの可視化をするか否か
     visualize_dynamics: true #proberを用いないダイナミクスの可視化をするか否か
+    vis_long_horizon_eval: false #全てのval_dataset を使ったpca評価をするか否か
     load_prober: false
     train_prober: false #load_prober:falseの場合にproberをtrainさせるか否かを指定
   disable_planning: false 
@@ -207,7 +208,6 @@ eval_cfg:
       name: reach_no_touch   # push_to_goal / reach_no_touch
 
       reach_no_touch:
-        ee_goal_xyz: [0.55, 0.0, 0.10]      # 例: EEを置きたい位置
         box_init_xyz: null                  # nullならresetで使うstart_posを採用
         box_hold_eps: 0.02                  # 成功判定: 箱が動いてない閾値(m)
         ee_success_eps: 0.03                # 成功判定: EE到達閾値(m)

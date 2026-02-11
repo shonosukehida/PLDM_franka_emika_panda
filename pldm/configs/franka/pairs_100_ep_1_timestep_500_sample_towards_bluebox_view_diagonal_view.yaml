@@ -210,7 +210,6 @@ eval_cfg:
       name: push_to_goal   # push_to_goal / reach_no_touch
 
       reach_no_touch:
-        ee_goal_xyz: [0.55, 0.0, 0.10]      # 例: EEを置きたい位置
         box_init_xyz: null                  # nullならresetで使うstart_posを採用
         box_hold_eps: 0.02                  # 成功判定: 箱が動いてない閾値(m)
         ee_success_eps: 0.03                # 成功判定: EE到達閾値(m)
