@@ -46,7 +46,7 @@ eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
 eval_mpcs: 20
-eval_only: true
+eval_only: false
 hjepa:
   l1_n_steps: *n_steps
   train_l1: true
@@ -85,7 +85,7 @@ hjepa:
     action_dim: 7
     momentum: 0
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20260211_154154/epoch=1_sample_step=576.ckpt #pldm/checkpoints/franka_20250730_112342/epoch=10_sample_step=1584.ckpt
+load_checkpoint_path: null #pldm/checkpoints/franka_20260211_154154/epoch=1_sample_step=576.ckpt #pldm/checkpoints/franka_20250730_112342/epoch=10_sample_step=1584.ckpt
 
 alpha: 0.0 #0.0 #current_state = (1 - alpha) * next_state + alpha * teacher_state
 use_opn_loss_func: &use_opn_loss_func false
