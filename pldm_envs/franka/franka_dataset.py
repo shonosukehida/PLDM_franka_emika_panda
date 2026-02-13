@@ -39,15 +39,15 @@ class FrankaDataset(Dataset):
                     
                     processor = AutoVideoProcessor.from_pretrained(self.config.vjepa2_repo)
                     self.preprocess_images = processor(self.preprocess_images, return_tensors="pt")["pixel_values_videos"]
-                    self.preprocess_images = torch.squeeze(self.preprocess_images, 0)
-                    # self.preprocess_images = self.preprocess_images.permute(0, 2, 3, 1).cpu().numpy()  #[303, 256, 256, 3]
+                    self.preprocess_images = torch.squeeze(self.preprocess_images, 0)#[303, 256, 256, 3]
                     self.preprocess_images = self.preprocess_images.to(torch.float16).cpu().numpy()  #[303, 256, 256, 3]
-                    # print("[pldm_envs/franka/franka_dataset.py] self.preprocess_images.dtype:", self.preprocess_images.dtype)
 
 
-                    np.save(preproc_path, self.preprocess_images)
-                    print("💾 saved:", preproc_path)
-                self.preprocess_images = np.load(preproc_path, mmap_mode="r")
+
+                    # np.save(preproc_path, self.preprocess_images)
+                    # print("💾 saved:", preproc_path)
+                    
+                # self.preprocess_images = np.load(preproc_path, mmap_mode="r")
                 self.images_tensor = self.preprocess_images
             
             
