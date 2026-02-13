@@ -3,6 +3,9 @@ from torch.utils.data import Dataset
 import numpy as np
 from pldm_envs.franka.enums import FrankaSample
 
+from transformers import AutoVideoProcessor
+import os
+
 
 class FrankaDataset(Dataset):
     def __init__(self, config, images_tensor=None):
@@ -19,7 +22,37 @@ class FrankaDataset(Dataset):
                 self.images_tensor = np.load(config.images_path, mmap_mode="r")
             else:
                 self.images_tensor = images_tensor
-            print("shape of images is:", self.images_tensor.shape)
+            print("shape of images is:", self.images_tensor.shape) #(303, 64, 64, 3)=(T,H,W,C)
+            self.images_tensor = self.images_tensor.transpose(0, 3, 1, 2)
+            
+            
+            if self.config.backbone_arch == 'vjepa2':
+                save_dir = os.path.dirname(config.path)
+                print("[pldm_envs/franka/franka_dataset.py] save_dir:", save_dir)
+                preproc_path = os.path.join(save_dir, "vjepa2_preprocessed_images.npy")
+                
+                if not os.path.exists(preproc_path): 
+                    self.preprocess_images = torch.from_numpy(np.asarray(self.images_tensor))
+                    # print("[pldm_envs/franka/franka_dataset.py] self.image_tensor.type:", type(self.preprocess_images))
+                    self.preprocess_images = self.preprocess_images #(T,C,H,W)
+                    
+                    
+                    processor = AutoVideoProcessor.from_pretrained(self.config.vjepa2_repo)
+                    self.preprocess_images = processor(self.preprocess_images, return_tensors="pt")["pixel_values_videos"]
+                    self.preprocess_images = torch.squeeze(self.preprocess_images, 0)
+                    # self.preprocess_images = self.preprocess_images.permute(0, 2, 3, 1).cpu().numpy()  #[303, 256, 256, 3]
+                    self.preprocess_images = self.preprocess_images.to(torch.float16).cpu().numpy()  #[303, 256, 256, 3]
+                    # print("[pldm_envs/franka/franka_dataset.py] self.preprocess_images.dtype:", self.preprocess_images.dtype)
+
+
+                    np.save(preproc_path, self.preprocess_images)
+                    print("💾 saved:", preproc_path)
+                self.preprocess_images = np.load(preproc_path, mmap_mode="r")
+                self.images_tensor = self.preprocess_images
+            
+            
+            
+            
         else:
             print("states will contain proprioceptive info")
 
@@ -67,8 +100,8 @@ class FrankaDataset(Dataset):
             else:
                 img_start = self.cum_obs_counts[ep_idx - 1] + start_idx
             images = torch.from_numpy(self.images_tensor[img_start:img_start + length])
-            images = images.permute(0, 3, 1, 2).float()
-            states = images
+            # images = images.permute(0, 3, 1, 2).float()
+            states = images.float()
         else:
             states = obs
         # print('images:', images.shape)
@@ -102,7 +135,7 @@ class FrankaDataset(Dataset):
 
 
 
-##PC可視化用, episode単位で__getitem__
+##PCA可視化用, episode単位で__getitem__
 
 class FrankaEpisodeDataset(Dataset):
     """
@@ -132,6 +165,34 @@ class FrankaEpisodeDataset(Dataset):
             else:
                 self.images_tensor = images_tensor
             print("shape of images is:", self.images_tensor.shape)
+            print("shape of images is:", self.images_tensor.shape) #(303, 64, 64, 3)=(T,H,W,C)
+            self.images_tensor = self.images_tensor.transpose(0, 3, 1, 2)
+            
+            
+            if self.config.backbone_arch == 'vjepa2':
+                save_dir = os.path.dirname(config.path)
+                print("[pldm_envs/franka/franka_dataset.py] save_dir:", save_dir)
+                preproc_path = os.path.join(save_dir, "vjepa2_preprocessed_images.npy")
+                
+                if not os.path.exists(preproc_path): 
+                    self.preprocess_images = torch.from_numpy(np.asarray(self.images_tensor))
+                    # print("[pldm_envs/franka/franka_dataset.py] self.image_tensor.type:", type(self.preprocess_images))
+                    self.preprocess_images = self.preprocess_images #(T,C,H,W)
+                    
+                    
+                    processor = AutoVideoProcessor.from_pretrained(self.config.vjepa2_repo)
+                    self.preprocess_images = processor(self.preprocess_images, return_tensors="pt")["pixel_values_videos"]
+                    self.preprocess_images = torch.squeeze(self.preprocess_images, 0)
+                    # self.preprocess_images = self.preprocess_images.permute(0, 2, 3, 1).cpu().numpy()  #[303, 256, 256, 3]
+                    self.preprocess_images = self.preprocess_images.to(torch.float16).cpu().numpy()  #[303, 256, 256, 3]
+                    # print("[pldm_envs/franka/franka_dataset.py] self.preprocess_images.dtype:", self.preprocess_images.dtype)
+
+
+                    np.save(preproc_path, self.preprocess_images)
+                    print("💾 saved:", preproc_path)
+                self.preprocess_images = np.load(preproc_path, mmap_mode="r")
+                self.images_tensor = self.preprocess_images
+            
         else:
             print("states will contain proprioceptive info")
 
@@ -199,7 +260,7 @@ class FrankaEpisodeDataset(Dataset):
             else:
                 img_start = self.cum_obs_counts[ep_idx - 1] + start_idx
             images = torch.from_numpy(self.images_tensor[img_start:img_start + length])
-            images = images.permute(0, 3, 1, 2).float()
+            # images = images.permute(0, 3, 1, 2).float()
             states = images
         else:
             states = obs

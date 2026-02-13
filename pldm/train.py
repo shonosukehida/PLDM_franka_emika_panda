@@ -170,7 +170,6 @@ class TrainConfig(ConfigBase):
 class Trainer:
     def __init__(self, config: TrainConfig):
         self.config = config
-        print('use_opn_loss:',self.config.use_opn_loss_func)
 
         print(f"Logger output path: {self.config.output_path}")
         Logger.run().initialize(
@@ -185,12 +184,19 @@ class Trainer:
         seed_everything(config.seed)
 
         self.sample_step = 0
-        self.epoch = 0
+        self.epoch = 1
         self.step = 0
 
         # create data
+        self.config.data.backbone_arch = self.config.hjepa.level1.backbone.arch 
+        if self.config.data.backbone_arch == "vjepa2":
+            self.config.data.vjepa2_repo = self.config.hjepa.level1.backbone.vjepa2_repo
+        # print("[DBG][pldm/train.py] self.config.data.backbone_arch:", self.config.data.backbone_arch)
+        # print("[DBG][pldm/train.py] self.config.data.vjepa2_repo:", self.config.data.vjepa2_repo)
+        
+        
         datasets = DatasetFactory(
-            config.data,
+            self.config.data,
             probing_cfg=config.eval_cfg.probing,
             disable_l2=config.hjepa.disable_l2,
         ).create_datasets()
@@ -448,7 +454,7 @@ class Trainer:
             end_time = time.time()
             for step, batch in (
                 pbar := tqdm(
-                    enumerate(self.ds, start=epoch * len(self.ds)),
+                    enumerate(self.ds, start=(epoch - 1) * len(self.ds)),
                     desc="Batch",
                     total=len(self.ds),
                     maxinterval=10,
@@ -556,9 +562,6 @@ class Trainer:
                     raise RuntimeError("NaN loss")
                 total_loss.backward()
                 mem("after calc backward")
-                for n, p in self.model.level1.backbone.named_parameters():
-                    if "obs_adapter" in n:
-                        print("obs_adapter requires_grad:", p.requires_grad, "grad is None?", p.grad is None)
                         
                 self.optimizer.step()
                 mem("after opt step")
@@ -679,6 +682,9 @@ class Trainer:
         self.eval_on_objectives()
 
         # create evaluator (for both probing and planning)
+        self.config.eval_cfg.backbone_arch = self.config.hjepa.level1.backbone.arch  
+        self.config.eval_cfg.vjepa2_repo = self.config.hjepa.level1.backbone.vjepa2_repo 
+        
         self.evaluator = Evaluator(
             config=self.config.eval_cfg,
             model=self.model,

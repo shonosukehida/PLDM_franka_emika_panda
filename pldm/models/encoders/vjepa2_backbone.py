@@ -154,14 +154,14 @@ class VJEPA2Backbone(SequenceBackbone):
         if x.dim() != 4:
             raise ValueError(f"expects (BS,C,H,W), got {tuple(x.shape)}")
 
-        BS, C, H, W = x.shape
-        x = self.normalizer.unnormalize_state(x)
-        pvs = []
-        for b in range(x.shape[0]):
-            pv = self.processor(x[b], return_tensors="pt")["pixel_values_videos"]  # (1,1,3,256,256) のはず
-            pvs.append(pv)
-        x_vid = torch.cat(pvs, dim=0).to(self.vjepa2.device)  # (BS,1,3,256,256)
-        
+        # BS, C, H, W = x.shape
+        # x = self.normalizer.unnormalize_state(x)
+        # pvs = []
+        # for b in range(x.shape[0]):
+        #     pv = self.processor(x[b], return_tensors="pt")["pixel_values_videos"]  # (1,1,3,256,256) のはず
+        #     pvs.append(pv)
+        # x_vid = torch.cat(pvs, dim=0).to(self.vjepa2.device)  # (BS,1,3,256,256)
+        x_vid = x.unsqueeze(1) 
 
 
         with torch.no_grad() if self.freeze else torch.enable_grad():
@@ -241,29 +241,29 @@ class VJEPA2Backbone(SequenceBackbone):
         )
 
 
-    def vjepa2_preprocess_gpu(self, x):  # x: (B,3,H,W), range 0..255 float
-        # 1) rescale to 0..1
-        x = x / 255.0
+    # def vjepa2_preprocess_gpu(self, x):  # x: (B,3,H,W), range 0..255 float
+    #     # 1) rescale to 0..1
+    #     x = x / 255.0
 
-        # 2) resize shortest edge to 292 (keep aspect)
-        resize_short = 292
-        B, C, H, W = x.shape
-        if H < W:
-            new_h = resize_short
-            new_w = int(round(W * resize_short / H))
-        else:
-            new_w = resize_short
-            new_h = int(round(H * resize_short / W))
-        x = F.interpolate(x, size=(new_h, new_w), mode="bilinear", align_corners=False)
+    #     # 2) resize shortest edge to 292 (keep aspect)
+    #     resize_short = 292
+    #     B, C, H, W = x.shape
+    #     if H < W:
+    #         new_h = resize_short
+    #         new_w = int(round(W * resize_short / H))
+    #     else:
+    #         new_w = resize_short
+    #         new_h = int(round(H * resize_short / W))
+    #     x = F.interpolate(x, size=(new_h, new_w), mode="bilinear", align_corners=False)
 
-        # 3) center crop to 256
-        crop = 256
-        top = (new_h - crop) // 2
-        left = (new_w - crop) // 2
-        x = x[:, :, top:top+crop, left:left+crop]
+    #     # 3) center crop to 256
+    #     crop = 256
+    #     top = (new_h - crop) // 2
+    #     left = (new_w - crop) // 2
+    #     x = x[:, :, top:top+crop, left:left+crop]
 
-        # 4) imagenet normalize
-        mean = torch.tensor([0.485, 0.456, 0.406], device=x.device).view(1,3,1,1)
-        std  = torch.tensor([0.229, 0.224, 0.225], device=x.device).view(1,3,1,1)
-        x = (x - mean) / std
-        return x
+    #     # 4) imagenet normalize
+    #     mean = torch.tensor([0.485, 0.456, 0.406], device=x.device).view(1,3,1,1)
+    #     std  = torch.tensor([0.229, 0.224, 0.225], device=x.device).view(1,3,1,1)
+    #     x = (x - mean) / std
+    #     return x

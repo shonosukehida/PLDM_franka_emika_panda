@@ -41,6 +41,9 @@ class FrankaConfig:
     chunked_actions: bool = False
 
     use_goal_images: bool = True  # PLDM特有のオプション
+    
+    backbone_arch: str = 'menet6'
+    vjepa2_repo: str = ''
 
     def __post_init__(self):
         pass  # 将来追加があればここで処理

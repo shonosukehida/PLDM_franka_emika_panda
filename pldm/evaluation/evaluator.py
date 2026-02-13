@@ -39,6 +39,9 @@ class EvalConfig(ConfigBase):
         self.wall_planning.env_name = self.env_name
         self.d4rl_planning.env_name = self.env_name
         self.franka_planning.env_name = self.env_name
+    
+    backbone_arch: str = 'menet6'
+    vjepa2_repo: str = ''
 
 
 class Evaluator:
@@ -88,6 +91,8 @@ class Evaluator:
         elif self.config.env_name == "wall":
             config = self.config.wall_planning
         elif self.config.env_name ==  "franka":
+            self.config.franka_planning.backbone_arch = self.config.backbone_arch
+            self.config.franka_planning.vjepa2_repo = self.config.vjepa2_repo
             config = self.config.franka_planning
         else:
             raise NotImplementedError

@@ -106,6 +106,7 @@ class NormalizedDataLoader:
 
 def make_dataloader(ds, loader_config, normalizer=None, suffix="", train=True):
     config = ds.config
+    # print("[DBG][pldm/data/utils.py]loader_config.backbone_arch:", loader_config.backbone_arch)
 
     print(f"{len(ds)} samples in {suffix} dataset")
 
@@ -123,7 +124,7 @@ def make_dataloader(ds, loader_config, normalizer=None, suffix="", train=True):
         pin_memory=False,
     )
     loader.config = config
-    print("[DBG][pldm/data/utils.py] loader_config.normalize:", loader_config.normalize)
+    # print("[DBG][pldm/data/utils.py] loader_config.normalize:", loader_config.normalize)
     
     if loader_config.normalize:
         if normalizer is None: 
@@ -131,6 +132,7 @@ def make_dataloader(ds, loader_config, normalizer=None, suffix="", train=True):
                 loader,
                 n_samples=1 if loader_config.quick_debug else 100,
                 # min_max_normalize=loader_config.min_max_normalize,
+                backbone_arch=loader_config.backbone_arch,
                 normalize_mode=loader_config.normalize_mode,
                 normalize_actions_mode=getattr(
                     loader_config,

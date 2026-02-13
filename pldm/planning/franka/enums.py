@@ -50,3 +50,6 @@ class FrankaMPCConfig(MPCConfig):
         default_factory=DesignateStartGoalPosConfig
     )
     
+    backbone_arch: str = 'menet6'
+    vjepa2_repo: str = ''
+    

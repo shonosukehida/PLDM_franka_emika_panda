@@ -8,6 +8,8 @@ from dm_control import mujoco as dm_mj
 from pldm_envs.franka.ik_with_limits import qpos_from_site_pose
 from scipy.spatial.transform import Rotation as R
 from pldm_envs.utils.normalizer import Normalizer
+from transformers import AutoVideoProcessor
+
 
 class FrankaSimEnv:
     def __init__(
@@ -23,7 +25,7 @@ class FrankaSimEnv:
         task_cfg = None,
         task_name="push_to_goal",
         max_reset_tries=500,
-        min_start_goal_dist=0.12
+        min_start_goal_dist=0.12,
     ):
         self.model_path = model_path
         self.image_size = tuple(image_size)
@@ -85,6 +87,10 @@ class FrankaSimEnv:
             # 新タスクは基本箱ありにする、など
             self.use_box = True
 
+        self.vjepa2_processor = None
+        if getattr(self.task_cfg, "backbone_arch", None) == "vjepa2":
+            self.vjepa2_processor = AutoVideoProcessor.from_pretrained(self.task_cfg.vjepa2_repo)
+        
 
     def calc_inverse_kinematic(self, target_xyz, target_rotmat=None, rot_weight=1.0):
         target_quat = None
@@ -366,10 +372,25 @@ class FrankaSimEnv:
 
     # ========== 観測 ==========
     def get_obs(self):
-        # 画像レンダ（dm_controlは offscreen 対応済）
-        img = self.physics.render(height=self.image_size[0], width=self.image_size[1], camera_id=self.camera_id)
-        img = np.transpose(img, (2, 0, 1)).astype(np.float32)  # [C,H,W]
+        img = self.physics.render(
+            height=self.image_size[0],
+            width=self.image_size[1],
+            camera_id=self.camera_id
+        )  # (H,W,3) uint8
+
+        # (C,H,W) float32
+        img = np.transpose(img, (2, 0, 1)).astype(np.float32)
         img = torch.from_numpy(img).contiguous()
+
+        if self.task_cfg.backbone_arch == "vjepa2":
+            x = img.unsqueeze(0)  # (1,3,H,W)
+
+            pv = self.vjepa2_processor(x, return_tensors="pt")["pixel_values_videos"]
+            pv = pv.squeeze(0).squeeze(0)  # -> (3,256,256)
+
+            return pv
+
+        # vjepa2以外は従来通り normalizer
         if self.use_normalize:
             img = self.normalizer.normalize_state(img)
         return img
@@ -425,6 +446,13 @@ class FrankaSimEnv:
             )
             img = np.transpose(img, (2, 0, 1)).astype(np.float32)
             img = torch.from_numpy(img).contiguous()
+
+            if self.task_cfg.backbone_arch == "vjepa2":
+                x = img.unsqueeze(0)  # (1,3,H,W)
+                pv = self.vjepa2_processor(x, return_tensors="pt")["pixel_values_videos"]
+                pv = pv.squeeze(0).squeeze(0)  # (3,256,256)
+                return pv
+
             if self.use_normalize:
                 img = self.normalizer.normalize_state(img)
             return img

@@ -22,6 +22,7 @@ class FrankaEnvsGenerator:
     def __call__(self):
         envs = []
         for _ in range(self.n_envs):
+
             env = FrankaSimEnv(
                 model_path=self.model_path,
                 normalizer=self.normalizer,

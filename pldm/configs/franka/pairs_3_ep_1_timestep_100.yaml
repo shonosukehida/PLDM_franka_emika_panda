@@ -135,10 +135,10 @@ eval_cfg:
   probing:
     exe_probing: true
     l1_depth: *n_steps
-    train_images_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/images.npy #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy
-    train_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/data.p #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
-    val_images_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/images.npy #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy
-    val_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/data.p #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
+    train_images_path: pldm_envs/franka/presaved_datasets/val_pairs_4_ep_1_timestep_100_sample_direction/images.npy #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy
+    train_path: pldm_envs/franka/presaved_datasets/val_pairs_4_ep_1_timestep_100_sample_direction/data.p #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
+    val_images_path: pldm_envs/franka/presaved_datasets/val_pairs_4_ep_1_timestep_100_sample_direction/images.npy #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/images.npy
+    val_path: pldm_envs/franka/presaved_datasets/val_pairs_4_ep_1_timestep_100_sample_direction/data.p #pldm_envs/franka/presaved_datasets/val_pairs_5_ep_5_timestep_100/data.p
     probe_targets: 'locations,propio_vel,bluebox_locs'
     locations:
       arch: 'conv'
@@ -169,7 +169,7 @@ eval_cfg:
     max_samples_enc: null #2000000
     schedule: Cosine 
     visualize_probing: false #proberを用いたダイナミクスの可視化をするか否か
-    visualize_dynamics: true #proberを用いないダイナミクスの可視化をするか否か
+    visualize_dynamics: false #proberを用いないダイナミクスの可視化をするか否か
     vis_long_horizon_eval: false #全てのval_dataset を使ったpca評価をするか否か
     load_prober: false
     train_prober: false #load_prober:falseの場合にproberをtrainさせるか否かを指定

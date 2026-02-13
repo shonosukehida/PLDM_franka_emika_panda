@@ -66,3 +66,6 @@ class DataConfig(ConfigBase):
     max_propio_vel_val: float = 1.0
     min_bluebox_locs_val: float = 0.0
     max_bluebox_locs_val: float = 1.0
+    
+    backbone_arch: str = "zscore"
+    vjepa2_repo: str = ""

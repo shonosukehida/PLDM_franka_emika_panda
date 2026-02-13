@@ -62,6 +62,7 @@ class Normalizer:
         propio_vel_max: torch.Tensor,
         bluebox_locs_min: torch.Tensor,
         bluebox_locs_max: torch.Tensor,
+        backbone_arch: str = "menet6",
         normalize_mode: str = "minmax",
         normalize_actions_mode: str | None = None,  # ★ 追加
         min_states_val: float = 0.0,
@@ -81,6 +82,8 @@ class Normalizer:
         if normalize_actions_mode is None:
             normalize_actions_mode = normalize_mode  # ★ デフォルトで同じにする
         self.normalize_actions_mode = normalize_actions_mode.lower()
+        
+        self.backbone_arch = backbone_arch
         
         assert self.normalize_mode in ("minmax", "zscore"), "normalize_mode must be 'minmax' or 'zscore'"
         assert self.normalize_actions_mode in ("minmax", "zscore"), "normalize_actions_mode must be 'minmax' or 'zscore'"
@@ -147,6 +150,7 @@ class Normalizer:
         cls,
         dataset,
         n_samples: int = 100,
+        backbone_arch: str = "menet6",
         normalize_mode: str = "minmax",
         normalize_actions_mode: str | None = None,  # ★ 追加
         normalizer_hardset: bool = False,
@@ -175,118 +179,6 @@ class Normalizer:
             config = dataset.config
         else:
             config = None
-
-        
-        
-        # all_actions = []
-        # all_locations = []
-        # all_states = []
-        # all_propio_pos = []
-        # all_propio_vel = []
-        # all_bluebox_locs = []
-
-        # all_states_min = []
-        # all_states_max = []
-        # all_actions_min = []
-        # all_actions_max = []
-        # all_locations_min = []
-        # all_locations_max = []
-        # all_propio_pos_min = []
-        # all_propio_pos_max = []
-        # all_propio_vel_min = []
-        # all_propio_vel_max = []
-        
-        # all_bluebox_locs_min = []
-        # all_bluebox_locs_max = []
-
-        # config = (
-        #     dataset.dataset.config if hasattr(dataset, "dataset") else dataset.config
-        # )
-
-        # it = iter(dataset)
-        # for _i in tqdm(range(n_samples), desc="Estimating normalizer stats"):
-        #     try:
-        #         sample = next(it)
-        #     except StopIteration:
-        #         it = iter(dataset)
-        #         sample = next(it)
-
-        #     # --- STATES ---
-        #     if cls._has_attr(sample, "states"):
-        #         if len(sample.states.shape) == 5:
-        #             states = sample.states.float()
-
-        #             # flatten state to (B*T, C*H*W)
-        #             states_flat = states.flatten(start_dim=2)   # (B, T, C*H*W)
-        #             states_flat = states_flat.view(-1, states_flat.shape[-1])  # (B*T, C*H*W)
-
-        #             all_states.append(states_flat)  # (N, D)
-
-        #             if normalize_mode == "minmax":
-        #                 all_states_min.append(states_flat.min(dim=0).values)
-        #                 all_states_max.append(states_flat.max(dim=0).values)
-
-        #         else:
-        #             # proprio
-        #             states = sample.states
-        #             states_flat = states.view(-1, states.shape[-1])
-        #             all_states.append(states_flat)
-        #             if normalize_mode == "minmax":
-        #                 all_states_min.append(states_flat.min(dim=0).values)
-        #                 all_states_max.append(states_flat.max(dim=0).values)
-        #     else:
-        #         # dummy zeros
-        #         all_states.append(torch.zeros((1, 1)))
-
-        #     # --- ACTIONS ---
-        #     actions = sample.actions
-        #     if config.chunked_actions and not config.substitute_action == "direction":
-        #         bs, T, chunk_size, action_dim = actions.shape
-        #     else:
-        #         bs, T, action_dim = actions.shape
-        #     actions_flat = actions.view(-1, action_dim)
-        #     all_actions.append(actions_flat)
-
-        #     if normalize_actions_mode == "minmax":
-        #         all_actions_min.append(actions_flat.min(dim=0).values)
-        #         all_actions_max.append(actions_flat.max(dim=0).values)
-
-        #     # --- LOCATIONS ---
-        #     locations = sample.locations.view(-1, sample.locations.shape[-1])
-        #     all_locations.append(locations)
-        #     if normalize_mode == "minmax":
-        #         all_locations_min.append(locations.min(dim=0).values)
-        #         all_locations_max.append(locations.max(dim=0).values)
-
-        #     # --- PROPIO_POS ---
-        #     if cls._has_attr(sample, "propio_pos"):
-        #         propio_pos = sample.propio_pos.view(-1, sample.propio_pos.shape[-1])
-        #     else:
-        #         propio_pos = torch.zeros([1, 2])
-        #     all_propio_pos.append(propio_pos)
-        #     if normalize_mode == "minmax":
-        #         all_propio_pos_min.append(propio_pos.min(dim=0).values)
-        #         all_propio_pos_max.append(propio_pos.max(dim=0).values)
-
-        #     # --- PROPIO_VEL ---
-        #     if cls._has_attr(sample, "propio_vel"):
-        #         propio_vel = sample.propio_vel.view(-1, sample.propio_vel.shape[-1])
-        #     else:
-        #         propio_vel = torch.zeros([1, 2])
-        #     all_propio_vel.append(propio_vel)
-        #     if normalize_mode == "minmax":
-        #         all_propio_vel_min.append(propio_vel.min(dim=0).values)
-        #         all_propio_vel_max.append(propio_vel.max(dim=0).values)
-
-        #     # --- BLUEBOX_LOCS ---
-        #     if cls._has_attr(sample, "bluebox_locs"):
-        #         bluebox_locs = sample.bluebox_locs.view(-1, sample.bluebox_locs.shape[-1])
-        #     else:
-        #         bluebox_locs = torch.zeros([1, 3])
-        #     all_bluebox_locs.append(bluebox_locs)
-        #     if normalize_mode == "minmax":
-        #         all_bluebox_locs_min.append(bluebox_locs.min(dim=0).values)
-        #         all_bluebox_locs_max.append(bluebox_locs.max(dim=0).values)
 
 
         # ---- オンライン（逐次）集計に切り替え：CPU / no-grad ----
@@ -559,6 +451,7 @@ class Normalizer:
             total_propio_vel_max,
             total_bluebox_locs_min,
             total_bluebox_locs_max,
+            backbone_arch = backbone_arch,
             normalize_mode = normalize_mode,
             normalize_actions_mode=normalize_actions_mode,  # ★ ここで渡す
             min_states_val=min_states_val,
@@ -606,8 +499,13 @@ class Normalizer:
 
 
 
-    # --- 共通ヘルパ ---
     def _normalize(self, x, min_val, max_val, mean, std, min_range, max_range, mode: str | None = None):
+        # print("[DBG][pldm_envs/utils/normalizer.py] self.backbone_arch:", self.backbone_arch)
+        if self.backbone_arch == "vjepa2": 
+            # print("[DBG][pldm_envs/utils/normalizer.py] return original x if arch = vjepa2")
+            return x
+        
+        
         if mode is None:
             mode = self.normalize_mode  # ★ デフォルトは全体モード
 
@@ -625,6 +523,9 @@ class Normalizer:
             raise ValueError(f"Unknown normalize mode: {mode}")
 
     def _unnormalize(self, x_norm, min_val, max_val, mean, std, min_range, max_range, mode: str | None = None):
+        # print("[DBG][pldm_envs/utils/normalizer.py] return original x_norm if arch = vjepa2")
+        if self.backbone_arch == "vjepa2": 
+            return x_norm
         if mode is None:
             mode = self.normalize_mode
 
@@ -658,6 +559,11 @@ class Normalizer:
         Normalizes over the flattened last 3 dims (C,H,W).
         """
         assert isinstance(state, torch.Tensor), "normalize_state expects a torch.Tensor"
+        
+        print("[DBG][pldm_envs/utils/normalizer.py] state.shape:", state.shape) #[16, 2, 3, 64, 64]
+        print("[DBG][pldm_envs/utils/normalizer.py] state.min:", state.min()) #0
+        print("[DBG][pldm_envs/utils/normalizer.py] state.max:", state.max()) #255
+        
 
         # (H,W) --> (1,1,H,W)
         if state.ndim == 2:
@@ -711,15 +617,6 @@ class Normalizer:
 
         return out
 
-    # def unnormalize_state(self, state_norm):
-    #     orig_shape = state_norm.shape
-    #     state_flat = state_norm.flatten(start_dim=2).view(-1, state_norm.flatten(start_dim=2).shape[-1])
-    #     state_unnorm = self._unnormalize(
-    #         state_flat, self.state_min, self.state_max,
-    #         self.state_mean, self.state_std,
-    #         self.min_states_val, self.max_states_val
-    #     )
-    #     return state_unnorm.view(orig_shape)
 
 
     def unnormalize_state(self, state_norm: torch.Tensor):

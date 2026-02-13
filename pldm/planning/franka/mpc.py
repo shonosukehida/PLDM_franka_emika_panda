@@ -42,6 +42,8 @@ class FrankaMPCEvaluator(MPCEvaluator):
         )
 
         print("[DBG][pldm/planning/franka/mpc.py]: task_name:", self.config.task.name)
+        self.config.task.backbone_arch = config.backbone_arch
+        self.config.task.vjepa2_repo = config.vjepa2_repo
         envs_generator = FrankaEnvsGenerator(
             model_path=config.model_path,  
             n_envs=config.n_envs,
