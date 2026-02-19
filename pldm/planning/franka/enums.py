@@ -53,3 +53,5 @@ class FrankaMPCConfig(MPCConfig):
     backbone_arch: str = 'menet6'
     vjepa2_repo: str = ''
     
+    camera_name: str = 'top_view'
+    

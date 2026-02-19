@@ -1,6 +1,7 @@
 import enum
 from dataclasses import dataclass, field
 from pldm.configs import ConfigBase
+from typing import Optional, Callable, List
 
 
 class PlannerType(enum.Enum):
@@ -48,6 +49,14 @@ class CEMConfig(ConfigBase):
     clamp_actions: bool = False
     action_low: float = -1.0
     action_high: float = 1.0
+    
+    momentum_mean: float = 0.0
+    momentum_std: float = 0.0
+    max_norms: Optional[List[float]] = None
+    max_norm_dims: Optional[List[List[int]]] = None
+    
+    obs_coeff: float = 1.0 
+    propio_coeff: float = 0.0
 
 
 @dataclass

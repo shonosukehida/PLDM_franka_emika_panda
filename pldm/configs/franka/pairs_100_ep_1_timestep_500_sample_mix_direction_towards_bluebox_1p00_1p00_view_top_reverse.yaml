@@ -46,7 +46,7 @@ eval_at_beginning: false
 eval_during_training: false
 eval_every_n_epochs: 2
 eval_mpcs: 20
-eval_only: false
+eval_only: true
 hjepa:
   l1_n_steps: *n_steps
   train_l1: true
@@ -85,7 +85,7 @@ hjepa:
     action_dim: 7
     momentum: 0.99
   step_skip: 4
-load_checkpoint_path: null #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20260213_181851/epoch=5_sample_step=248960.ckpt #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
 load_l1_only: false
 
 alpha: 0.0 #0.0 #current_state = (1 - alpha) * next_state + alpha * teacher_state
@@ -161,7 +161,7 @@ eval_cfg:
     vis_dynamics_open_featuremap: false
     vis_encoder_featuremap: false
     
-    vis_sample_length: 3 #ダイナミクス可視化時のタイムステップ
+    vis_sample_length: 50 #ダイナミクス可視化時のタイムステップ
     epochs: 5 #5
     epochs_enc: 5 #5
     epochs_latent: 5 #5
@@ -171,20 +171,21 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: false #proberを用いたダイナミクスの可視化をするか否か
-    visualize_dynamics: true #proberを用いないダイナミクスの可視化をするか否か 
-    vis_long_horizon_eval: true #全てのval_dataset を使ったpca評価をするか否か
+    visualize_dynamics: false #proberを用いないダイナミクスの可視化をするか否か 
+    vis_long_horizon_eval: false #全てのval_dataset を使ったpca評価をするか否か
+    vis_long_horizon_train: false #全てのtrain_dataset を使ったpca評価をするか否か
     load_prober: false
     train_prober: false #load_prober:falseの場合にproberをtrainさせるか否かを指定
   disable_planning: false
   franka_planning:
-    n_envs: 4 #85
+    # n_envs: 1 #85
     n_envs_batch_size: 1 #16
     n_steps: 500 #192
     levels: "easy"
     easy:
       n_steps: 200
       pred_steps: 2 #その時刻の予測タイムステップ数 (学習時のタイムステップに合わせる)
-      n_envs: 3 #80
+      n_envs: 1 #80
       max_plan_length: 50 #タスク時に使われる
       plot_every: 10
       min_block_radius: 4
@@ -206,6 +207,7 @@ eval_cfg:
     fps: 10 #FPS指定
     max_inner_steps: 500 #MPPI出力目標行動姿勢に近づけるまでに回す最大step数
     reach_eps: 1e-2 #MPPI出力目標姿勢と現在の姿勢の距離
+    camera_name: 'top_reverse'
     task:
       name: push_to_goal   # push_to_goal / reach_no_touch
 
@@ -220,7 +222,7 @@ eval_cfg:
 
 
     level1:
-      planner_type: PlannerType.MPPI
+      planner_type: PlannerType.CEM
       min_step: 0
       max_step: 1
       max_plan_length: 50 #128 #一度に予測するホライズン
@@ -238,15 +240,24 @@ eval_cfg:
         w_du: 1.0 #1.0 #MPPIの予測列の時間的変化をなめらかにする
         lpf_alpha: 1.0 #1.0 #ローパスフィルタ係数 #1.0: フィルタなし, 0.0: 前の行動を完全に引き継ぐ
       cem:
-        num_samples: 500 #500 #1度にサンプリングする行動列の本数
-        num_elites: 50 #50 #サンプルの中から成績上位として残す本数
-        init_std: 0.1 #1.0 #初期の行動分布の標準偏差
-        n_iters: 5 #5 #CEMの反復回数
-        alpha: 0.1 #0.1 #分布更新の慣性
+        num_samples: 300 #300 #1度にサンプリングする行動列の本数
+        num_elites: 10 #10 #サンプルの中から成績上位として残す本数
+        init_std: 5.0 #1.0 #初期の行動分布の標準偏差
+        n_iters: 15 #15 #CEMの反復回数
+        # alpha: 0.1 #0.1 #分布更新の慣性
         clamp_actions: false 
         action_low: -1.0
         action_high: 1.0
         max_batch_size: 64
+        momentum_mean: 0.0 #0.0#分布更新の慣性
+        momentum_std: 0.0 #0.0#分布更新の慣性
+        max_norms: null #[0.05, 0.01, 1.0] #null
+        max_norm_dims: null
+          # - [0, 1, 2]
+          # - [3, 4, 5]
+          # - [6]
+        obs_coeff: 0.5
+        propio_coeff: 0.5
     val_from_train_ds: false #学習データセットで評価
     designate_start_goal_pos:  #タスク時にstart,goal_posを指定するか否か
       valid: true
@@ -297,5 +308,5 @@ run_name: pldm_franka
 run_project: Franka
 save_every_n_epochs: 1
 seed: 246
-wandb: true
+wandb: false
 confirm_normalize: true

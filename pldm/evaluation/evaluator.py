@@ -165,6 +165,7 @@ class Evaluator:
         level: str,
         level_config: LevelConfig,
     ):
+        print("[DBG][pldm/evaluation/evaluator.py] level_config:", level_config)
 
         if level_config.override_config:
             max_plan_length = level_config.max_plan_length

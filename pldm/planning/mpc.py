@@ -55,6 +55,7 @@ class MPCEvaluator(ABC):
             n_envs_batch_size = config.n_envs_batch_size
         else:
             n_envs_batch_size = config.n_envs
+        print("[DBG][pldm/planning/mpc.py] n_envs_batch_size:", n_envs_batch_size)
 
         chunk_sizes = [n_envs_batch_size] * (config.n_envs // n_envs_batch_size) + (
             [config.n_envs % n_envs_batch_size]
@@ -66,6 +67,7 @@ class MPCEvaluator(ABC):
 
     def _construct_planner(self, n_envs: int):
         config = self.config
+        print("[DBG][pldm/planning/mpc.py] config:", config)
 
         objective = objectives_v2.ReprTargetMPCObjective(
             model=self.model,
@@ -204,9 +206,6 @@ class MPCEvaluator(ABC):
         """
         
         
-        print("[DBG][pldm/planning/mpc.py] self.config.reach_eps:", self.config.reach_eps)
-        print("[DBG][pldm/planning/mpc.py] self.config.max_inner_steps:", self.config.max_inner_steps)
-        
         envs = [HoldUntilReachWrapper(e, reach_eps=self.config.reach_eps, max_inner_steps=self.config.max_inner_steps) for e in envs]
         # for env in envs: print(type(env))
         
@@ -230,8 +229,7 @@ class MPCEvaluator(ABC):
         dsg = self.config.designate_start_goal_pos
         if isinstance(dsg, dict): 
             dsg = DesignateStartGoalPosConfig(**dsg)
-        print("[DBG][pldm/planning/mpc.py] self.config.val_from_train_ds:", self.config.val_from_train_ds)
-        print("[DBG][pldm/planning/mpc.py] self.config.designate_start_goal_pos.valid:", dsg.valid)
+
         if dsg and dsg.valid:
             box_start_pos = dsg.start_pos 
             if box_start_pos is not None: 
@@ -239,8 +237,6 @@ class MPCEvaluator(ABC):
             box_goal_pos = dsg.goal_pos 
             if box_goal_pos is not None:
                 box_goal_pos = np.array(box_goal_pos)
-            print("[DBG][pldm/planning/mpc.py] box_start_pos:", box_start_pos)
-            print("[DBG][pldm/planning/mpc.py] box_goal_pos:", box_goal_pos)
             
             if (box_start_pos is not None) and (box_goal_pos is not None):
                 for e in envs: 
@@ -512,6 +508,11 @@ class MPCEvaluator(ABC):
                 .detach()
                 .cpu()
             )
+            
+            
+            print("[DBG][pldm/planning/plotting.py]", planned_actions.shape)
+            dbg_ac = planned_actions.reshape(-1, 7)
+            print("[DBG][pldm/planning/plotting.py]", "min:", dbg_ac.min(dim=0).values, "max:", dbg_ac.max(dim=0).values, "mean:", dbg_ac.mean(dim=0).values)
 
             if self.config.random_actions: #x
                 results = [
@@ -525,17 +526,7 @@ class MPCEvaluator(ABC):
                     )
                     for j in range(len(envs))
                 ]
-                
-            #接触・拘束確認
-            # inner_env = envs[0]
-            # while hasattr(inner_env, "env"):
-            #     inner_env = inner_env.env
-            # d = inner_env.physics.data
-            # print("ncon", int(d.ncon))
-            # print("qfrc_bias", d.qfrc_bias[:7])
-            # print("qfrc_actuator", d.qfrc_actuator[:7])
-            # print("qfrc_constraint", d.qfrc_constraint[:7])  # ★拘束反力
-            # print("qfrc_passive", d.qfrc_passive[:7])        # ★摩擦/重力補助など
+
             
             d = envs[0].physics.data
             m = envs[0].physics.model
@@ -549,6 +540,8 @@ class MPCEvaluator(ABC):
 
             
             assert len(results[0]) == 5
+            print("[DBG][pldm/planning/mpc.py] results.type:", type(results))
+            print("[DBG][pldm/planning/mpc.py] results:", results)
             current_obs = torch.from_numpy(np.stack([r[0] for r in results])).float()
             rewards_t = torch.from_numpy(np.stack([r[1] for r in results])).float()
             infos = [r[4] for r in results]
@@ -570,6 +563,8 @@ class MPCEvaluator(ABC):
 
             if i == 0:
                 print("info keys:", infos[0].keys())
+                print("location:", infos[0]["location"], "shape:", np.array(infos[0]["location"]).shape)
+                
 
             action_history.append(planned_actions.detach().cpu()) #[task_timestep, env_idx, plan_timestep, num_joint]
             observation_history.append(current_obs)

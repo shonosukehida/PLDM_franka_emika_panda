@@ -220,8 +220,6 @@ class DatasetFactory:
         self.config.franka_config.backbone_arch = self.config.backbone_arch
         if self.config.franka_config.backbone_arch == "vjepa2":
             self.config.franka_config.vjepa2_repo = self.config.vjepa2_repo
-        print("[DBG][pldm/data/dataset_factory.py] self.config.franka_config.backbone_arch:", self.config.franka_config.backbone_arch)
-        print("[DBG][pldm/data/dataset_factory.py] self.config.franka_config.vjepa2_repo:", self.config.franka_config.vjepa2_repo)
         
         ds = FrankaDataset(self.config.franka_config)
         ds = make_dataloader(

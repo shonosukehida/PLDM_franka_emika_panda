@@ -14,7 +14,6 @@ from pldm.planning.plotting import log_planning_obs_plots_split, log_planning_tr
 from pldm.planning.d4rl.enums import MPCReport  
 
 from pldm.data.enums import ProbingDatasets, DatasetType, Datasets
-from pldm_envs.franka.envs import FrankaSimEnv
 from pldm_envs.franka.evaluation.envs_generator import FrankaEnvsGenerator
 
 
@@ -51,6 +50,7 @@ class FrankaMPCEvaluator(MPCEvaluator):
             max_dq=self.config.max_dq,
             task_name=self.config.task.name,
             task_cfg=self.config.task,
+            camera_name=self.config.camera_name
         )
         self.envs = envs_generator()
         for e in self.envs:

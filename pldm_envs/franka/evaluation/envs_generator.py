@@ -10,6 +10,7 @@ class FrankaEnvsGenerator:
         max_dq: float = 0.01,
         task_name: str = "push_to_goal",
         task_cfg = None,
+        camera_name="top_view",
                  ):
         self.model_path = model_path
         self.n_envs = n_envs
@@ -18,6 +19,9 @@ class FrankaEnvsGenerator:
         
         self.task_name = task_name
         self.task_cfg = task_cfg
+        
+        self.camera_name = camera_name
+        print("[DBG][pldm_envs/franka/evaluation/envs_generator.py] self.camera_name:", self.camera_name)
 
     def __call__(self):
         envs = []
@@ -29,6 +33,7 @@ class FrankaEnvsGenerator:
                 max_dq = self.max_dq,
                 task_name = self.task_name,
                 task_cfg = self.task_cfg,
+                camera_name = self.camera_name,
                 )
             obs = env.reset()  # ← reset内でstart / goalをランダム決定＆保持
             envs.append(env)

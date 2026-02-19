@@ -107,6 +107,7 @@ class ProbingConfig(ConfigBase):
     visualize_probing: bool = True
     visualize_dynamics: bool = True
     vis_long_horizon_eval: bool = False
+    vis_long_horizon_train: bool = False
     load_prober: bool = False
     train_prober: bool = True
     arch_subclass: str = "a"
@@ -962,7 +963,7 @@ class ProbingEvaluator:
                     self.plot_pca_long_horizon(
                         loader=vis_loader_per_epi,
                         jepa=model,
-                        name_prefix=f"{plot_prefix}_val",
+                        name_prefix=f"{plot_prefix}_val_full",
                         pool="flat",
                         k=3,
                         take_per_batch=999999,  # ★ batch内(B=8)を全部拾う
@@ -970,8 +971,35 @@ class ProbingEvaluator:
                         max_batches=None,       # ★ 全batch回す → 全episode拾う
                     )
                     #######
-                
-                
+                print("[DBG][pldm/probing/evaluator.py] self.config.vis_long_horizon_train:", self.config.vis_long_horizon_train)
+                if self.config.vis_long_horizon_train:
+                    
+                    vis_root_train_ds_per_epi = FrankaEpisodeDataset(
+                        vis_train_cfg,
+                        pick_mode="first",   # "middle"/"random"/"last" もOK
+                    )
+                    
+                    vis_train_loader_raw_per_epi = DataLoader(
+                        vis_root_train_ds_per_epi,
+                        batch_size=5,        # ← ここはお好み
+                        shuffle=False,       # episode順固定が良いならFalse
+                        num_workers=0,
+                        drop_last=False,
+                    )
+                    
+                    vis_train_loader_raw_per_epi.config = base_train_cfg
+                    vis_train_loader_per_epi = NormalizedDataLoader(vis_train_loader_raw_per_epi, train_ds.normalizer)
+                    self.plot_pca_long_horizon(
+                        loader=vis_train_loader_per_epi,
+                        jepa=model,
+                        name_prefix=f"{plot_prefix}_train_full",
+                        pool="flat",
+                        k=3,
+                        take_per_batch=999999,  # ★ batch内(B=8)を全部拾う
+                        pick_mode="first",      # ここは関係薄い（take_per_batch>=Bなら使われない）
+                        max_batches=None,       # ★ 全batch回す → 全episode拾う
+                        max_num_plot = 25,
+                    ) 
                 
                 
                 #dont use prober
@@ -4944,6 +4972,7 @@ class ProbingEvaluator:
         pick_mode: str = "first",       # "first" or "random"
         max_batches: int = None,        # ★ Noneなら全部
         align_closed: bool = True,
+        max_num_plot: int = 10000000000, #プロットするエピソードの上限
     ):
         """
         loader から複数 batch を順に取り、
@@ -5000,8 +5029,11 @@ class ProbingEvaluator:
 
         itr = iter(loader)
         n_batch = 0
+        n_traj = 0
 
         while True:
+            if n_traj >= max_num_plot:
+                break
             if max_batches is not None and n_batch >= max_batches:
                 break
             try:
@@ -5046,12 +5078,16 @@ class ProbingEvaluator:
             # ---- 連結（時間方向に append）----
             #   例: take_per_batch=1 なら 1本ずつ連結される
             for bi in pick_idxs:
+                if n_traj >= max_num_plot:
+                    break
                 enc_i = enc_bt[bi].detach().float().cpu()     # [T,De]
                 clo_i = closed_bt[bi].detach().float().cpu()  # [T,Dc]
                 enc_chunks.append(enc_i)
                 clo_chunks.append(clo_i)
                 total_T += T
                 seg_ends.append(total_T)  # ここが境界（次が別traj）
+                
+                n_traj += 1
 
             # ---- 掃除 ----
             del res, pred_output, enc_output, closed_lat_seq, encoder_lat_seq
@@ -5128,7 +5164,7 @@ class ProbingEvaluator:
             ax2d.legend(handles=handles, loc="best", frameon=True)
 
             if not notebook:
-                Logger.run().log_figure(fig2d, f"{name_prefix}-pca-2d-pseudo-long", dir_name="pca_pseudolong/2d")
+                Logger.run().log_figure(fig2d, f"{name_prefix}-pca-2d-pseudo-long", dir_name=f"pca_pseudolong/{name_prefix}/2d")
                 plt.close(fig2d)
             else:
                 plt.show()
@@ -5157,7 +5193,7 @@ class ProbingEvaluator:
             ax3d.legend(handles=handles, loc="upper left", frameon=True)
 
             if not notebook:
-                Logger.run().log_figure(fig3d, f"{name_prefix}-pca-3d-pseudo-long", dir_name="pca_pseudolong/3d")
+                Logger.run().log_figure(fig3d, f"{name_prefix}-pca-3d-pseudo-long", dir_name=f"pca_pseudolong/{name_prefix}/3d")
                 plt.close(fig3d)
             else:
                 plt.show()

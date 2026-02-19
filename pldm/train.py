@@ -203,8 +203,8 @@ class Trainer:
         print('FINISHED CREATING DATASET!!')
 
         self.datasets = datasets
-        
-        print('SELF.CONFIG.CONFIRM_NORMALIZE:', self.config.confirm_normalize)
+
+
         if self.config.confirm_normalize:
             self.test_normalizer(check_only_first_batch=True)
 

@@ -499,15 +499,15 @@ class Normalizer:
 
 
 
-    def _normalize(self, x, min_val, max_val, mean, std, min_range, max_range, mode: str | None = None):
+    def _normalize(self, x, min_val, max_val, mean, std, min_range, max_range, mode: str | None = None, val_type: str = ""):
         # print("[DBG][pldm_envs/utils/normalizer.py] self.backbone_arch:", self.backbone_arch)
-        if self.backbone_arch == "vjepa2": 
+        if self.backbone_arch == "vjepa2" and val_type == "state": 
             # print("[DBG][pldm_envs/utils/normalizer.py] return original x if arch = vjepa2")
             return x
         
         
         if mode is None:
-            mode = self.normalize_mode  # ★ デフォルトは全体モード
+            mode = self.normalize_mode  # デフォルトは全体モード
 
         if mode == "minmax":
             denom = (max_val - min_val).to(x.device)
@@ -522,9 +522,9 @@ class Normalizer:
         else:
             raise ValueError(f"Unknown normalize mode: {mode}")
 
-    def _unnormalize(self, x_norm, min_val, max_val, mean, std, min_range, max_range, mode: str | None = None):
+    def _unnormalize(self, x_norm, min_val, max_val, mean, std, min_range, max_range, mode: str | None = None, val_type: str = ""):
         # print("[DBG][pldm_envs/utils/normalizer.py] return original x_norm if arch = vjepa2")
-        if self.backbone_arch == "vjepa2": 
+        if self.backbone_arch == "vjepa2" and val_type == "state": 
             return x_norm
         if mode is None:
             mode = self.normalize_mode
@@ -559,10 +559,6 @@ class Normalizer:
         Normalizes over the flattened last 3 dims (C,H,W).
         """
         assert isinstance(state, torch.Tensor), "normalize_state expects a torch.Tensor"
-        
-        print("[DBG][pldm_envs/utils/normalizer.py] state.shape:", state.shape) #[16, 2, 3, 64, 64]
-        print("[DBG][pldm_envs/utils/normalizer.py] state.min:", state.min()) #0
-        print("[DBG][pldm_envs/utils/normalizer.py] state.max:", state.max()) #255
         
 
         # (H,W) --> (1,1,H,W)
@@ -600,7 +596,7 @@ class Normalizer:
         # normalize
         x_norm = self._normalize(
             x_flat, state_min, state_max, state_mean, state_std,
-            self.min_states_val, self.max_states_val
+            self.min_states_val, self.max_states_val, val_type = "state",
         ).reshape_as(x)   # ← view_as ではなく reshape_as
 
         # --- restore ---
@@ -654,7 +650,7 @@ class Normalizer:
 
         x_unnorm = self._unnormalize(
             x_flat, state_min, state_max, state_mean, state_std,
-            self.min_states_val, self.max_states_val
+            self.min_states_val, self.max_states_val, val_type = "state",
         ).reshape_as(x)   # ← reshape_as
 
         if state_norm.ndim == 5:
@@ -678,6 +674,7 @@ class Normalizer:
             self.action_mean, self.action_std,
             self.min_actions_val, self.max_actions_val,
             mode=self.normalize_actions_mode,   # ★ ここだけ別モード！
+            val_type = "action",
         )
 
     def unnormalize_action(self, action_norm):
@@ -687,47 +684,48 @@ class Normalizer:
             self.action_mean, self.action_std,
             self.min_actions_val, self.max_actions_val,
             mode=self.normalize_actions_mode,
+            val_type = "action",
         )
 
     def normalize_location(self, location):
         return self._normalize(location, self.location_min, self.location_max,
                                self.location_mean, self.location_std,
-                               self.min_locations_val, self.max_locations_val)
+                               self.min_locations_val, self.max_locations_val, val_type = "location",)
 
     def unnormalize_location(self, location_norm):
         return self._unnormalize(location_norm, self.location_min, self.location_max,
                                  self.location_mean, self.location_std,
-                                 self.min_locations_val, self.max_locations_val)
+                                 self.min_locations_val, self.max_locations_val, val_type = "location",)
 
     def normalize_propio_pos(self, propio_pos):
         return self._normalize(propio_pos, self.propio_pos_min, self.propio_pos_max,
                                self.propio_pos_mean, self.propio_pos_std,
-                               self.min_propio_pos_val, self.max_propio_pos_val)
+                               self.min_propio_pos_val, self.max_propio_pos_val, val_type = "propio_pos",)
 
     def unnormalize_propio_pos(self, propio_pos_norm):
         return self._unnormalize(propio_pos_norm, self.propio_pos_min, self.propio_pos_max,
                                  self.propio_pos_mean, self.propio_pos_std,
-                                 self.min_propio_pos_val, self.max_propio_pos_val)
+                                 self.min_propio_pos_val, self.max_propio_pos_val, val_type = "propio_pos",)
 
     def normalize_propio_vel(self, propio_vel):
         return self._normalize(propio_vel, self.propio_vel_min, self.propio_vel_max,
                                self.propio_vel_mean, self.propio_vel_std,
-                               self.min_propio_vel_val, self.max_propio_vel_val)
+                               self.min_propio_vel_val, self.max_propio_vel_val, val_type = "propio_vel",)
 
     def unnormalize_propio_vel(self, propio_vel_norm):
         return self._unnormalize(propio_vel_norm, self.propio_vel_min, self.propio_vel_max,
                                  self.propio_vel_mean, self.propio_vel_std,
-                                 self.min_propio_vel_val, self.max_propio_vel_val)
+                                 self.min_propio_vel_val, self.max_propio_vel_val, val_type = "propio_vel",)
 
     def normalize_bluebox_locs(self, bluebox_locs):
         return self._normalize(bluebox_locs, self.bluebox_locs_min, self.bluebox_locs_max,
                                self.bluebox_locs_mean, self.bluebox_locs_std,
-                               self.min_bluebox_locs_val, self.max_bluebox_locs_val)
+                               self.min_bluebox_locs_val, self.max_bluebox_locs_val, val_type = "bluebox_locs",)
 
     def unnormalize_bluebox_locs(self, bluebox_locs_norm):
         return self._unnormalize(bluebox_locs_norm, self.bluebox_locs_min, self.bluebox_locs_max,
                                  self.bluebox_locs_mean, self.bluebox_locs_std,
-                                 self.min_bluebox_locs_val, self.max_bluebox_locs_val)
+                                 self.min_bluebox_locs_val, self.max_bluebox_locs_val, val_type = "bluebox_locs",)
 
 
 

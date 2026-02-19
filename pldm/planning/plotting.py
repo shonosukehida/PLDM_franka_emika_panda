@@ -278,6 +278,7 @@ def log_planning_plots_split(
             
             #運動学によるMPPI予測軌跡
             act_seq = result.action_history[t][idx].detach().cpu().numpy()   # (H_t, 7)
+            
             a0 = act_seq[0]  
             # print("act.shape: ", act.shape)
             env.set_joint(a0)
