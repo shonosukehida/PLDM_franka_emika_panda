@@ -82,7 +82,7 @@ class FrankaSimEnv:
         # 3) セット直後の確認
         self.physics.forward()
         p_set = self.physics.data.geom_xpos[blue].copy()
-        print("[DBG] box after set:", p_set, "delta_from_target:", p_set - box_pos)
+        # print("[DBG] box after set:", p_set, "delta_from_target:", p_set - box_pos)
 
         # # 4) 1 step後に動くか
         # self.physics.step()

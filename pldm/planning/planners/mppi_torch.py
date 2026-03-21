@@ -53,6 +53,7 @@ class MPPI:
         noise_abs_cost=False,
         w_du=1.0,
         lpf_alpha=1.0,
+        terminal_only = False,
     ):
         """
         :param dynamics: function(state, action) -> next_state (K x nx) taking in batch state (K x nx) and action (K x nu)
@@ -208,12 +209,13 @@ class MPPI:
         
         self.u_prev_exec = None
         self.lpf_alpha = lpf_alpha  # 1.0:フィルタ無し, 0.0:完全に前の行動に従う
+        self.terminal_only = terminal_only #dyanmics model の最後の状態のみコスト関数に入力する
 
         
 
     @handle_batch_input(n=2)
-    def _dynamics(self, state, u, t):
-        return self.F(state, u, t) if self.step_dependency else self.F(state, u)
+    def _dynamics(self, state, u, t, only_return_last = True,):
+        return self.F(state, u, t, only_return_last = only_return_last) if self.step_dependency else self.F(state, u, only_return_last = only_return_last)
 
     @handle_batch_input(n=2)
     def _running_cost(self, state_obs, cur_ac, cur_t, state_propio=None):
@@ -258,7 +260,7 @@ class MPPI:
             state = torch.tensor(state)
         self.state = state.to(dtype=self.dtype, device=self.d)
         
-        print("[pldm/planning/planners/mppi_torch.py, 242] self.state.shape:", self.state.shape)
+
         with torch.inference_mode():
             cost_total = self._compute_total_cost_batch()
             torch.cuda.empty_cache()
@@ -274,8 +276,7 @@ class MPPI:
             perturbations = torch.stack(perturbations)
             self.U = self.U + perturbations
             
-            print("[DBG][pldm/planning/planners/mppi_torch.py]self.u_per_command:", self.u_per_command)
-            print("[DBG][pldm/planning/planners/mppi_torch.py]self.lpf_alpha:", self.lpf_alpha)
+            
             if self.u_per_command == -1:
                 if self.lpf_alpha < 1.0:
                     u_cmd = self.U[0]
@@ -333,7 +334,8 @@ class MPPI:
         
         self.u_prev_exec = None #ローパスフィルタ計算用前時刻の行動
 
-    def _compute_rollout_costs(self, perturbed_actions):
+    def _compute_rollout_costs(self, perturbed_actions, terminal_only = False):
+        # print("[pldm/planning/planners/mppi_torch.py] perturbed_actions.shape:", perturbed_actions.shape) #[500, 3, 7] = [K, T, A]
         torch.cuda.reset_peak_memory_stats()
 
         K, T, nu = perturbed_actions.shape
@@ -354,13 +356,17 @@ class MPPI:
 
         # states = []
         actions = []
+        print("[pldm/planning/planners/mppi_torch.py] terminal_only:", terminal_only)
         for t in range(T):
             u = self.u_scale * perturbed_actions[:, t].repeat(self.M, 1, 1)
             state, state_obs, state_propio = self._dynamics(state, u, t)
-            c = self._running_cost(state_obs=state_obs, cur_ac=u, cur_t=t, state_propio=state_propio)
-            cost_samples = cost_samples + c
-            if self.M > 1:
-                cost_var += c.var(dim=0) * (self.rollout_var_discount**t)
+            # print("[pldm/planning/planners/mppi_torch.py] state.shape:", state.shape)
+            
+            if (not terminal_only) or (terminal_only and t == T - 1):
+                c = self._running_cost(state_obs=state_obs, cur_ac=u, cur_t=t, state_propio=state_propio)
+                cost_samples = cost_samples + c
+                if self.M > 1:
+                    cost_var += c.var(dim=0) * (self.rollout_var_discount**t)
 
             # Save total states/actions
             # states.append(state)
@@ -392,29 +398,6 @@ class MPPI:
     def _compute_total_cost_batch(self):
         # parallelize sampling across trajectories
         # resample noise each time we take an action
-        
-        ##########################################################
-        loc   = self.noise_dist.loc
-        L     = self.noise_dist._unbroadcasted_scale_tril  # ※ scale_tril を使っている前提
-        A     = loc.shape[-1]
-
-        print("[CHK] loc   :", tuple(loc.shape),  loc.dtype,  loc.device, "finite=", bool(torch.isfinite(loc).all()))
-        print("[CHK] L     :", tuple(L.shape),    L.dtype,    L.device,   "finite=", bool(torch.isfinite(L).all()))
-        diag = torch.diagonal(L, 0, -2, -1)   # これを一度計算して…
-        print("[CHK] diag>0:", (diag > 0).all().item(),
-            "min=", diag.min().item(),
-            "max=", diag.max().item())
-
-        print("[CHK] K,T,A :", self.K, self.T, A)
-
-        # まず極小バッチで単発テスト（ここで落ちたら分布が壊れてます）
-        # test = self.noise_dist.rsample((1,1))
-        # print("[CHK] single rsample OK:", test.shape)
-        ##########################################################
-        
-        
-        
-        
         
         
         # noise = self.noise_dist.rsample((self.K, self.T))
@@ -459,7 +442,8 @@ class MPPI:
             )  # Like original paper
 
         rollout_cost, self.states, actions = self._compute_rollout_costs(
-            self.perturbed_action
+            self.perturbed_action,
+            terminal_only = self.terminal_only,
         )
         self.actions = actions / self.u_scale
 

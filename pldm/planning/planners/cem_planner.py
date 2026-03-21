@@ -30,8 +30,8 @@ class _CEMController:
         device: torch.device = torch.device("cuda"),
         eps_std: float = 1e-6,
         clamp_actions: bool = False,
-        action_low: float = -1.0,
-        action_high: float = 1.0,
+        action_low: float = -10.0,
+        action_high: float = 10.0,
         action_normalizer: Optional[Callable] = None,
         max_batch_size: int = 500,
         momentum_mean: float = 0.0,
@@ -85,7 +85,7 @@ class _CEMController:
     def shift_nominal_trajectory(self):
         """
         MPCで replan しながら使う場合、1 step 実行した後に
-        mu/std を 1つ前に詰めて最後を初期化すると安定しやすいです✨
+        mu/std を 1つ前に詰めて最後を初期化すると安定しやすい
         （MPPI の shift_nominal_trajectory 相当）
         """
         if self.mu is None or self.std is None:
@@ -100,7 +100,7 @@ class _CEMController:
         self._init_dist(H)
 
     @torch.no_grad()
-    def command(self, state: torch.Tensor, horizon: int, shift_nominal_trajectory: bool = False):
+    def command(self, state: torch.Tensor, horizon: int, shift_nominal_trajectory: bool = False, prev_action: torch.Tensor = None):
         """
         inputs:
             state: (C,H,W)
@@ -116,7 +116,7 @@ class _CEMController:
             self.shift_nominal_trajectory()
 
         self.change_horizon(horizon)
-        mu = self.mu
+        mu = self.mu # (H, A)
         std = self.std
 
         for it in range(self.n_iters):
@@ -133,8 +133,9 @@ class _CEMController:
             if self.clamp_actions:
                 U = torch.clamp(U, self.action_low, self.action_high)
 
-            # action_normalizer (例えば diverse_maze の min_step/max_step 正規化など)
-            if self.action_normalizer is not None:
+
+            # action_normalizer 
+            if self.action_normalizer is not None: #None
                 # normalizer は (K, A) を想定してることが多いので時間方向ループ
                 for t in range(U.shape[1]):
                     U[:, t] = self.action_normalizer(U[:, t])
@@ -152,7 +153,7 @@ class _CEMController:
                 state_chunk = state[s:e]
 
                 # (H, Kc, A)
-                action_chunk = U[s:e].permute(1, 0, 2)
+                action_chunk = U[s:e].permute(1, 0, 2) #[3, 64, 7]
 
                 pred_encs_c, pred_obs_c, pred_propio_c = self.F(
                     state=state_chunk,
@@ -160,6 +161,10 @@ class _CEMController:
                     only_return_last=False,
                     flatten_output=False,
                 )
+                # print("[DBG][pldm/planning/planners/cem_planner.py] pred_encs_c.shape:", pred_encs_c.shape) #[51, 44, 30, 26, 26]
+                # print("[DBG][pldm/planning/planners/cem_planner.py] pred_obs_c.shape:", pred_obs_c.shape) #[51, 44, 16, 26, 26]
+                # print("[DBG][pldm/planning/planners/cem_planner.py] pred_propio_c.shape:", pred_propio_c.shape) #[51, 44, 14, 26, 26]
+        
 
                 # pred_obs_c: (H+1, Kc, Cobs, 26, 26)
                 # pred_propio_c: (H+1, Kc, Cprop, 26, 26)
@@ -170,7 +175,8 @@ class _CEMController:
                     c = self.cost_fn(
                         state_obs=pred_obs_c[t],
                         state_propio=pred_propio_c[t],
-                        action=None,
+                        action=action_chunk,
+                        prev_action=prev_action, 
                     )
                     # c: (Kc,)
                     while c.dim() > 1:
@@ -190,9 +196,10 @@ class _CEMController:
 
             mu  = new_mu  * (1 - self.momentum_mean) + mu  * self.momentum_mean
             std = new_std * (1 - self.momentum_std)  + std * self.momentum_std
-            
+
             print(
                 f"[CEM][pldm/planning/planners/cem_planner.py] iter={it} | "
+                f"mu min/max:{mu.min().item():.4f}/{mu.max().item():.4f}"
                 f"std mean={std.mean().item():.4f} "
                 f"min={std.min().item():.4f} "
                 f"max={std.max().item():.4f}"
@@ -248,6 +255,8 @@ class CEMPlanner:
                 propio_projector=None,
                 obs_coeff=getattr(config, "obs_coeff", 1.0),
                 propio_coeff=getattr(config, "propio_coeff", 0.0),
+                action_smooth_coeff=getattr(config, "action_coeff", 0.0), 
+                device = self.device
             )
             for i in range(n_envs)
         ]
@@ -281,6 +290,7 @@ class CEMPlanner:
 
         self.last_plan_size = None
         self.num_refinement_steps = num_refinement_steps
+        self.prev_action = None 
 
     @torch.no_grad()
     def plan(
@@ -332,11 +342,16 @@ class CEMPlanner:
                 self.ctrls[i].command(
                     state=current_state[i],
                     horizon=plan_size,
-                    shift_nominal_trajectory=False,
+                    shift_nominal_trajectory=False, 
+                    prev_action = self.prev_action[i] if self.prev_action is not None else None, 
                 )
             )
 
-        actions = torch.stack(actions, dim=0)  # (B, H, A)
+
+        actions = torch.stack(actions, dim=0)  # (B, H, A) = [2, 3, 7] #normed 
+        self.prev_action = actions[:, 0, :]  #(B, A)
+        
+        
 
         # rollout to get full predicted sequence (T=H)
         pred_encs, pred_obs, pred_propio = self.dynamics(
@@ -345,6 +360,8 @@ class CEMPlanner:
             only_return_last=False,
             flatten_output=False,
         )
+
+        
 
         # optional: action_normalizer の出力空間に合わせる（MPPIPlanner と同様の場所で）
         if self.action_normalizer is not None:

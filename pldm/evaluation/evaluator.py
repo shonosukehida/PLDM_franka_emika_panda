@@ -78,6 +78,7 @@ class Evaluator:
             output_path=output_path,
             objectives_l1=objectives_l1,
             train_ds=train_ds,
+            normalizer=self.normalizer
         )
 
         self.pixel_mapper = franka_pixel_mapper
@@ -165,7 +166,7 @@ class Evaluator:
         level: str,
         level_config: LevelConfig,
     ):
-        print("[DBG][pldm/evaluation/evaluator.py] level_config:", level_config)
+        # print("[DBG][pldm/evaluation/evaluator.py] level_config:", level_config)
 
         if level_config.override_config:
             max_plan_length = level_config.max_plan_length

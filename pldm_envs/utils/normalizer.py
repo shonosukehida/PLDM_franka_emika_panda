@@ -559,6 +559,7 @@ class Normalizer:
         Normalizes over the flattened last 3 dims (C,H,W).
         """
         assert isinstance(state, torch.Tensor), "normalize_state expects a torch.Tensor"
+
         
 
         # (H,W) --> (1,1,H,W)
@@ -622,6 +623,8 @@ class Normalizer:
         Inverts the normalization done over the flattened last 3 dims (C,H,W).
         """
         assert isinstance(state_norm, torch.Tensor), "unnormalize_state expects a torch.Tensor"
+        if self.backbone_arch == "vjepa2":
+            return state_norm
 
         if state_norm.ndim == 2:
             x = state_norm.unsqueeze(0).unsqueeze(0)

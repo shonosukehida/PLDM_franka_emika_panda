@@ -327,15 +327,18 @@ class MPCEvaluator(ABC):
         os.makedirs(save_dir, exist_ok=True)
 
         # reset直後の初期観測を取得
-        init_obs_t = torch.stack([e.get_obs() for e in envs]).to(self.device)  # (B,C,H,W)
+        exe_norm = False
+        init_obs_t = torch.stack([e.get_obs(normalize=exe_norm) for e in envs]).to(self.device)  # (B,C,H,W)
+        x = init_obs_t.detach().cpu()
+        print("[get_obs][pldm/planning/mpc.py]init_obs_t min/max/mean/std:",x.min().item(), x.max().item(), x.mean().item(), x.std().item(),"dtype", x.dtype, "shape", x.shape)
 
         dbg = init_obs_t.detach().cpu()
 
         # 正規化されてるなら戻す（targetと揃える）
-        try:
+        if exe_norm:
             dbg = self.normalizer.unnormalize_state(dbg)
-        except Exception:
-            pass
+            print("[get_obs][pldm/planning/mpc.py]unnorm min/max/mean/std:",dbg.min().item(), dbg.max().item(), dbg.mean().item(), dbg.std().item(),"dtype", dbg.dtype, "shape", dbg.shape)
+
 
         for i in range(min(5, dbg.shape[0])):  # 先頭5環境だけ
             img = dbg[i].numpy()  # (C,H,W)
@@ -370,13 +373,13 @@ class MPCEvaluator(ABC):
         os.makedirs(save_dir, exist_ok=True)
 
         # targets_t: (B, C, H, W) 想定
-        dbg = targets_t.detach().cpu()
+        exe_norm = False
+        targets_t_dbg = torch.stack([e.get_target_obs(normalize=exe_norm) for e in envs]).to(self.device)
+        dbg = targets_t_dbg.detach().cpu()
 
         # もし Normalizer がかかってるなら、ここで「戻す」方が見やすい
-        try:
+        if exe_norm:
             dbg = self.normalizer.unnormalize_state(dbg)
-        except Exception:
-            pass
 
         for i in range(min(5, dbg.shape[0])):  # 先頭5環境だけ
             img = dbg[i].numpy()  # (C,H,W)
@@ -416,18 +419,14 @@ class MPCEvaluator(ABC):
             targets_t = self.model.backbone(targets_t).obs_component.detach()
 
         targets_t = flatten_conv_output(targets_t)
-        print('[DBG][pldm/planning/mpc.py] targets_t.shape:', targets_t.shape)
         
         
         planner.reset_targets(targets_t, repr_input=True)
-        print('[DBG][pldm/planning/mpc.py] planner.objective.target_enc.shape:', planner.objective.target_enc.shape)
         
         if targets_propio_t is not None:
             targets_propio_t = flatten_conv_output(targets_propio_t)
             planner.reset_targets_propio(targets_propio_t, targets_t, repr_input=True)
-        print("[DBG][pldm/planning/mpc.py] planner.objective.target_propio_enc is not None", planner.objective.target_propio_enc is not None)
-        if planner.objective.target_propio_enc is not None:
-            print("[DBG][pldm/planning/mpc.py] planner.objective.target_propio_enc.shape: ", planner.objective.target_propio_enc.shape)
+
             
 
         observation_history = [torch.stack([e.get_obs() for e in envs])]
@@ -487,7 +486,7 @@ class MPCEvaluator(ABC):
                     curr_propio_vel = None
 
 
-                print("[DBG][pldm/planning/mpc.py]self.config.level1.max_plan_length:", self.config.level1.max_plan_length)
+                # print("[DBG][pldm/planning/mpc.py]self.config.level1.max_plan_length:", self.config.level1.max_plan_length)
                 planning_result = planner.plan(
                     obs_t,
                     curr_propio_pos=curr_propio_pos,
@@ -510,9 +509,8 @@ class MPCEvaluator(ABC):
             )
             
             
-            print("[DBG][pldm/planning/plotting.py]", planned_actions.shape)
+            # print("[DBG][pldm/planning/mpc.py] planned_actions.shape:", planned_actions.shape) #(chunk_size, T, joint)
             dbg_ac = planned_actions.reshape(-1, 7)
-            print("[DBG][pldm/planning/plotting.py]", "min:", dbg_ac.min(dim=0).values, "max:", dbg_ac.max(dim=0).values, "mean:", dbg_ac.mean(dim=0).values)
 
             if self.config.random_actions: #x
                 results = [
@@ -540,11 +538,16 @@ class MPCEvaluator(ABC):
 
             
             assert len(results[0]) == 5
-            print("[DBG][pldm/planning/mpc.py] results.type:", type(results))
-            print("[DBG][pldm/planning/mpc.py] results:", results)
+            # print("[DBG][pldm/planning/mpc.py] results.type:", type(results)) #list
+            # print("[DBG][pldm/planning/mpc.py] len(results):", len(results)) #1
+            # print("[DBG][pldm/planning/mpc.py] type(results[0]):", type(results[0])) #tuple
+            # print("[DBG][pldm/planning/mpc.py] len(results[0]):", len(results[0])) #5 #現在のenv数
+            
             current_obs = torch.from_numpy(np.stack([r[0] for r in results])).float()
             rewards_t = torch.from_numpy(np.stack([r[1] for r in results])).float()
             infos = [r[4] for r in results]
+            
+            print(f"[DBG][pldm/planning/mpc.py] time:{i}, current_obs.mean:{current_obs.mean()}, current_obs.min:{current_obs.min()}, current_obs.max:{current_obs.max()}, current_obs.shape:{current_obs.shape}")
             
             ################################################################
             # envs[0] で代表1本を見る（まずはこれでOK）
@@ -571,7 +574,7 @@ class MPCEvaluator(ABC):
             reward_history.append(rewards_t)
 
             if "location" in infos[0]:
-                location_history.append(np.array([info["location"] for info in infos]))
+                location_history.append(np.array([info["location"] for info in infos])) #location_history[0].shape:(1,3)
 
             if "qpos" in infos[0]:
                 qpos_history.append(np.array([info["qpos"] for info in infos]))
@@ -604,16 +607,24 @@ class MPCEvaluator(ABC):
 
             loss_history.append(planning_result.losses)
 
+
         observation_history = [
             self.normalizer.unnormalize_state(o) for o in observation_history
         ]
-        print("len(torque_history):", len(torque_history))
-        print("len(actforce_history):", len(actforce_history))
+
+        print("[pldm/planning/mpc.py] len(location_history):", len(location_history))
+        print("[pldm/planning/mpc.py] location_history[0].shape:", location_history[0].shape)
+        
+        for t in range(len(location_history) - 1):
+            print("delta_dist:", np.linalg.norm(location_history[t + 1][0] - location_history[t][0]))
+            
+        
+
 
 
         return MPCResult(
             observations=observation_history,
-            locations=[torch.from_numpy(x) for x in location_history],
+            locations=[torch.from_numpy(x) for x in location_history], #location_history.shape:(T, 1, 3)
             action_history=action_history,
             reward_history=reward_history,
             pred_locations=pred_positions_history,

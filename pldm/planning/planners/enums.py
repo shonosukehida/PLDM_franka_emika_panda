@@ -28,8 +28,10 @@ class MPPIConfig(ConfigBase):
     z_reg_coeff: float = 0
     obs_coeff: float = 1.0 
     propio_coeff: float = 0.0
+    action_smooth_coeff: float = 0.0
     w_du: float = 1.0
     lpf_alpha: float = 1.0
+    terminal_only: bool = False
 
 
 @dataclass
@@ -57,6 +59,7 @@ class CEMConfig(ConfigBase):
     
     obs_coeff: float = 1.0 
     propio_coeff: float = 0.0
+    action_smooth_coeff: float = 0.0
 
 
 @dataclass

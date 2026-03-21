@@ -63,7 +63,7 @@ class ActionRepeatWrapper:
         self.dt = float(env.physics.model.opt.timestep) * getattr(env, "substeps", 1) * self.repeat
     def reset(self, *a, **kw): return self.env.reset(*a, **kw)
     def get_info(self): return self.env.get_info()
-    def get_obs(self): return self.env.get_obs()
+    def get_obs(self, normalize=True): return self.env.get_obs(normalize)
     def step(self, action):
         total_r, done, trunc, info = 0.0, False, False, None
         obs = None

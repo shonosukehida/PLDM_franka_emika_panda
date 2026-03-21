@@ -6,126 +6,127 @@ from torch import nn
 from .mppi_torch import MPPI
 from pldm.models.utils import flatten_conv_output
 from .planner import PlanningResult
+from pldm.planning.planners.calc_dynamics import LearnedDynamics, RunningCost
 
 
-class LearnedDynamics:
-    def __init__(self, model, state_dim=None):
-        self.model = model
-        self.dump_dict = None
-        self.state_dim = state_dim
-        self.max_batch_size = 500
+# class LearnedDynamics:
+#     def __init__(self, model, state_dim=None):
+#         self.model = model
+#         self.dump_dict = None
+#         self.state_dim = state_dim
+#         self.max_batch_size = 500
 
-    def __call__(self, state, action, only_return_last=True, flatten_output=True):
-        """
-        state: [K x nx]
-        action: [K x nx]
-        """
-        # make sure state is in correct format
-        og_shape = state.shape
-        n_samples = og_shape[0]
+#     def __call__(self, state, action, only_return_last=True, flatten_output=True):
+#         """
+#         state: [K x nx]
+#         action: [K x nx]
+#         """
+#         # make sure state is in correct format
+#         og_shape = state.shape
+#         n_samples = og_shape[0]
 
-        if isinstance(self.state_dim, int):
-            self.state_dim = (self.state_dim,)
+#         if isinstance(self.state_dim, int):
+#             self.state_dim = (self.state_dim,)
 
-        new_shape = (n_samples, *self.state_dim)
-        state = state.view(new_shape)
+#         new_shape = (n_samples, *self.state_dim)
+#         state = state.view(new_shape)
 
-        # introduce time dimension to action if needed
-        if len(action.shape) < 3:
-            action = action.unsqueeze(0)
+#         # introduce time dimension to action if needed
+#         if len(action.shape) < 3:
+#             action = action.unsqueeze(0)
 
-        T = action.shape[0]
+#         T = action.shape[0]
 
-        if self.model.config.action_dim:
-            pred_output = self.model.predictor.forward_multiple(
-                state.unsqueeze(0),
-                action.float(),
-                T,
-            )
-        else:
-            pred_output = self.model.predictor.forward_multiple(
-                state.unsqueeze(0),
-                actions=None,
-                T=T,
-                latents=action.float(),
-            )
+#         if self.model.config.action_dim:
+#             pred_output = self.model.predictor.forward_multiple(
+#                 state.unsqueeze(0),
+#                 action.float(),
+#                 T,
+#             )
+#         else:
+#             pred_output = self.model.predictor.forward_multiple(
+#                 state.unsqueeze(0),
+#                 actions=None,
+#                 T=T,
+#                 latents=action.float(),
+#             )
         
-        preds = pred_output.predictions
-        pred_obs = pred_output.obs_component
-        pred_propio = pred_output.propio_component
+#         preds = pred_output.predictions
+#         pred_obs = pred_output.obs_component
+#         pred_propio = pred_output.propio_component
 
-        if flatten_output:
-            preds = flatten_conv_output(preds)  # required for 3rd party MPPI code...
-            pred_obs = flatten_conv_output(pred_obs)
-            pred_propio = flatten_conv_output(pred_propio)
+#         if flatten_output:
+#             preds = flatten_conv_output(preds)  # required for 3rd party MPPI code...
+#             pred_obs = flatten_conv_output(pred_obs)
+#             pred_propio = flatten_conv_output(pred_propio)
 
-        if only_return_last:
-            preds = preds[-1]
-            pred_obs = pred_obs[-1]
-            pred_propio = pred_propio[-1]
-        
-
-        # we need to return both. preds is used to propagate the state forward. pred_obs is used to take cost
-        return preds, pred_obs, pred_propio
-
-    def before_planning_callback(self):
-        self.orig_training_state = self.model.training
-        self.model.train(False)
-
-    def after_planning_callback(self):
-        self.model.train(self.orig_training_state)
-
-
-class RunningCost:
-    def __init__(
-        self, 
-        objective, 
-        idx=None, 
-        obs_projector=None, 
-        propio_projector=None,
-        obs_coeff = 1.0,
-        propio_coeff = 0.0,
-        ):
-        
-        self.objective = objective
-        self.idx = idx
-        self.obs_projector = nn.Identity() if obs_projector is None else obs_projector
-        self.propio_projector = nn.Identity() if propio_projector is None else propio_projector
-        self.obs_coeff = obs_coeff
-        self.propio_coeff = propio_coeff
+#         if only_return_last:
+#             preds = preds[-1]
+#             pred_obs = pred_obs[-1]
+#             pred_propio = pred_propio[-1]
         
 
-    def __call__(
-        self, 
-        state_obs, 
-        state_propio = None, 
-        action = None,
-        ):
-        """encoding shape is B X D
-        Note that B are samples for the same environment
-        You want to diff against target_enc of shape (D) retrieved from objective
-        """
+#         # we need to return both. preds is used to propagate the state forward. pred_obs is used to take cost
+#         return preds, pred_obs, pred_propio
 
-        objective = self.objective
-        target_obs = objective.target_enc[self.idx]
+#     def before_planning_callback(self):
+#         self.orig_training_state = self.model.training
+#         self.model.train(False)
 
-        state_obs = self.obs_projector(state_obs)
-        target_obs = self.obs_projector(target_obs)
+#     def after_planning_callback(self):
+#         self.model.train(self.orig_training_state)
 
-        obs_diff = (state_obs - target_obs).pow(2).mean(dim=1)
+
+# class RunningCost:
+#     def __init__(
+#         self, 
+#         objective, 
+#         idx=None, 
+#         obs_projector=None, 
+#         propio_projector=None,
+#         obs_coeff = 1.0,
+#         propio_coeff = 0.0,
+#         ):
         
-        if state_propio is not None:
-            target_propio = objective.target_propio_enc[self.idx]   
-            state_propio = self.propio_projector(state_propio)
-            target_propio = self.propio_projector(target_propio)
-            propio_diff = (state_propio - target_propio).pow(2).mean(dim=1)
-        else:
-            propio_diff = torch.zeros_like(obs_diff)
-        
-        all_diff = self.obs_coeff * obs_diff + self.propio_coeff * propio_diff
+#         self.objective = objective
+#         self.idx = idx
+#         self.obs_projector = nn.Identity() if obs_projector is None else obs_projector
+#         self.propio_projector = nn.Identity() if propio_projector is None else propio_projector
+#         self.obs_coeff = obs_coeff
+#         self.propio_coeff = propio_coeff
         
 
-        return all_diff
+#     def __call__(
+#         self, 
+#         state_obs, 
+#         state_propio = None, 
+#         action = None,
+#         ):
+#         """encoding shape is B X D
+#         Note that B are samples for the same environment
+#         You want to diff against target_enc of shape (D) retrieved from objective
+#         """
+
+#         objective = self.objective
+#         target_obs = objective.target_enc[self.idx]
+
+#         state_obs = self.obs_projector(state_obs)
+#         target_obs = self.obs_projector(target_obs)
+
+#         obs_diff = (state_obs - target_obs).pow(2).mean(dim=1)
+        
+#         if state_propio is not None:
+#             target_propio = objective.target_propio_enc[self.idx]   
+#             state_propio = self.propio_projector(state_propio)
+#             target_propio = self.propio_projector(target_propio)
+#             propio_diff = (state_propio - target_propio).pow(2).mean(dim=1)
+#         else:
+#             propio_diff = torch.zeros_like(obs_diff)
+        
+#         all_diff = self.obs_coeff * obs_diff + self.propio_coeff * propio_diff
+        
+
+#         return all_diff
 
 
 class MPPIPlanner:
@@ -166,8 +167,8 @@ class MPPIPlanner:
             )
         )
         self.objective = objective  
-        print("[DBG][pldm/planning/planners/mppi_planner.py]config.obs_coeff:", config.obs_coeff)
-        print("[DBG][pldm/planning/planners/mppi_planner.py]config.propio_coeff:", config.propio_coeff)
+        # print("[DBG][pldm/planning/planners/mppi_planner.py]config.obs_coeff:", config.obs_coeff)
+        # print("[DBG][pldm/planning/planners/mppi_planner.py]config.propio_coeff:", config.propio_coeff)
 
         self.mppi_costs = [
             RunningCost(
@@ -199,7 +200,8 @@ class MPPIPlanner:
                 latent_actions=latent_actions,
                 z_reg_coeff=config.z_reg_coeff,
                 w_du=config.w_du,
-                lpf_alpha=config.lpf_alpha
+                lpf_alpha=config.lpf_alpha,
+                terminal_only=config.terminal_only,
             )
             for i in range(n_envs)
         ]
@@ -276,6 +278,8 @@ class MPPIPlanner:
             only_return_last=False,
             flatten_output=False,
         )
+        
+        # print("[pldm/planning/planners/mppi_planner.py] pred_encs.shape:", pred_encs.shape) #[4, 1, 30, 26, 26]
 
         if self.action_normalizer is not None:
             actions = self.action_normalizer(actions)

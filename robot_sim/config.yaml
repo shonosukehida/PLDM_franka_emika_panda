@@ -1,5 +1,5 @@
 is_val: false
-pairs: 100 #5
+pairs: 2000 #5
 min_dist: 0.15
 episodes_per_pair: 1 #2000
 steps_per_episode: 500 ##100
@@ -14,17 +14,17 @@ goal_offset: [0.2, -0.2, 0.2]
 box_start_pos: null #データセット生成時のbluebox のstart位置 #[0.50, -0.05, 0.05]
 box_goal_pos: null #データセット生成時のbluebox のgoal位置 #[0.50, -0.10, 0.05]
 
-eval_only: true
+eval_only: false
 data_dir: pldm_envs/franka/presaved_datasets/pairs_100_ep_1_timestep_500_sample_mix_direction_towards_bluebox_1p00_1p00_view_top_reverse #pldm_envs/franka/presaved_datasets/pairs_100_ep_1_timestep_500_sample_mix_direction_towards_bluebox_1_1 #null
 
 #データ確認するか
 confirm_ik_result: false
 confirm_dist: false
-make_video: true #false
+make_video: false #false
 confirm_ee_trajectory: true
 confirm_ee_traj_xz: false #false
 confirm_data: false
-count_contact: true
+count_contact: false
 
 visualize_target_trajectory: false #target_xyz軌跡の可視化
 plot_all_ee_traj: true #データセットのFranka手先の分布を可視化

@@ -40,7 +40,7 @@ class FrankaMPCEvaluator(MPCEvaluator):
             train_ds=train_ds,
         )
 
-        print("[DBG][pldm/planning/franka/mpc.py]: task_name:", self.config.task.name)
+
         self.config.task.backbone_arch = config.backbone_arch
         self.config.task.vjepa2_repo = config.vjepa2_repo
         envs_generator = FrankaEnvsGenerator(
@@ -172,6 +172,7 @@ class FrankaMPCEvaluator(MPCEvaluator):
                 idxs=list(range(self.config.n_envs)) if not self.quick_debug else [0],
                 plot_every=self.config.plot_every,
                 plot_failure_only=self.config.plot_failure_only,
+                model_path = self.config.model_path
             )
 
             log_planning_torque_plots_split(

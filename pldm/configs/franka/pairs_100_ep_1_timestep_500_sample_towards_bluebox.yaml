@@ -133,6 +133,95 @@ eval_cfg:
   log_heatmap: false
   eval_l1: true
   task_type: franka
+
+  disable_planning: false
+  franka_planning:
+    n_envs: 4 #85
+    n_envs_batch_size: 1 #16
+    n_steps: 500 #192
+    levels: "easy"
+    easy:
+      n_steps: 200 #タスクのタイムステップ
+      pred_steps: 50 #その時刻の予測タイムステップ数 (学習時のタイムステップに合わせる)
+      n_envs: 4 #80
+      max_plan_length: 100 
+      plot_every: 1
+      min_block_radius: 4
+      max_block_radius: 9999
+      override_config: true
+    visualize_planning: true
+    visualize_planning_videos: true
+    log_pred_dist_every: 9999999
+    plot_every: 1
+    set_start_target_path: null #"../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
+    action_repeat: 1
+    action_repeat_mode: 'id'
+    img_size: 64
+    replan_every: 4
+    image_obs: true
+    stack_states: 1
+    data_path: 'pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_towards_bluebox/'
+    model_path: &model_path 'mujoco_menagerie/franka_emika_panda/scene.xml'
+    max_dq: &max_dq 0.03
+    fps: 50 #FPS指定
+    max_inner_steps: 500 #MPPI出力目標行動姿勢に近づけるまでに回す最大step数
+    reach_eps: 1e-2 #MPPI出力目標姿勢と現在の姿勢の距離
+    camera_name: &camera_name 'top_reverse'
+    task:
+      name: reach_no_touch   # push_to_goal / reach_no_touch
+
+      reach_no_touch:
+        box_init_xyz: null                  # nullならresetで使うstart_posを採用
+        box_hold_eps: 0.02                  # 成功判定: 箱が動いてない閾値(m)
+        ee_success_eps: 0.03                # 成功判定: EE到達閾値(m)
+        use_box: true                       # falseなら goal画像生成時に箱を遠方へ
+
+      push_to_goal:
+        success_thresh: 0.05                # 既存の箱ゴール成功判定(m)
+
+
+    level1:
+      planner_type: PlannerType.MPPI
+      min_step: 0
+      max_step: 1
+      max_plan_length: 64 #128 #一度に予測するホライズン
+      sgd:
+        action_change_reg: 0
+        l2_reg: 0
+        lr: 0.03
+        n_iters: 200
+      mppi:
+        noise_sigma: 0.002 #5 #ノイズ共分散 0.01
+        num_samples: 500 #500.  #ランダム行動列のサンプル数
+        lambda_: 0.0025 #温度
+        obs_coeff: 1.0 #1.0
+        propio_coeff: 0.0 #0.0
+        w_du: 1.0 #1.0 #MPPIの予測列の時間的変化をなめらかにする
+        lpf_alpha: 0.0 #1.0 #ローパスフィルタ係数 #1.0: フィルタなし, 0.0: 前の行動を完全に引き継ぐ
+        terminal_only: false #false #dynamics model の最後の状態のみコスト関数に入力する
+      cem:
+        num_samples: 500 #500 #1度にサンプリングする行動列の本数
+        num_elites: 50 #50 #サンプルの中から成績上位として残す本数
+        init_std: 0.1 #1.0 #初期の行動分布の標準偏差
+        n_iters: 5 #5 #CEMの反復回数
+        alpha: 0.1 #0.1 #分布更新の慣性
+        clamp_actions: false 
+        action_low: -1.0
+        action_high: 1.0
+        max_batch_size: 64
+        momentum_mean: 0.0 #0.0#分布更新の慣性
+        momentum_std: 0.0 #0.0#分布更新の慣性
+        max_norms: [0.05, 0.01, 1.0] #null
+        max_norm_dims:
+          - [0, 1, 2]
+          - [3, 4, 5]
+          - [6]
+    val_from_train_ds: true #学習データセットで評価
+    designate_start_goal_pos:  #タスク時にstart,goal_posを指定するか否か
+      valid: true
+      start_pos: [0.50, -0.05, 0.05] 
+      goal_pos: [0.50, -0.15, 0.05]
+
   probing:
     exe_probing: true
     l1_depth: *n_steps
@@ -174,92 +263,11 @@ eval_cfg:
     vis_long_horizon_eval: false #全てのval_dataset を使ったpca評価をするか否か
     load_prober: false
     train_prober: true #load_prober:falseの場合にproberをtrainさせるか否かを指定
+    model_path: *model_path 
+    max_dq: *max_dq 
+    camera_name: *camera_name
+
     load_prober: false
-  disable_planning: false
-  franka_planning:
-    n_envs: 4 #85
-    n_envs_batch_size: 1 #16
-    n_steps: 500 #192
-    levels: "easy"
-    easy:
-      n_steps: 200 #タスクのタイムステップ
-      pred_steps: 50 #その時刻の予測タイムステップ数 (学習時のタイムステップに合わせる)
-      n_envs: 4 #80
-      max_plan_length: 100 
-      plot_every: 1
-      min_block_radius: 4
-      max_block_radius: 9999
-      override_config: true
-    visualize_planning: true
-    visualize_planning_videos: true
-    log_pred_dist_every: 9999999
-    plot_every: 1
-    set_start_target_path: null #"../pldm_envs/diverse_maze/presaved_datasets/40maps_eval/trials.pt"
-    action_repeat: 1
-    action_repeat_mode: 'id'
-    img_size: 64
-    replan_every: 4
-    image_obs: true
-    stack_states: 1
-    data_path: 'pldm_envs/franka/presaved_datasets/val_pairs_25_ep_1_timestep_300_sample_towards_bluebox/'
-    max_dq: 0.03
-    fps: 50 #FPS指定
-    max_inner_steps: 500 #MPPI出力目標行動姿勢に近づけるまでに回す最大step数
-    reach_eps: 1e-2 #MPPI出力目標姿勢と現在の姿勢の距離
-    camera_name: 'top_reverse'
-    task:
-      name: reach_no_touch   # push_to_goal / reach_no_touch
-
-      reach_no_touch:
-        box_init_xyz: null                  # nullならresetで使うstart_posを採用
-        box_hold_eps: 0.02                  # 成功判定: 箱が動いてない閾値(m)
-        ee_success_eps: 0.03                # 成功判定: EE到達閾値(m)
-        use_box: true                       # falseなら goal画像生成時に箱を遠方へ
-
-      push_to_goal:
-        success_thresh: 0.05                # 既存の箱ゴール成功判定(m)
-
-
-    level1:
-      planner_type: PlannerType.MPPI
-      min_step: 0
-      max_step: 1
-      max_plan_length: 64 #128 #一度に予測するホライズン
-      sgd:
-        action_change_reg: 0
-        l2_reg: 0
-        lr: 0.03
-        n_iters: 200
-      mppi:
-        noise_sigma: 0.002 #5 #ノイズ共分散 0.01
-        num_samples: 500 #500.  #ランダム行動列のサンプル数
-        lambda_: 0.0025 #温度
-        obs_coeff: 1.0 #1.0
-        propio_coeff: 0.0 #0.0
-        w_du: 1.0 #1.0 #MPPIの予測列の時間的変化をなめらかにする
-        lpf_alpha: 0.0 #1.0 #ローパスフィルタ係数 #1.0: フィルタなし, 0.0: 前の行動を完全に引き継ぐ
-      cem:
-        num_samples: 500 #500 #1度にサンプリングする行動列の本数
-        num_elites: 50 #50 #サンプルの中から成績上位として残す本数
-        init_std: 0.1 #1.0 #初期の行動分布の標準偏差
-        n_iters: 5 #5 #CEMの反復回数
-        alpha: 0.1 #0.1 #分布更新の慣性
-        clamp_actions: false 
-        action_low: -1.0
-        action_high: 1.0
-        max_batch_size: 64
-        momentum_mean: 0.0 #0.0#分布更新の慣性
-        momentum_std: 0.0 #0.0#分布更新の慣性
-        max_norms: [0.05, 0.01, 1.0] #null
-        max_norm_dims:
-          - [0, 1, 2]
-          - [3, 4, 5]
-          - [6]
-    val_from_train_ds: true #学習データセットで評価
-    designate_start_goal_pos:  #タスク時にstart,goal_posを指定するか否か
-      valid: true
-      start_pos: [0.50, -0.05, 0.05] 
-      goal_pos: [0.50, -0.15, 0.05]
   # d4rl_planning:
   #   n_envs: 10 #85
   #   n_envs_batch_size: 4 #16

@@ -14,19 +14,26 @@ class LearnedDynamics:
         self.dump_dict = None
         self.state_dim = state_dim
         self.max_batch_size = 500
+        
+        # print("[DBG][pldm/planning/planners/calc_dynamics.py] self.model:", self.model)
 
     def __call__(self, state, action, only_return_last=True, flatten_output=True):
         """
         state: [K x nx]
         action: [K x nx]
         """
-        
-        # print("[DBG][pldm/planning/planners/cem_planner.py][LearnedDynamics] state.shape:", tuple(state.shape), "action.shape:", tuple(action.shape))
-        # print("[DBG][pldm/planning/planners/cem_planner.py][LearnedDynamics] state_dim:", self.state_dim)
+
 
         # make sure state is in correct format
-        og_shape = state.shape
+        og_shape = state.shape #[64, 30, 26, 26]
         n_samples = og_shape[0]
+        
+        
+        # print("[DBG][pldm/planning/planners/calc_dynamics.py] action.shape:", action.shape) #[50, 64, 7]
+        # print("[DBG][pldm/planning/planners/calc_dynamics.py] action.min:", action.min())
+        
+        
+        # print("[DBG][pldm/planning/planners/calc_dynamics.py] state.shape:", state.shape)#[64, 30, 26, 26]
 
         if isinstance(self.state_dim, int):
             self.state_dim = (self.state_dim,)
@@ -89,6 +96,8 @@ class RunningCost:
         propio_projector=None,
         obs_coeff = 1.0,
         propio_coeff = 0.0,
+        action_smooth_coeff = 0.0,
+        device = torch.device("cuda"),
         ):
         
         self.objective = objective
@@ -97,19 +106,30 @@ class RunningCost:
         self.propio_projector = nn.Identity() if propio_projector is None else propio_projector
         self.obs_coeff = obs_coeff
         self.propio_coeff = propio_coeff
-        print("[DBG][pldm/planning/planners/cem_planner.py] self.obs_coeff:", self.obs_coeff)
-        print("[DBG][pldm/planning/planners/cem_planner.py] self.propio_coeff:", self.propio_coeff)
+        self.action_smooth_coeff = action_smooth_coeff
+        self.device = device
+        
+        # print("[pldm/planning/planners/calc_dynamics.py] self.obs_projector.shape:", self.obs_projector) #Identity()
         
         
 
-    def __call__(self, state_obs, state_propio=None, action=None):
+    def __call__(self, state_obs, state_propio=None, action=None, prev_action=None):
+        # print("[pldm/planning/planners/calc_dynamics.py] state_obs.shape:", state_obs.shape) #[500, 10816]
+        # print("[pldm/planning/planners/calc_dynamics.py] action.shape:", action.shape) #[1, 500, 7]
+        # print("[pldm/planning/planners/calc_dynamics.py] prev_action.shape:", prev_action.shape if prev_action is not None else -1) #-1
         objective = self.objective
         target_obs = objective.target_enc[self.idx]
 
         state_obs = flatten_conv_output(self.obs_projector(state_obs))
         target_obs = flatten_conv_output(self.obs_projector(target_obs))
+        # print("[pldm/planning/planners/calc_dynamics.py] state_obs.shape:", state_obs.shape) #[500, 10816]
+        # print("[pldm/planning/planners/calc_dynamics.py] target_obs.shape:", target_obs.shape) #[10816]
+        
+        
 
         obs_diff = (state_obs - target_obs).pow(2).mean(dim=1)
+        # print("[pldm/planning/planners/calc_dynamics.py] obs_diff.shape:", obs_diff.shape) #[chk]=[64]
+
 
         if state_propio is not None:
             target_propio = objective.target_propio_enc[self.idx]
@@ -118,5 +138,16 @@ class RunningCost:
             propio_diff = (state_propio - target_propio).pow(2).mean(dim=1)
         else:
             propio_diff = torch.zeros_like(obs_diff)
+        
+        action_diff = torch.zeros(obs_diff.shape).to(self.device)
+        if prev_action is not None:
+            T, chk, A = action.shape 
+            prev = prev_action.view(1, 1, A).expand(1, chk, A)
+            action_with_prev = torch.cat([prev, action], dim = 0) 
+            action_diff = (action_with_prev[1:, :, :] - action_with_prev[:-1, :, :]).pow(2).sum(0).mean(1) #A次元はmean で大丈夫？
+            action_diff = action_diff.to(self.device)
+    
+        
+        all_diff = self.obs_coeff * obs_diff + self.propio_coeff * propio_diff + self.action_smooth_coeff * action_diff
 
-        return self.obs_coeff * obs_diff + self.propio_coeff * propio_diff
+        return all_diff

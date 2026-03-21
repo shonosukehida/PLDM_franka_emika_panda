@@ -21,9 +21,10 @@ class FrankaEnvsGenerator:
         self.task_cfg = task_cfg
         
         self.camera_name = camera_name
-        print("[DBG][pldm_envs/franka/evaluation/envs_generator.py] self.camera_name:", self.camera_name)
+
 
     def __call__(self):
+        # print("[pldm_envs/franka/evaluation/envs_generator.py] task_cfg:", self.task_cfg)
         envs = []
         for _ in range(self.n_envs):
 

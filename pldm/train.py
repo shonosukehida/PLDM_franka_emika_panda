@@ -475,26 +475,6 @@ class Trainer:
                 s = batch.states.to(self.device).transpose(0, 1)
                 a = batch.actions.to(self.device).transpose(0, 1)
                 
-                # print('====BATCH CHECK====')
-                # print('s.shape:', s.shape)
-                # print('a.shape:', a.shape)
-                
-                # print('====state====')
-                # print('s.type:', type(s))
-                # print('s.shape:', s.shape)
-                # print('s.mean:', s.mean())
-                # print('s.std:', s.std())
-                # print('s.min:', s.min())
-                # print('s.max:', s.max())
-                # print('====action====')
-                # print('a.type:', type(a))
-                # print('a.shape:', a.shape)
-                # print('a.mean:', a.mean())
-                # print('a.std:', a.std())
-                # print('a.min:', a.min())
-                # print('a.max:', a.max())
-                # print("================")
-
                 lr = scheduler.adjust_learning_rate(step)
 
                 self.sample_step += s.shape[1]

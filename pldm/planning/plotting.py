@@ -11,6 +11,8 @@ import gc
 from matplotlib.patches import Rectangle
 from pathlib import Path
 import imageio.v2 as imageio
+import mujoco
+from dm_control import mujoco as dm_mj
 default_plot_idxs = list(range(100))
 
 #直交座標 --> ピクセル座標
@@ -269,7 +271,7 @@ def log_planning_plots_split(
         
         env.reset()
         for t in range(t_max):
-            if t > report.terminations[idx]: break
+            # if t > report.terminations[idx]: break
             # preds.append(result.pred_locations[t][:, idx, :].detach().cpu())  # (H,2)
             
             # print("[DBG: log_planning_plots_split/pldm/planning/plotting.py] action_history.len: ",  len(result.action_history)) #200 = T
@@ -334,7 +336,7 @@ def log_planning_plots_split(
 
         if obj_traj is not None and len(obj_traj) > 0:
             ax.plot(obj_traj[:,0], obj_traj[:,1],
-                    lw=1.2, c="tab:blue", label="bluebox_center", zorder=4)
+                    lw=1.2, c="tab:blue", label="bluebox_frame", zorder=4)
             ax.scatter(obj_traj[0,0], obj_traj[0,1],
                     s=14, c="tab:blue", marker="x", label="bluebox_start", zorder=3)
 
@@ -592,13 +594,16 @@ def log_planning_obs_plots_split(
     use_pixel_mapper=False, pixel_mapper=None,
     env=None,  # 使わないけどシグネチャ合わせ
 ):
+    
+    print("[DBG][pldm/planning/plotting.py] plot_every:", plot_every)
     """
     図A: 観測列 (result.observations) のみをグリッド表示して保存
     """
     if idxs is None:
         idxs = default_plot_idxs
 
-    T = len(result.locations)
+    T = len(result.observations)
+
     B = result.observations[0].shape[0]
     H = result.observations[0][0].shape[-2]
     W = result.observations[0][0].shape[-1]
@@ -615,8 +620,8 @@ def log_planning_obs_plots_split(
         for t in range(T):
             if t % plot_every:
                 continue
-            if t > report.terminations[idx]:
-                break
+            # if t > report.terminations[idx]:
+            #     break
 
             plt.subplot(grid, grid, p + 1)
 
@@ -664,6 +669,7 @@ def log_planning_videos_split(
         idxs = default_plot_idxs
 
     T = len(result.observations)
+    print("[pldm/planning/plotting.py] T: ", T)
     B = result.observations[0].shape[0]
 
     # 保存先ディレクトリを決める（Logger に output_dir があればそこを利用）
@@ -691,8 +697,8 @@ def log_planning_videos_split(
         for t in range(T):
             if t % plot_every:
                 continue
-            if t > t_term:
-                break
+            # if t > t_term:
+            #     break
 
             obs = result.observations[t][idx]  # (C,H,W) or (1,H,W)
             # Tensor → numpy
@@ -731,7 +737,16 @@ def log_planning_videos_split(
         video_path = base_dir / f"obs_seq_{idx}.mp4"
 
         # fps は好みで調整（ここでは 5fps）
-        imageio.mimsave(video_path, frames, fps=5)
+        # imageio.mimsave(video_path, frames, fps=5)　
+        writer = imageio.get_writer(
+            str(video_path), 
+            fps=5, 
+            codec = "libx264",
+            format="FFMPEG", 
+        )
+        for frame in frames:
+            writer.append_data(frame)
+        writer.close()
 
         # Logger にも動画としてログ（対応している場合のみ）
         if hasattr(run, "log_video"):
@@ -740,6 +755,13 @@ def log_planning_videos_split(
             except TypeError:
                 # log_video のシグネチャが違う場合はここを環境に合わせて修正
                 run.log_video(str(video_path))
+
+        # print(f"[DBG][pldm/planning/plotting.py] num_frames={len(frames)}")
+        # print(f"[DBG][pldm/planning/plotting.py] first frame shape={frames[0].shape}, dtype={frames[0].dtype}")
+        # print(f"[DBG][pldm/planning/plotting.py] saved exists={video_path.exists()}")
+        # if video_path.exists():
+        #     print(f"[DBG][pldm/planning/plotting.py] file size={video_path.stat().st_size} bytes")
+
 
         # 後始末
         del frames
@@ -794,12 +816,8 @@ def log_planning_traj_plots_split(
     （MuJoCo 世界座標 (X: 上, Y: 左) を, plot 上で
      「上=+X, 左=+Y」になるように変換して描画する）
     """
-    
-    print("[DBG][pldm/planning/plotting.py] locations:", len(result.locations) if getattr(result, "locations", None) is not None else None)
-    print("[DBG][pldm/planning/plotting.py] pred_locations:", len(getattr(result, "pred_locations", [])))
-    print("[DBG][pldm/planning/plotting.py] action_history:", len(getattr(result, "action_history", [])))
-    print("[DBG][pldm/planning/plotting.py] object_history:", len(getattr(result, "object_history", [])))
 
+    # print("[pldm/planning/plotting.py] plot_every:", plot_every)
     if idxs is None:
         idxs = default_plot_idxs
 
@@ -807,8 +825,8 @@ def log_planning_traj_plots_split(
     B = result.observations[0].shape[0]
 
     for idx in idxs:
-        if plot_failure_only and getattr(report, "success", [False] * B)[idx]:
-            continue
+        # if plot_failure_only and getattr(report, "success", [False] * B)[idx]:
+        #     continue
 
         # ----- EE 軌跡などの準備 -----
         starts = result.locations[0][idx].detach().cpu()        # (2,)
@@ -817,6 +835,7 @@ def log_planning_traj_plots_split(
             [result.locations[t][idx] for t in range(T)],
             dim=0
         ).detach().cpu()                                        # (T,2)
+        print("[pldm/planning/plotting.py] traj.shape:", traj.shape)
 
         # numpy 化
         traj_np = traj.numpy()          # (T,2) [X,Y]
@@ -827,14 +846,14 @@ def log_planning_traj_plots_split(
         T_loc  = len(result.locations)         # 初期+各ステップ → T+1
         # T_pred = len(result.pred_locations)
         T_act  = len(getattr(result, "action_history", []))
-        t_term = getattr(report, "terminations", [T_loc - 1])[idx]
-        t_max = min(T_act, T_loc - 1, t_term + 1)
+
+        t_max = min(T_act, T_loc - 1)
 
         if env is not None:
             env.reset()
             for t in range(t_max):
-                if t > report.terminations[idx]:
-                    break
+                # if t > report.terminations[idx]:
+                #     break
                 act_seq = result.action_history[t][idx].detach().cpu().numpy()  # (H_t,7)
                 a0 = act_seq[0]
                 env.set_joint(a0)
@@ -845,8 +864,7 @@ def log_planning_traj_plots_split(
         obj_traj = None
         if getattr(result, "object_history", None):
             T_obj = len(result.object_history)
-            t_term = getattr(report, "terminations", [T - 1])[idx]
-            tt = min(T, T_obj, t_term + 1)
+            tt = min(T, T_obj)
 
             if tt > 0:
                 obj_traj = torch.stack(
@@ -998,6 +1016,17 @@ def log_planning_traj_plots_split(
         # 軸ラベル（MuJoCo座標との対応を明示）
         ax.set_xlabel("Y [m]")
         ax.set_ylabel("X [m]")
+        
+        
+        print("[DBG][pldm/planning/plotting.py] t_term:", getattr(report, "terminations", [T - 1])[idx])
+        print("[DBG][pldm/planning/plotting.py] T_obj:", len(result.object_history))
+        print("[DBG][pldm/planning/plotting.py] tt:", tt)
+
+        if obj_traj is not None:
+            print("[DBG][pldm/planning/plotting.py] obj_traj.shape:", obj_traj.shape)
+            print("[DBG][pldm/planning/plotting.py] obj start:", obj_traj[0])
+            print("[DBG][pldm/planning/plotting.py] obj end  :", obj_traj[-1])
+            print("[DBG][pldm/planning/plotting.py] obj delta:", obj_traj[-1] - obj_traj[0])
 
         if plot_action:
             Logger.run().log_figure(figB, f"mpc/prediction_seq_{idx}_actionplot")
@@ -1018,6 +1047,20 @@ def log_planning_traj_plots_split(
 
 
 
+# from dm_control import mujoco as dm_mj
+def get_panda_joint_limits(model_path):
+    model_path = str(model_path)
+    
+    model = mujoco.MjModel.from_xml_path(model_path)
+    joint_names = [f"joint{i}" for i in range(1, 8)]
+    low = np.zeros(7, dtype=np.float32)
+    high = np.zeros(7, dtype=np.float32)
+    for i, name in enumerate(joint_names):
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+        low[i], high[i] = model.jnt_range[jid]
+    return low, high
+
+
 def log_planning_joint_angle_plots_split(
     result,
     report,
@@ -1025,6 +1068,8 @@ def log_planning_joint_angle_plots_split(
     plot_every: int = 1,
     plot_failure_only: bool = False,
     joint_names=None,
+    normalize_with_org_data = True, #元の行動データの関節上限/下限で正規化する
+    model_path=None, #mujoco model path
 ):
     if idxs is None:
         idxs = default_plot_idxs
@@ -1094,19 +1139,31 @@ def log_planning_joint_angle_plots_split(
         actual_np = actual_traj.numpy()
         ts = np.arange(target_np.shape[0])
         
-        # --- 関節ごとの min-max を求める ---
-        min_j = np.minimum(target_np.min(axis=0), actual_np.min(axis=0))  # (7,)
-        max_j = np.maximum(target_np.max(axis=0), actual_np.max(axis=0))  # (7,)
+        if not normalize_with_org_data:
+            # --- 関節ごとの min-max を求める ---
+            min_j = np.minimum(target_np.min(axis=0), actual_np.min(axis=0))  # (7,)
+            max_j = np.maximum(target_np.max(axis=0), actual_np.max(axis=0))  # (7,)
 
-        range_j = max_j - min_j
-        # max_j == min_j（＝その関節がずっと同じ値）のとき、ゼロ割りを防ぐ
-        range_j[range_j == 0] = 1.0
+            range_j = max_j - min_j
+            # max_j == min_j（＝その関節がずっと同じ値）のとき、ゼロ割りを防ぐ
+            range_j[range_j == 0] = 1.0
 
-        target_norm = 2.0 * (target_np - min_j) / range_j - 1.0
-        actual_norm = 2.0 * (actual_np - min_j) / range_j - 1.0
+            target_norm = 2.0 * (target_np - min_j) / range_j - 1.0
+            actual_norm = 2.0 * (actual_np - min_j) / range_j - 1.0
 
-        target_np = target_norm
-        actual_np = actual_norm
+            target_np = target_norm
+            actual_np = actual_norm
+        else:
+            low, high = get_panda_joint_limits(model_path)
+            print("[DBG][pldm/planning/plotting.py] low:", low)
+            print("[DBG][pldm/planning/plotting.py] high:", high)
+            
+            denom = (high - low).copy() 
+            denom[denom == 0] = 1.0 
+            
+            target_np = 2.0 * (target_np - low) / denom - 1.0 
+            actual_np = 2.0 * (actual_np - low) / denom - 1.0
+            
 
         fig, axes = plt.subplots(
             nrows=7,
@@ -1135,6 +1192,7 @@ def log_planning_joint_angle_plots_split(
             )
 
             ax.set_ylabel(joint_names[j], fontsize=8)
+            ax.set_ylim(-1, 1)
             ax.grid(True, linestyle=":", linewidth=0.5, alpha=0.6)
 
             if j == 0:

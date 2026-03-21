@@ -9,6 +9,7 @@ from pldm_envs.franka.ik_with_limits import qpos_from_site_pose
 from scipy.spatial.transform import Rotation as R
 from pldm_envs.utils.normalizer import Normalizer
 from transformers import AutoVideoProcessor
+import mujoco
 
 
 class FrankaSimEnv:
@@ -71,7 +72,7 @@ class FrankaSimEnv:
         
         self.control_dt = float(self.physics.model.opt.timestep) * int(self.substeps) 
 
-        self.task_cfg = task_cfg if task_cfg is not None else {}
+        self.task_cfg = task_cfg
         self.task_name = task_name
 
         self.ee_goal_pos = None
@@ -226,6 +227,11 @@ class FrankaSimEnv:
             self.physics.forward()
             
 
+        #関節名チェック
+        # for i in range(self.physics.model.njnt):
+        #     name = mujoco.mj_id2name(self.physics.model.ptr, mujoco.mjtObj.mjOBJ_JOINT, i)
+        #     print(i, name)
+
 
         return self.get_obs()
 
@@ -265,21 +271,24 @@ class FrankaSimEnv:
             print("[pldm_envs/franka/envs.py]clipped?:", np.any((qpos + dq) != target))
 
 
-
         self.physics.data.ctrl[:] = 0.0
         self.physics.data.ctrl[self.arm_actuator_ids] = target
 
 
+
+
         for _ in range(self.substeps):
+            # self.physics.data.qpos[7] = 0.0 
+            # self.physics.data.qpos[8] = 0.0 
+            # self.physics.data.qvel[7] = 0.0
+            # self.physics.data.qvel[8] = 0.0
             self.physics.step()
         
-        ###########################################
+
         qfrc = self.physics.data.qfrc_actuator[:7].copy()      # 関節へ入った actuator トルク
         afrc_all = self.physics.data.actuator_force.copy()  # (nu,)
         afrc_arm = afrc_all[self.arm_actuator_ids].copy()   # (7,)
-        # print("[dbg][pldm_envs/franka/envs.py] qfrc_actuator:", qfrc)
-        # print("[dbg][pldm_envs/franka/envs.py] actuator_force (arm):", afrc_arm)
-        ###########################################
+
 
         self.t += 1
         image_obs = self.get_obs()
@@ -293,6 +302,15 @@ class FrankaSimEnv:
         info = self.get_info()
         info["qfrc_actuator"] = qfrc
         info["actuator_force"] = afrc_arm
+
+
+
+        # fj1 = self.physics.data.qpos[7]
+        # fj2 = self.physics.data.qpos[8]
+        # print(f"[DBG][pldm_envs/franka/envs.py] finger qpos: {fj1:.6f}, {fj2:.6f}")
+        
+
+        
         return image_obs, reward, done, truncated, info
 
     def set_xyz(self, target_pos, target_rotmat=None, rot_weight=0.1,
@@ -371,7 +389,7 @@ class FrankaSimEnv:
 
 
     # ========== 観測 ==========
-    def get_obs(self):
+    def get_obs(self, normalize:bool = True):
         img = self.physics.render(
             height=self.image_size[0],
             width=self.image_size[1],
@@ -381,21 +399,25 @@ class FrankaSimEnv:
         # (C,H,W) float32
         img = np.transpose(img, (2, 0, 1)).astype(np.float32)
         img = torch.from_numpy(img).contiguous()
+        
+        if not normalize: return img
 
-        if self.task_cfg.backbone_arch == "vjepa2":
-            x = img.unsqueeze(0)  # (1,3,H,W)
 
-            pv = self.vjepa2_processor(x, return_tensors="pt")["pixel_values_videos"]
-            pv = pv.squeeze(0).squeeze(0)  # -> (3,256,256)
+        if self.task_cfg is not None:
+            if self.task_cfg.backbone_arch == "vjepa2":
+                x = img.unsqueeze(0)  # (1,3,H,W)
 
-            return pv
+                pv = self.vjepa2_processor(x, return_tensors="pt")["pixel_values_videos"]
+                pv = pv.squeeze(0).squeeze(0)  # -> (3,256,256)
+
+                return pv
 
         # vjepa2以外は従来通り normalizer
         if self.use_normalize:
             img = self.normalizer.normalize_state(img)
         return img
 
-    def get_target_obs(self):
+    def get_target_obs(self, normalize:bool = True):
         # backup
         qpos_bk = self.physics.data.qpos.copy()
         qvel_bk = self.physics.data.qvel.copy()
@@ -446,6 +468,8 @@ class FrankaSimEnv:
             )
             img = np.transpose(img, (2, 0, 1)).astype(np.float32)
             img = torch.from_numpy(img).contiguous()
+            
+            if not normalize: return img
 
             if self.task_cfg.backbone_arch == "vjepa2":
                 x = img.unsqueeze(0)  # (1,3,H,W)
