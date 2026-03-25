@@ -73,7 +73,7 @@ hjepa:
     predictor:
       residual: true
       action_encoder_arch: 'id'
-      predictor_arch: conv2
+      predictor_arch: vit
       predictor_subclass: franka_b_p
       rnn_converter_arch: ''
       rnn_layers: 1
@@ -92,7 +92,7 @@ use_opn_loss_func: &use_opn_loss_func false
 objectives_l1:
   idm:
     action_dim: 7
-    coeff: 0.0 #5.3964
+    coeff: 5.0 #5.3964
     arch: 'conv'
     use_pred: false
     arch_subclass: a
@@ -100,13 +100,13 @@ objectives_l1:
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   # - ObjectiveType.SIGReg
-  # - ObjectiveType.IDM
+  - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   opn_objectives:
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   # - ObjectiveType.SIGReg
-  # - ObjectiveType.IDM
+  - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   vicreg_obs:
     adjust_cov: true
@@ -127,10 +127,6 @@ objectives_l1:
 optimizer_type: Adam
 output_dir: franka
 output_root: ./pldm/checkpoints
-
-latent_plan: 
-  
-
 
 
 

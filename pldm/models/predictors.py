@@ -120,6 +120,7 @@ class SequencePredictor(torch.nn.Module):
         posterior_logits = []
         posteriors = []
 
+
         # print("[DBG][pldm/models/predictors.py] self.prior_model is not None:", self.prior_model is not None)
         for i in range(T):
             predictor_input = []
@@ -205,7 +206,7 @@ class SequencePredictor(torch.nn.Module):
                 )
                 # === scheduled sampling (teacher mixing) ===
                 # alpha: 0→完全closed, 1→完全open(teacher forcing)
-                if alpha is not None and alpha > 0 and (i + 1) < state_encs.shape[0]:
+                if alpha is not None and alpha > 0.0 and (i + 1) < state_encs.shape[0]:
                     teacher_next = state_encs[i + 1].detach()          # z_{i+1} (encoder output)
                     next_state = (1 - alpha) * next_state + alpha * teacher_next
                 current_state = next_state
@@ -505,6 +506,120 @@ class ConvPredictor(SequencePredictor):
         return x
 
 
+
+class ViTPredictor(SequencePredictor):
+    def __init__(
+        self,
+        config,
+        repr_dim,
+        z_dim: Optional[int] = None,
+        z_min_std: Optional[float] = None,
+        z_discrete: Optional[bool] = None,
+        z_discrete_dists: Optional[int] = None,
+        z_discrete_dim: Optional[int] = None,
+        posterior_drop_p: Optional[float] = None,
+        prior_arch: Optional[str] = None,
+        posterior_arch: Optional[str] = None,
+        posterior_input_type: Optional[str] = None,
+        posterior_input_dim: Optional[str] = None,
+        action_dim=2,
+        pred_propio_dim=0,
+        pred_obs_dim=0,
+        depth=4,
+        num_heads=4,
+        mlp_ratio=4.0,
+        dropout=0.0,
+        use_action_token=False,
+    ):
+        super().__init__(
+            config=config,
+            repr_dim=repr_dim,
+            z_dim=z_dim,
+            z_min_std=z_min_std,
+            z_discrete=z_discrete,
+            z_discrete_dists=z_discrete_dists,
+            z_discrete_dim=z_discrete_dim,
+            posterior_drop_p=posterior_drop_p,
+            prior_arch=prior_arch,
+            posterior_arch=posterior_arch,
+            posterior_input_type=posterior_input_type,
+            posterior_input_dim=posterior_input_dim,
+            action_dim=action_dim,
+            pred_propio_dim=pred_propio_dim,
+            pred_obs_dim=pred_obs_dim,
+        )
+
+        assert isinstance(repr_dim, (tuple, list)) and len(repr_dim) == 3, \
+            f"ViTPredictor expects repr_dim=(C,H,W), got {repr_dim}"
+
+        self.c, self.h, self.w = repr_dim
+        self.num_tokens = self.h * self.w
+        self.embed_dim = self.c
+        self.use_action_token = use_action_token
+
+        self.action_proj = nn.Sequential(
+            nn.Linear(action_dim, self.embed_dim),
+            nn.GELU(),
+            nn.Linear(self.embed_dim, self.embed_dim),
+        )
+
+        token_count = self.num_tokens + (1 if use_action_token else 0)
+        self.pos_embed = nn.Parameter(torch.zeros(1, token_count, self.embed_dim))
+        self.pos_drop = nn.Dropout(dropout)
+
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self.embed_dim,
+            nhead=num_heads,
+            dim_feedforward=int(self.embed_dim * mlp_ratio),
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=depth)
+
+        self.out_proj = nn.Identity()
+
+    def forward(self, current_state, curr_action):
+        # current_state: [B, C, H, W]
+        # curr_action:   [B, A]
+        b, c, h, w = current_state.shape
+        assert c == self.c and h == self.h and w == self.w, \
+            f"Expected {(self.c, self.h, self.w)}, got {(c, h, w)}"
+
+        # [B, C, H, W] -> [B, N, C]
+        x = current_state.flatten(2).transpose(1, 2)
+
+        a = self.action_proj(curr_action)  # [B, C]
+
+        if self.use_action_token:
+            a_token = a.unsqueeze(1)  # [B, 1, C]
+            x = torch.cat([a_token, x], dim=1)
+            x = x + self.pos_embed[:, :x.shape[1], :]
+            x = self.pos_drop(x)
+            x = self.transformer(x)
+            x = x[:, 1:, :]  # action token を除去
+        else:
+            x = x + a.unsqueeze(1)    # 全 token に action 埋め込みを加算
+            x = x + self.pos_embed[:, :x.shape[1], :]
+            x = self.pos_drop(x)
+            x = self.transformer(x)
+
+        x = self.out_proj(x)
+
+        # [B, N, C] -> [B, C, H, W]
+        x = x.transpose(1, 2).reshape(b, c, h, w)
+
+        if self.config.residual:
+            x = x + current_state
+
+        return x
+
+
+
+
+
+
 class RNNPredictorV3(torch.nn.Module):
     def __init__(
         self,
@@ -749,6 +864,31 @@ def build_predictor(
             pred_propio_dim=pred_propio_dim,
             pred_obs_dim=pred_obs_dim,
         )
+
+    elif arch == "vit":
+        predictor = ViTPredictor(
+            config=config,
+            repr_dim=repr_dim,
+            z_discrete=z_discrete,
+            z_discrete_dists=z_discrete_dists,
+            z_discrete_dim=z_discrete_dim,
+            z_dim=z_dim,
+            z_min_std=z_min_std,
+            posterior_drop_p=posterior_drop_p,
+            prior_arch=prior_arch,
+            posterior_arch=posterior_arch,
+            posterior_input_type=posterior_input_type,
+            posterior_input_dim=posterior_input_dim,
+            action_dim=action_dim,
+            pred_propio_dim=pred_propio_dim,
+            pred_obs_dim=pred_obs_dim,
+            depth=4,
+            num_heads=3,
+            mlp_ratio=4.0,
+            dropout=0.0,
+            use_action_token=False,
+        )
+        
     elif arch == "rnn":
         predictor = RNNPredictor(
             hidden_size=repr_dim,

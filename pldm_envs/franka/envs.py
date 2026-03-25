@@ -183,7 +183,6 @@ class FrankaSimEnv:
         self.goal_pos = goal_pos
 
         # ---- task specific goal params ----
-        print("[DBG][pldm_envs/franka/envs.py] task_name:", self.task_name)
         if self.task_name == "reach_no_touch":
             tc = getattr(self.task_cfg, "reach_no_touch", None)
             if tc is None:

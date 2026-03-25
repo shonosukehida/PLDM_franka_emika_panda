@@ -112,6 +112,9 @@ class IDMObjective(torch.nn.Module):
             reduction="mean",
         )
 
+
+        # print("[pldm/objectives/idm.py]: idm_loss:", action_loss)
+        # print("[pldm/objectives/idm.py]: idm_total_loss:", self.config.coeff * action_loss)
         return IDMLossInfo(
             total_loss=self.config.coeff * action_loss,
             action_loss=action_loss,

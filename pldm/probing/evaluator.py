@@ -1019,7 +1019,19 @@ class ProbingEvaluator:
                         max_num_plot = 25,
                     ) 
                     
-                self.pca_visual_encoder(
+                self.pca_visual_encoder_bluebox(
+                    btc,
+                    model,
+                    pool = "flat",
+                )
+                
+                self.pca_visual_encoder_franka(
+                    btc,
+                    model,
+                    pool = "flat",
+                )
+                
+                self.plot_pca_cartesian_action_rollout(
                     btc,
                     model,
                     pool = "flat",
@@ -4387,7 +4399,7 @@ class ProbingEvaluator:
 
 
     @torch.no_grad()
-    def pca_visual_encoder(
+    def pca_visual_encoder_bluebox(
         self,
         batch,
         jepa: "JEPA",
@@ -4659,3 +4671,608 @@ class ProbingEvaluator:
         print("finished making pca visual encoder")
             
         pass
+
+
+
+    @torch.no_grad()
+    def pca_visual_encoder_franka(
+        self,
+        batch,
+        jepa: "JEPA",
+        name_prefix: str = "",
+        idxs: Optional[List[int]] = None,
+        notebook: bool = False,
+        pool: str = "flat",              # "gap"/"flat"
+        k: int = 3,
+        align_closed: bool = True,
+        is_train: bool = False,
+        x_half_range: float = 0.10,
+        y_half_range: float = 0.10,
+        n_x_points: int = 101,
+        n_y_points: int = 101,
+        ee_z: float = 0.10,
+        fixed_box_pos: tuple = (0.515, 0.0, 0.05),
+        fixed_goal_pos: tuple = (0.58, 0.00, 0.05),
+        robot_only: bool = True,
+        settle_steps: int = 300,
+    ):
+        env_generator = FrankaEnvsGenerator(
+            model_path=self.config.model_path,
+            n_envs=1,
+            max_dq=self.config.max_dq,
+            camera_name=self.config.camera_name,
+        )
+
+        env = env_generator()[0]
+        device = self.device
+
+        print("[pldm/probing/evaluator.py] batch.states.shape:", batch.states.shape)
+
+        # -----------------------------
+        # 1) EE の十字配置を作る
+        # -----------------------------
+        # reset() の初期IKターゲットと揃える
+        ee_center = np.array([0.515, 0.0, ee_z], dtype=np.float32)
+        fixed_box_pos = np.array(fixed_box_pos, dtype=np.float32)
+        fixed_goal_pos = np.array(fixed_goal_pos, dtype=np.float32)
+
+        positions = []
+
+        x_values = np.linspace(
+            ee_center[0] - x_half_range,
+            ee_center[0] + x_half_range,
+            n_x_points,
+            dtype=np.float32,
+        )
+
+        y_values = np.linspace(
+            ee_center[1] - y_half_range,
+            ee_center[1] + y_half_range,
+            n_y_points,
+            dtype=np.float32,
+        )
+
+        x_center_idx = n_x_points // 2
+        for idx, x in enumerate(x_values):
+            p = ee_center.copy()
+            p[0] = x
+            positions.append(("x", idx - x_center_idx, p.copy()))
+
+        y_center_idx = n_y_points // 2
+        for idx, y in enumerate(y_values):
+            # if np.isclose(y, ee_center[1]):
+            #     continue
+            p = ee_center.copy()
+            p[1] = y
+            positions.append(("y", idx - y_center_idx, p.copy()))
+
+        # -----------------------------
+        # 2) 各EE位置で画像を取得
+        # -----------------------------
+        imgs = []
+        labels = []
+        coords = []
+
+        for axis, step_idx, ee_target in positions:
+            # 毎回環境を初期状態へ戻す
+            obs = env.reset(
+                start_pos=fixed_box_pos,
+                goal_pos=fixed_goal_pos,
+                robot_only=robot_only,
+            )
+
+            # EE を target 位置へ移動
+            try:
+                _, ee_actual = env.set_xyz(
+                    target_pos=ee_target,
+                    target_rotmat=None,
+                    rot_weight=0.1,
+                    settle_steps=settle_steps,
+                    sync_ctrl=True,
+                )
+            except Exception as e:
+                print(f"[WARN] IK failed at {axis}{step_idx}: target={ee_target}, err={e}")
+                continue
+
+            obs = env.get_obs()
+
+            if isinstance(obs, np.ndarray):
+                obs = torch.from_numpy(obs)
+
+            imgs.append(obs.float().cpu())
+            labels.append((axis, step_idx))
+            coords.append(ee_actual[:2].copy())   # 実際のEE位置を使う
+
+        if len(imgs) == 0:
+            raise RuntimeError("No valid samples were collected in pca_visual_encoder_franka().")
+
+        imgs = torch.stack(imgs, dim=0)   # [N,C,H,W]
+
+        # -----------------------------
+        # 3) encoder に通すため T=1 にする
+        # -----------------------------
+        states = imgs.unsqueeze(0).to(device)   # [1,N,C,H,W]
+
+        enc_output = jepa.backbone.forward_multiple(states)
+        z = enc_output.obs_component
+
+        # -----------------------------
+        # 4) [N,D] に整形
+        # -----------------------------
+        if z.dim() == 5:
+            z = z[0]   # [N,C,H,W]
+            if pool == "gap":
+                z = z.mean(dim=(-2, -1))   # [N,C]
+            else:
+                z = z.flatten(start_dim=1) # [N,C*H*W]
+        elif z.dim() == 3:
+            z = z[0]   # [N,D]
+        else:
+            raise ValueError(f"Unexpected encoder output shape: {z.shape}")
+
+        z_np = z.detach().cpu().numpy()
+
+        # -----------------------------
+        # 5) PCA
+        # -----------------------------
+        pca = PCA(n_components=2)
+        z2 = pca.fit_transform(z_np)
+
+        # -----------------------------
+        # 6) 潜在空間の可視化
+        # -----------------------------
+        fig, ax = plt.subplots(figsize=(7, 7), dpi=140)
+
+        xs_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "x"]
+        xs_idx = sorted(xs_idx, key=lambda i: labels[i][1])
+        ax.plot(z2[xs_idx, 0], z2[xs_idx, 1], marker="o", label="x-line")
+        for i in xs_idx:
+            _, step_idx = labels[i]
+            ax.text(z2[i, 0], z2[i, 1], f"x{step_idx}", fontsize=9)
+
+        ys_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "y"]
+        ys_idx = sorted(ys_idx, key=lambda i: labels[i][1])
+        ax.plot(z2[ys_idx, 0], z2[ys_idx, 1], marker="s", label="y-line")
+        for i in ys_idx:
+            _, step_idx = labels[i]
+            ax.text(z2[i, 0], z2[i, 1], f"y{step_idx}", fontsize=9)
+
+        center_idx = [i for i, (axis, step_idx) in enumerate(labels) if step_idx == 0]
+        for t, i in enumerate(center_idx):
+            ax.scatter(
+                z2[i, 0], z2[i, 1],
+                s=100, marker="*",
+                label="center" if t == 0 else None
+            )
+
+        ax.set_xlabel("PC1")
+        ax.set_ylabel("PC2")
+        ax.set_title(
+            f"{name_prefix} | PCA of encoder features (Franka EE motion)\n"
+            f"explained variance = {pca.explained_variance_ratio_[0]:.3f}, "
+            f"{pca.explained_variance_ratio_[1]:.3f}"
+        )
+        ax.legend()
+        ax.grid(True)
+        fig.tight_layout()
+
+        Logger.run().log_figure(
+            fig,
+            f"{name_prefix}_pca_franka_cross",
+            dir_name="pca_encoder_cross"
+        )
+        plt.close(fig)
+
+        # -----------------------------
+        # 7) 実空間(xy平面)のEE位置も可視化
+        # -----------------------------
+        coords_np = np.asarray(coords)   # [N,2]
+
+        fig_xy, ax_xy = plt.subplots(figsize=(7, 7), dpi=140)
+
+        xs_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "x"]
+        xs_idx = sorted(xs_idx, key=lambda i: labels[i][1])
+        ax_xy.plot(
+            coords_np[xs_idx, 0],
+            coords_np[xs_idx, 1],
+            marker="o",
+            label="x-line"
+        )
+        for i in xs_idx:
+            _, step_idx = labels[i]
+            ax_xy.text(coords_np[i, 0], coords_np[i, 1], f"x{step_idx}", fontsize=9)
+
+        ys_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "y"]
+        ys_idx = sorted(ys_idx, key=lambda i: labels[i][1])
+        ax_xy.plot(
+            coords_np[ys_idx, 0],
+            coords_np[ys_idx, 1],
+            marker="s",
+            label="y-line"
+        )
+        for i in ys_idx:
+            _, step_idx = labels[i]
+            ax_xy.text(coords_np[i, 0], coords_np[i, 1], f"y{step_idx}", fontsize=9)
+
+        center_idx = [i for i, (axis, step_idx) in enumerate(labels) if step_idx == 0]
+        for t, i in enumerate(center_idx):
+            ax_xy.scatter(
+                coords_np[i, 0], coords_np[i, 1],
+                s=120, marker="*",
+                label="center" if t == 0 else None
+            )
+
+        # 参考として箱位置も描く
+        if not robot_only:
+            ax_xy.scatter(
+                fixed_box_pos[0], fixed_box_pos[1],
+                s=120, marker="X", label="box"
+            )
+
+        ax_xy.set_xlabel("x")
+        ax_xy.set_ylabel("y")
+        ax_xy.set_title(f"{name_prefix} | Franka EE positions on xy-plane")
+        ax_xy.legend()
+        ax_xy.grid(True)
+        ax_xy.set_aspect("equal", adjustable="box")
+        fig_xy.tight_layout()
+
+        Logger.run().log_figure(
+            fig_xy,
+            f"{name_prefix}_xy_franka_cross",
+            dir_name="pca_encoder_cross"
+        )
+        plt.close(fig_xy)
+
+        print("finished making pca visual encoder for franka")
+
+
+    def _make_cartesian_action_directions(
+        self,
+        env,
+        step_size=0.04,  # 1cm
+        directions=("px", "nx", "py", "ny", "zero"),
+        rot_weight=0.1,
+        settle_steps=0,
+    ):
+        """
+        初期姿勢 q0, ee0 を基準に、
+        直交座標方向の微小移動に対応する action ベクトル(7,) を返す。
+        action の定義は `batch.actions` と同じ空間に合わせて調整すること。
+        """
+        q0 = env.physics.data.qpos[:7].copy()
+        ee0 = env.get_ee_position().copy()
+
+        action_vecs = []
+        labels = []
+
+        delta_map = {
+            "px": np.array([+step_size, 0.0, 0.0], dtype=np.float32),
+            "nx": np.array([-step_size, 0.0, 0.0], dtype=np.float32),
+            "py": np.array([0.0, +step_size, 0.0], dtype=np.float32),
+            "ny": np.array([0.0, -step_size, 0.0], dtype=np.float32),
+            "zero": np.array([0.0, 0.0, 0.0], dtype=np.float32),
+        }
+
+        for key in directions:
+            if key == "zero":
+                q_des = q0.astype(np.float32)
+                action_vecs.append(q_des)
+                labels.append("zero")
+                continue
+
+            target_pos = ee0 + delta_map[key]
+
+            # IK だけ解きたいので set_xyz ではなく calc_inverse_kinematic を直接使う方が軽い
+            result = env.calc_inverse_kinematic(
+                target_pos,
+                target_rotmat=None,
+                rot_weight=rot_weight,
+            )
+            if not result.success:
+                print(f"[WARN] IK failed for {key}: target={target_pos}")
+                continue
+
+            q_des = result.qpos[:7].copy().astype(np.float32)
+
+
+            action_vecs.append(q_des)
+            labels.append(key)
+
+        return action_vecs, labels
+
+
+    @torch.no_grad()
+    def plot_pca_cartesian_action_rollout(
+        self,
+        batch,
+        jepa: "JEPA",
+        name_prefix: str = "",
+        idx: int = 0,
+        horizon: int = 5,
+        pool: str = "gap",
+        k: int = 3,
+        notebook: bool = False,
+        is_train: bool = False,
+        step_size: float = 0.04,
+    ):
+        import numpy as np
+        import torch
+        import matplotlib.pyplot as plt
+        from matplotlib.lines import Line2D
+        from sklearn.decomposition import PCA
+
+        device = self.device
+
+        # -----------------------------
+        # 1) batch から1サンプルの初期状態を取る
+        # -----------------------------
+        states = batch.states.to(device).transpose(0, 1)   # [T,B,...]
+        actions = batch.actions.to(device).transpose(0, 1) # [T,B,A]
+        optional_fields = get_optional_fields(batch, device=states.device)
+
+        obs0 = states[0:1, idx:idx+1]  # [1,1,C,H,W] 想定
+
+        # propio があるなら初期時刻だけ抜く
+        opt0 = {}
+        for key, val in optional_fields.items():
+            if torch.is_tensor(val) and val.shape[0] == states.shape[0] and val.shape[1] == states.shape[1]:
+                opt0[key] = val[0:1, idx:idx+1]
+            else:
+                opt0[key] = val
+
+        # -----------------------------
+        # 2) 初期潜在 z0 を作る
+        # -----------------------------
+        enc0 = jepa.forward_posterior(
+            obs0,
+            actions=None,
+            encode_only=True,
+            **opt0,
+        ).backbone_output
+
+        # z0 = enc0.obs_component if getattr(enc0, "obs_component", None) is not None else enc0.encodings
+        z0 = enc0.encodings
+
+        # -----------------------------
+        # 3) 環境を1つ作って EE方向 action を作る
+        # -----------------------------
+        env_generator = FrankaEnvsGenerator(
+            model_path=self.config.model_path,
+            n_envs=1,
+            max_dq=self.config.max_dq,
+            camera_name=self.config.camera_name,
+        )
+        env = env_generator()[0]
+
+        # 初期姿勢を reset で揃える
+        _ = env.reset(robot_only=True)
+
+        action_vecs, labels = self._make_cartesian_action_directions(
+            env,
+            step_size=step_size,
+            directions=("px", "nx", "py", "ny", "zero"),
+        )
+        
+        
+        print("labels:", labels)
+        for label, a in zip(labels, action_vecs):
+            print(label, "norm =", np.linalg.norm(a), "a =", a)
+
+        action_seqs = []
+        for a_abs in action_vecs:
+            a_abs_t = torch.tensor(a_abs, dtype=torch.float32, device=device)   # (7,)
+            a_norm = self.normalizer.normalize_action(a_abs_t)                  # normalized absolute angle
+            seq = a_norm.unsqueeze(0).repeat(horizon, 1)                        # [H,7]
+            action_seqs.append(seq)
+
+        action_seqs = torch.stack(action_seqs, dim=0)                           # [N,H,7]
+        
+
+        # -----------------------------
+        # 5) predictor rollout
+        #    predictor.forward_multiple(state_encs, actions, T, ...)
+        #    を直接使う
+        # -----------------------------
+        # z0 を predictor が期待する T x B x ... へ揃える
+        if z0.dim() == 5:
+            # [1,1,C,H,W]
+            state_encs = z0
+        elif z0.dim() == 3:
+            # [1,1,D]
+            state_encs = z0
+        else:
+            raise ValueError(f"Unexpected z0 shape: {z0.shape}")
+
+        rollout_latents = []
+
+        for n in range(action_seqs.shape[0]):
+            a_seq = action_seqs[n:n+1].transpose(0, 1).contiguous()  # [H,1,7]
+
+            pred_output = jepa.predictor.forward_multiple(
+                state_encs=state_encs,
+                actions=a_seq,
+                T=horizon,
+                compute_posterior=False,
+                alpha=0.0,
+            )
+            
+
+            # lat = pred_output.obs_component if getattr(pred_output, "obs_component", None) is not None else pred_output.predictions
+            lat = pred_output.predictions
+
+            rollout_latents.append(lat)
+
+        # -----------------------------
+        # 6) [N,H,D] に整形
+        # -----------------------------
+        def _to_TBD(x, pool="gap"):
+            if x.dim() == 5:  # [T,B,C,H,W]
+                if pool == "gap":
+                    x = x.mean(dim=(-2, -1))  # [T,B,C]
+                else:
+                    T, B, C, H, W = x.shape
+                    x = x.reshape(T, B, C * H * W)
+            elif x.dim() > 3:
+                T, B = x.shape[:2]
+                x = x.reshape(T, B, -1)
+            return x
+
+        all_rolls = []
+        for lat in rollout_latents:
+            lat = _to_TBD(lat, pool=pool)[:, 0, :]   # [H,D]
+            all_rolls.append(lat)
+        all_rolls = torch.stack(all_rolls, dim=0)    # [N,H,D]
+
+        # z0 も潰す
+        z0_vec = _to_TBD(z0, pool=pool)[0, 0, :].unsqueeze(0)  # [1,D]
+
+        # -----------------------------
+        # 7) PCA
+        # -----------------------------
+        Z = torch.cat([
+            z0_vec.repeat(all_rolls.shape[0], 1),         # [N,D]
+            all_rolls.reshape(-1, all_rolls.shape[-1]),   # [N*H,D]
+        ], dim=0).detach().cpu().numpy()
+
+        pca = PCA(n_components=min(k, Z.shape[1]))
+        U = pca.fit_transform(Z)
+        expl = pca.explained_variance_ratio_
+        k_eff = U.shape[1]
+
+        N = all_rolls.shape[0]
+        rollout_len = all_rolls.shape[1]
+        
+        U0 = U[:N]
+        Ur = U[N:].reshape(N, rollout_len, k_eff)
+
+        # -----------------------------
+        # 8) 2D可視化
+        # -----------------------------
+        if k_eff >= 2:
+            fig, ax = plt.subplots(figsize=(7, 7), dpi=140)
+
+            colors = ["tab:red", "tab:blue", "tab:green", "tab:orange", "tab:purple"]
+
+            # 始点は1個だけ黒で表示
+            ax.scatter(U0[0, 0], U0[0, 1], s=40, color="black", marker="o", label="start")
+
+            for n, label in enumerate(labels):
+                traj = Ur[n, :, :2]
+
+                # 軌道
+                ax.plot(
+                    traj[:, 0], traj[:, 1],
+                    marker="o",
+                    alpha=0.9,
+                    color=colors[n],
+                    label=label,
+                )
+
+                # 終点を強調
+                ax.scatter(
+                    traj[-1, 0], traj[-1, 1],
+                    s=60,
+                    color=colors[n],
+                    marker="X"
+                )
+
+                # 終点ラベル
+                ax.text(
+                    traj[-1, 0], traj[-1, 1],
+                    label,
+                    fontsize=9,
+                    color=colors[n],
+                    bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=colors[n], alpha=0.8)
+                )
+
+            ax.legend()
+
+            ax.set_xlabel("PC1")
+            ax.set_ylabel("PC2")
+            ax.set_title(
+                f"{name_prefix} | Cartesian-action rollout PCA | "
+                + ", ".join(f"{v:.3f}" for v in expl[:k_eff])
+            )
+            ax.grid(True)
+            fig.tight_layout()
+
+            if not notebook:
+                if not is_train:
+                    Logger.run().log_figure(fig, f"{name_prefix}-cartesian-action-rollout-pca2d", dir_name="pca_ac_cond_val/action_rollout")
+                else:
+                    Logger.run().log_figure(fig, f"{name_prefix}-cartesian-action-rollout-pca2d", dir_name="pca_ac_cond_train/action_rollout")
+                plt.close(fig)
+            else:
+                plt.show()
+                plt.close(fig)
+
+        # =========================
+        # EE直交座標の可視化
+        # =========================
+        ee_positions = []
+        ee_labels = []
+
+        # 初期状態
+        q0 = env.physics.data.qpos[:7].copy()
+        ee0 = env.get_ee_position().copy()
+
+        ee_positions.append(ee0)
+        ee_labels.append("origin")
+
+        for label, a_abs in zip(labels, action_vecs):
+            if label == "zero":
+                q_target = q0.copy()
+            else:
+                q_target = a_abs.copy()
+
+            # 一度関節角をセットしてEE位置を確認
+            env.physics.data.qpos[:7] = q_target
+            env.physics.forward()
+
+            ee_pos = env.get_ee_position().copy()
+            ee_positions.append(ee_pos)
+            ee_labels.append(label)
+
+        # 元に戻す
+        env.physics.data.qpos[:7] = q0
+        env.physics.forward()
+
+        ee_positions = np.array(ee_positions)
+
+        # -------------------------
+        # 2Dプロット（xy平面）
+        # -------------------------
+        fig, ax = plt.subplots(figsize=(6,6), dpi=140)
+
+        origin = ee_positions[0]
+
+        for i in range(1, len(ee_positions)):
+            p = ee_positions[i]
+            dx = p[0] - origin[0]
+            dy = p[1] - origin[1]
+
+            ax.arrow(
+                origin[0], origin[1],
+                dx, dy,
+                head_width=0.005,
+                length_includes_head=True,
+                alpha=0.8
+            )
+            ax.text(p[0], p[1], ee_labels[i], fontsize=9)
+
+        # origin
+        ax.scatter(origin[0], origin[1], s=50)
+        ax.text(origin[0], origin[1], "origin", fontsize=10)
+
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_title("EE Cartesian Movement (from IK actions)")
+        ax.grid(True)
+        ax.axis("equal")
+
+        if notebook:
+            plt.show()
+        else:
+            Logger.run().log_figure(fig, f"{name_prefix}-ee_cartesian_debug", dir_name="pca_ac_cond_val/action_log")
+            plt.close(fig)
