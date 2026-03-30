@@ -6,7 +6,7 @@ logs/
 *__pycache__*
 *npz
 wandb
-nohup.out
+nohup*
 checkpoints
 _*
 *.npy

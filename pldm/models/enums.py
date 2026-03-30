@@ -5,6 +5,16 @@ import torch
 
 
 @dataclass
+class ViTConfig:
+    depth: int = 4
+    num_heads: int = 3
+    mlp_ratio: float = 4.0
+    dropout: float = 0.0
+    use_action_token: bool = False
+
+
+
+@dataclass
 class PredictorConfig(ConfigBase):
     predictor_arch: str = "rnnV3"
     predictor_subclass: str = "a"
@@ -25,6 +35,8 @@ class PredictorConfig(ConfigBase):
     residual: bool = False
     rnn_layers: int = 1
     tie_backbone_ln: bool = False
+    
+    vit: ViTConfig = ViTConfig()
 
 
 class PredictorOutput:

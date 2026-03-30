@@ -80,12 +80,19 @@ hjepa:
       rnn_state_dim: 512
       z_dim: 0
       z_min_std: 0.1
+
+      vit:
+        depth: 4
+        num_heads: 3
+        mlp_ratio: 4.0
+        dropout: 0.1
+        use_action_token: true
     encode_only: false
     use_z_goal: false
     action_dim: 7
     momentum: 0.99
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20260219_122600/epoch=5_sample_step=248960.ckpt #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20260325_160642/epoch=5_sample_step=248960.ckpt #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
 load_l1_only: false
 
 alpha: 0.0 #0.0 #current_state = (1 - alpha) * next_state + alpha * teacher_state #sample_scheduling
@@ -93,21 +100,21 @@ use_opn_loss_func: &use_opn_loss_func false #現在はopen_objectives を共通�
 objectives_l1:
   idm:
     action_dim: 7
-    coeff: 0.0 #5.3964
+    coeff: 1.0 #5.3964
     arch: 'conv'
-    use_pred: false
+    use_pred: true
     arch_subclass: a
   clsd_objectives: #実際はclosed
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   # - ObjectiveType.SIGReg
-  # - ObjectiveType.IDM
+  - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   opn_objectives:
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   # - ObjectiveType.SIGReg
-  # - ObjectiveType.IDM
+  - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   vicreg_obs:
     adjust_cov: true
@@ -181,11 +188,11 @@ eval_cfg:
 
     designate_start_goal_pos:  #タスク時にstart,goal_posを指定するか否か
       valid: true
-      start_pos: [0.515, 0.05, 0.05] #[0.50, -0.05, 0.05]
-      goal_pos: [0.515, 0.15, 0.05] #[0.50, -0.15, 0.05]
+      start_pos: [0.50, -0.05, 0.05] #[0.50, -0.05, 0.05]
+      goal_pos: [0.50, -0.15, 0.05] #[0.50, -0.15, 0.05]
 
     level1:
-      planner_type: PlannerType.CEM
+      planner_type: PlannerType.MPPI
       min_step: 0
       max_step: 1
       max_plan_length: 50 #128 #一度に予測するホライズン
@@ -265,9 +272,9 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: false #proberを用いたダイナミクスの可視化をするか否か
-    visualize_dynamics: false #proberを用いないダイナミクスの可視化をするか否か 
-    vis_long_horizon_eval: false #全てのval_dataset を使ったpca評価をするか否か
-    vis_long_horizon_train: false #全てのtrain_dataset を使ったpca評価をするか否か
+    visualize_dynamics: true #proberを用いないダイナミクスの可視化をするか否か 
+    vis_long_horizon_eval: true #全てのval_dataset を使ったpca評価をするか否か
+    vis_long_horizon_train: true #全てのtrain_dataset を使ったpca評価をするか否か
     load_prober: false
     train_prober: false #load_prober:falseの場合にproberをtrainさせるか否かを指定
 

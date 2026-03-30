@@ -73,19 +73,26 @@ hjepa:
     predictor:
       residual: true
       action_encoder_arch: 'id'
-      predictor_arch: conv2
+      predictor_arch: vit #conv/vit
       predictor_subclass: franka_b_p
       rnn_converter_arch: ''
       rnn_layers: 1
       rnn_state_dim: 512
       z_dim: 0
       z_min_std: 0.1
+
+      vit:
+        depth: 4
+        num_heads: 3
+        mlp_ratio: 4.0
+        dropout: 0.1
+        use_action_token: true
     encode_only: false
     use_z_goal: false
     action_dim: 7
     momentum: 0.99
   step_skip: 4
-load_checkpoint_path: pldm/checkpoints/franka_20260219_122600/epoch=5_sample_step=248960.ckpt #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
+load_checkpoint_path: pldm/checkpoints/franka_20260325_161744/epoch=5_sample_step=248960.ckpt #pldm/checkpoints/franka_20250828_203109/epoch=10_sample_step=3410000.ckpt
 load_l1_only: false
 
 alpha: 0.0 #0.0 #current_state = (1 - alpha) * next_state + alpha * teacher_state #sample_scheduling
@@ -265,8 +272,8 @@ eval_cfg:
     max_samples_enc: 2000000
     schedule: Cosine
     visualize_probing: false #proberを用いたダイナミクスの可視化をするか否か
-    visualize_dynamics: false #proberを用いないダイナミクスの可視化をするか否か 
-    vis_long_horizon_eval: false #全てのval_dataset を使ったpca評価をするか否か
+    visualize_dynamics: true #proberを用いないダイナミクスの可視化をするか否か 
+    vis_long_horizon_eval: true #全てのval_dataset を使ったpca評価をするか否か
     vis_long_horizon_train: false #全てのtrain_dataset を使ったpca評価をするか否か
     load_prober: false
     train_prober: false #load_prober:falseの場合にproberをtrainさせるか否かを指定

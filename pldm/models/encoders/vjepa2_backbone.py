@@ -36,19 +36,10 @@ class VJEPA2Backbone(SequenceBackbone):
         self.propio_dim = propio_dim
         self.propio_encoder_arch = propio_encoder_arch
         self.normalizer = normalizer
-        print("[pldm/models/encoders/vjepa2_backbone.py] self.normalizer:", self.normalizer)
 
         self.vjepa2 = AutoModel.from_pretrained(repo)
         self.processor = AutoVideoProcessor.from_pretrained(repo)
-        print("[DBG][pldm/models/encoders/vjepa2_backbone.py] self.processor")
-        print(type(self.processor))
 
-        # print("[DBG][pldm/models/encoders/vjepa2_backbone.py] self.vjepa2")
-        # print(type(self.vjepa2))
-        # print(self.vjepa2.__class__.__name__)
-        # print(self.vjepa2.config.__class__.__name__)
-        # print(getattr(self.vjepa2.config, "model_type", None))
-        # print(getattr(self.vjepa2.config, "auto_map", None))  # remote code系ならここに出る
 
         if self.freeze:
             self.vjepa2.eval()
@@ -57,13 +48,11 @@ class VJEPA2Backbone(SequenceBackbone):
 
 
         # --- obs adapter（VJEPA2 token D -> out_obs_channels）---
-        # self.obs_adapter = self._build_obs_adapter_with_dummy_forward(out_obs_channels)
         
         vj2_n, vj2_b, vj2_d = self._infer_vjepa2_shape_with_dummy_forward(out_obs_channels)
         p = next(self.vjepa2.parameters())
         dev, dtype = p.device, p.dtype
         self.obs_adapter = nn.Conv2d(vj2_d, self.out_obs_channels, kernel_size=1).to(dev)
-        # self.obs_adapter = nn.Linear(vj2_d, self.out_obs_channels).to(dev)
 
         # --- propio encoder（propio -> out_propio_channels -> spatial）---
         if self.propio_dim and self.out_propio_channels > 0:
@@ -154,13 +143,6 @@ class VJEPA2Backbone(SequenceBackbone):
         if x.dim() != 4:
             raise ValueError(f"expects (BS,C,H,W), got {tuple(x.shape)}")
 
-        # BS, C, H, W = x.shape
-        # x = self.normalizer.unnormalize_state(x)
-        # pvs = []
-        # for b in range(x.shape[0]):
-        #     pv = self.processor(x[b], return_tensors="pt")["pixel_values_videos"]  # (1,1,3,256,256) のはず
-        #     pvs.append(pv)
-        # x_vid = torch.cat(pvs, dim=0).to(self.vjepa2.device)  # (BS,1,3,256,256)
         x_vid = x.unsqueeze(1) 
 
 
@@ -239,31 +221,3 @@ class VJEPA2Backbone(SequenceBackbone):
             obs_component=obs_component,
             propio_component=propio_component,
         )
-
-
-    # def vjepa2_preprocess_gpu(self, x):  # x: (B,3,H,W), range 0..255 float
-    #     # 1) rescale to 0..1
-    #     x = x / 255.0
-
-    #     # 2) resize shortest edge to 292 (keep aspect)
-    #     resize_short = 292
-    #     B, C, H, W = x.shape
-    #     if H < W:
-    #         new_h = resize_short
-    #         new_w = int(round(W * resize_short / H))
-    #     else:
-    #         new_w = resize_short
-    #         new_h = int(round(H * resize_short / W))
-    #     x = F.interpolate(x, size=(new_h, new_w), mode="bilinear", align_corners=False)
-
-    #     # 3) center crop to 256
-    #     crop = 256
-    #     top = (new_h - crop) // 2
-    #     left = (new_w - crop) // 2
-    #     x = x[:, :, top:top+crop, left:left+crop]
-
-    #     # 4) imagenet normalize
-    #     mean = torch.tensor([0.485, 0.456, 0.406], device=x.device).view(1,3,1,1)
-    #     std  = torch.tensor([0.229, 0.224, 0.225], device=x.device).view(1,3,1,1)
-    #     x = (x - mean) / std
-    #     return x

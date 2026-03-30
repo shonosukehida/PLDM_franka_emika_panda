@@ -304,8 +304,8 @@ class FrankaSimEnv:
 
 
 
-        # fj1 = self.physics.data.qpos[7]
-        # fj2 = self.physics.data.qpos[8]
+        fj1 = self.physics.data.qpos[7]
+        fj2 = self.physics.data.qpos[8]
         # print(f"[DBG][pldm_envs/franka/envs.py] finger qpos: {fj1:.6f}, {fj2:.6f}")
         
 

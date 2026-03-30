@@ -80,6 +80,13 @@ hjepa:
       rnn_state_dim: 512
       z_dim: 0
       z_min_std: 0.1
+      
+      vit:
+        depth: 4
+        num_heads: 3
+        mlp_ratio: 4.0
+        dropout: 0.1
+        use_action_token: true
     encode_only: false
     use_z_goal: false
     action_dim: 7
