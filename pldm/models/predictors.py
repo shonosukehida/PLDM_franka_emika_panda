@@ -567,18 +567,23 @@ class ViTPredictor(SequencePredictor):
         self.pos_embed = nn.Parameter(torch.zeros(1, token_count, self.embed_dim))
         self.pos_drop = nn.Dropout(dropout)
 
+        self.depth = depth 
+        self.num_heads = num_heads
+        
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=self.embed_dim,
-            nhead=num_heads,
+            nhead=self.num_heads,
             dim_feedforward=int(self.embed_dim * mlp_ratio),
             dropout=dropout,
             activation="gelu",
             batch_first=True,
             norm_first=True,
         )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=depth)
+        
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=self.depth)
 
         self.out_proj = nn.Identity()
+        
 
     def forward(self, current_state, curr_action):
         # current_state: [B, C, H, W]
@@ -888,7 +893,12 @@ def build_predictor(
             dropout=0.0,
             use_action_token=False,
         )
-        
+
+        print("[pldm/models/predictors.py] ViT.depth", predictor.depth)
+        print("[pldm/models/predictors.py] ViT.num_heads", predictor.num_heads)
+
+
+
     elif arch == "rnn":
         predictor = RNNPredictor(
             hidden_size=repr_dim,
