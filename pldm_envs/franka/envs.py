@@ -155,8 +155,8 @@ class FrankaSimEnv:
         ##### IK計算デバッグ
         sid = self.physics.model.name2id("ee_target", "site")
         ee_now = self.physics.data.site_xpos[sid].copy()
-        print("[reset] IK target:", init_xyz, "actual:", ee_now, "err:", np.linalg.norm(ee_now-init_xyz))
-        print("IK success:", result.success)
+        # print("[reset] IK target:", init_xyz, "actual:", ee_now, "err:", np.linalg.norm(ee_now-init_xyz))
+        # print("IK success:", result.success)
         #####
 
 

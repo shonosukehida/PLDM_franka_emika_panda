@@ -97,14 +97,18 @@ class IDMObjective(torch.nn.Module):
         if self.config.arch == "conv":
             repr_input = torch.cat([curr_embeds, next_embeds], dim=2)
         else:
-            curr_embeds = flatten_conv_output(curr_embeds)
-            next_embeds = flatten_conv_output(next_embeds)
+            curr_embeds = flatten_output(curr_embeds)
+            next_embeds = flatten_output(next_embeds)
             repr_input = torch.cat([curr_embeds, next_embeds], dim=-1)
 
         repr_input = repr_input.flatten(start_dim=0, end_dim=1)
 
+        # print("repr_input.shape:", repr_input.shape) #[557056] (vit) #[16, 40560] (conv2)
+        # print("self.action_predcitor:", self.action_predictor) #(0): Linear(in_features=40560, out_features=7, bias=True)
         actions_pred = self.action_predictor(repr_input)
         # need to transpose 0 and 1 to swap time and batch, and only take the first dot's actions
+        
+        # print("actions_pred.shape:", actions_pred.shape) #[16, 7](conv2)
 
         action_loss = F.mse_loss(
             actions_pred,

@@ -6,7 +6,7 @@ from torch.nn import functional as F
 
 from pldm.configs import ConfigBase
 from pldm.models.jepa import ForwardResult
-from pldm.models.utils import flatten_conv_output
+from pldm.models.utils import flatten_conv_output, flatten_output
 from functools import reduce
 import operator
 from pldm.models.misc import Projector
@@ -98,7 +98,9 @@ class VICRegObjective(torch.nn.Module):
                 raise NotImplementedError
 
             sim_loss = (ema_encodings[1:] - state_predictions[1:]).pow(2).mean()
-        else:
+        else:   
+            print("encodings.shape:", encodings.shape) #[2, 16, 16, 1024]
+            print("state_predictions.shape:", state_predictions.shape) #[2, 16, 16, 1024]
             sim_loss = (encodings[1:] - state_predictions[1:]).pow(2).mean()
 
         if self.config.sim_coeff_t:
@@ -108,7 +110,7 @@ class VICRegObjective(torch.nn.Module):
 
         encodings = self.projector(encodings)
 
-        flat_encodings = flatten_conv_output(encodings)
+        flat_encodings = flatten_output(encodings)
 
         std_loss = self.std_loss(flat_encodings[:1])
 
@@ -123,6 +125,7 @@ class VICRegObjective(torch.nn.Module):
             # reshape (1, bs, ch, h, w) --> (w, bs, ch * h * w)
             cov_loss = self.cov_loss(flat_encodings[:1])
 
+        # print("flat_encodings[1:].shape:", flat_encodings[1:].shape) #[1, 262144](vit) #[1, 16, 10816](conv2)
         std_loss_t = self.std_loss(
             flat_encodings[1:].permute(1, 0, 2), across_time=True
         )  # (bs, T, repr)

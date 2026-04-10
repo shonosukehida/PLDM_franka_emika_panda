@@ -3,11 +3,25 @@ from torch import nn
 
 
 def flatten_conv_output(x):
+    # print("x.shape:", x.shape) #[2, 16, 16, 26, 26](conv2)
     if len(x.shape) > 3:
         if len(x.shape) == 4:
             bs, ch, h, w = x.shape
             return x.reshape(bs, -1)
         elif len(x.shape) == 5:
+            t, bs, ch, h, w = x.shape
+            return x.reshape(t, bs, -1)
+    else:
+        return x
+
+
+def flatten_output(x):
+    # print("x.shape:", x.shape) #[2, 16, 16, 26, 26](conv2)
+    if len(x.shape) > 3:
+        if len(x.shape) == 4: #vit
+            t, bs, n, d = x.shape
+            return x.reshape(t, bs, -1)
+        elif len(x.shape) == 5: #conv
             t, bs, ch, h, w = x.shape
             return x.reshape(t, bs, -1)
     else:

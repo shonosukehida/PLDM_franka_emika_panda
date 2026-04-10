@@ -38,7 +38,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from sklearn.cross_decomposition import CCA
 from matplotlib import cm
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 import hashlib
 from torch.utils.data import Subset, DataLoader
@@ -1025,9 +1025,21 @@ class ProbingEvaluator:
                     pool = "flat",
                 )
                 
+                self.pca_visual_encoder_bluebox_3d(
+                    btc,
+                    model,
+                    pool = "flat",
+                )
+                
                 self.pca_visual_encoder_franka(
                     btc,
                     model,
+                    pool = "flat",
+                )
+                
+                self.pca_visual_encoder_franka_3d(
+                    btc,
+                    model, 
                     pool = "flat",
                 )
                 
@@ -1103,6 +1115,15 @@ class ProbingEvaluator:
                     pool = 'flat',   
                     is_train=True   
                 )
+                
+                self.plot_pca_rgb(
+                    btc,
+                    model,
+                    name_prefix=f"{plot_prefix}_val",
+                    idxs=None if not quick_debug else list(range(5)),
+                    is_train=False,
+                    upsample=(224, 224),
+                )
 
                 
                 
@@ -1116,6 +1137,8 @@ class ProbingEvaluator:
                     normalizer=val_ds.normalizer,
                     name_prefix=plot_prefix,
                 )
+                
+                # self.plot_pca_rgb_featuremaps
 
 
         return
@@ -2985,10 +3008,12 @@ class ProbingEvaluator:
         actions = batch.actions.to(device).transpose(0, 1)
         optional_fields = get_optional_fields(batch, device=states.device)
         
-        print("[DBG][pldm/probing/evaluator.py] states.shape: ", states.shape)
 
         # --- 予測（closed）とエンコード（encoder）潜在の取得 ---
         pred_output = jepa.forward_posterior(states, actions, **optional_fields).pred_output
+        print("[pldm/probing/evaluator.py]states.shape:", states.shape)
+        print("[pldm/probing/evaluator.py]actions.shape:", actions.shape)
+        print("[pldm/probing/evaluator.py]pred_output.shape:", pred_output.predictions.shape)
         if getattr(pred_output, "obs_component", None) is not None:
             closed_lat_seq = pred_output.obs_component  # [T,B,C,H,W] or [T,B,D]
         else:
@@ -4245,12 +4270,32 @@ class ProbingEvaluator:
             pred_output = res.pred_output
             enc_output  = res.backbone_output
 
+
+            print("[pldm/probing/evaluator.py] states.mean:", states.mean())
+            print("[pldm/probing/evaluator.py] states.min:", states.min())
+            print("[pldm/probing/evaluator.py] states.max:", states.max())
+            print("[pldm/probing/evaluator.py] states.std:", states.std())
+            
+            
+            
+
             if getattr(pred_output, "obs_component", None) is not None:
                 closed_lat_seq = pred_output.obs_component
             else:
                 closed_lat_seq = pred_output.predictions
 
             encoder_lat_seq = enc_output.obs_component
+
+            print("[pldm/probing/evaluator.py] closed_lat_seq.mean:", closed_lat_seq.mean())
+            print("[pldm/probing/evaluator.py] closed_lat_seq.min:", closed_lat_seq.min())
+            print("[pldm/probing/evaluator.py] closed_lat_seq.max:", closed_lat_seq.max())
+            print("[pldm/probing/evaluator.py] closed_lat_seq.std:", closed_lat_seq.std())
+
+
+            print("[pldm/probing/evaluator.py] encoder_lat_seq.mean:", encoder_lat_seq.mean())
+            print("[pldm/probing/evaluator.py] encoder_lat_seq.min:", encoder_lat_seq.min())
+            print("[pldm/probing/evaluator.py] encoder_lat_seq.max:", encoder_lat_seq.max())
+            print("[pldm/probing/evaluator.py] encoder_lat_seq.std:", encoder_lat_seq.std())
 
             # ---- [B,T,D] に整形 ----
             closed_bt = _to_BTD(closed_lat_seq,  T_ref, B_ref, pool=pool)   # [B,T,Dc]
@@ -4269,7 +4314,6 @@ class ProbingEvaluator:
                     pick_idxs = list(range(take_per_batch))  # first
 
             # ---- 連結（時間方向に append）----
-            #   例: take_per_batch=1 なら 1本ずつ連結される
             for bi in pick_idxs:
                 if n_traj >= max_num_plot:
                     break
@@ -4398,6 +4442,8 @@ class ProbingEvaluator:
         torch.cuda.empty_cache()
 
 
+
+
     @torch.no_grad()
     def pca_visual_encoder_bluebox(
         self,
@@ -4407,9 +4453,9 @@ class ProbingEvaluator:
         idxs: Optional[List[int]] = None,
         notebook: bool = False,
         pool: str = "flat",              # "gap"/"flat"
-        k: int = 3,                     
-        align_closed: bool = True,  
-        is_train: bool = False,   
+        k: int = 3,
+        align_closed: bool = True,
+        is_train: bool = False,
         n_each_side: int = 2,
         dx: float = 0.04,
         dy: float = 0.04,
@@ -4419,34 +4465,27 @@ class ProbingEvaluator:
         n_y_points: int = 101,
     ):
 
-    
+        import matplotlib.pyplot as plt
+        from matplotlib import cm
+        from matplotlib.colors import Normalize
+
         env_generator = FrankaEnvsGenerator(
-            model_path = self.config.model_path,
-            n_envs = 1, 
-            max_dq = self.config.max_dq,
-            camera_name = self.config.camera_name
+            model_path=self.config.model_path,
+            n_envs=1,
+            max_dq=self.config.max_dq,
+            camera_name=self.config.camera_name
         )
-        
+
         env = env_generator()[0]
         device = self.device
 
-        # -----------------------------
-        # 1) env を作る
-        # -----------------------------
-        # batch から画像サイズを推定
-        # batch.states: [B,T,C,H,W] を想定
         print("[pldm/probing/evaluator.py] batch.states.shape:", batch.states.shape)
 
-
-        # -----------------------------
-        # 2) 十字配置を作る
-        # -----------------------------
         center = np.array([0.515, 0.0, 0.05], dtype=np.float32)
         fixed_goal = np.array([0.58, 0.00, 0.05], dtype=np.float32)
 
         positions = []
 
-        # x方向の配置点を等間隔に作る
         x_values = np.linspace(
             center[0] - x_half_range,
             center[0] + x_half_range,
@@ -4454,7 +4493,6 @@ class ProbingEvaluator:
             dtype=np.float32,
         )
 
-        # y方向の配置点を等間隔に作る
         y_values = np.linspace(
             center[1] - y_half_range,
             center[1] + y_half_range,
@@ -4462,14 +4500,12 @@ class ProbingEvaluator:
             dtype=np.float32,
         )
 
-        # x方向ライン
         x_center_idx = n_x_points // 2
         for idx, x in enumerate(x_values):
             p = center.copy()
             p[0] = x
             positions.append(("x", idx - x_center_idx, p.copy()))
 
-        # y方向ライン（中心重複回避）
         y_center_idx = n_y_points // 2
         for idx, y in enumerate(y_values):
             if np.isclose(y, center[1]):
@@ -4478,9 +4514,6 @@ class ProbingEvaluator:
             p[1] = y
             positions.append(("y", idx - y_center_idx, p.copy()))
 
-        # -----------------------------
-        # 3) 各位置で画像を取得
-        # -----------------------------
         imgs = []
         labels = []
         coords = []
@@ -4490,39 +4523,22 @@ class ProbingEvaluator:
                 start_pos=start_pos,
                 goal_pos=fixed_goal,
                 robot_only=False,
-            )  # get_obs() が返る
+            )
 
             if isinstance(obs, np.ndarray):
                 obs = torch.from_numpy(obs)
 
-            # obs: [C,H,W]
             imgs.append(obs.float().cpu())
             labels.append((axis, step_idx))
             coords.append(start_pos[:2].copy())
 
         imgs = torch.stack(imgs, dim=0)   # [N,C,H,W]
 
-        # -----------------------------
-        # 4) encoder に通すため T=1 にする
-        # -----------------------------
-        
-        # forward_posterior が [T,B,C,H,W] を期待しているので
         states = imgs.unsqueeze(0).to(device)   # [1,N,C,H,W]
-        # print("[pldm/probing/evaluator.py] states.shape:", states.shape) #[1, 9, 3, 64, 64]
-        
 
-
-        enc_output = jepa.backbone.forward_multiple(
-            states,
-        )
-
+        enc_output = jepa.backbone.forward_multiple(states)
         z = enc_output.obs_component
-        # print("[pldm/probing/evaluator.py] z.shape:", z.shape) #[1, 9, 16, 26, 26]
 
-
-        # -----------------------------
-        # 5) [N,D] に整形
-        # -----------------------------
         if z.dim() == 5:
             z = z[0]   # [N,C,H,W]
             if pool == "gap":
@@ -4536,41 +4552,75 @@ class ProbingEvaluator:
 
         z_np = z.detach().cpu().numpy()
 
-        # -----------------------------
-        # 6) PCA
-        # -----------------------------
         pca = PCA(n_components=2)
         z2 = pca.fit_transform(z_np)
 
+        coords_np = np.asarray(coords)   # [N, 2]
+
+        # =========================================================
+        # helper: 薄い -> 濃い のグラデーション色を作る
+        # =========================================================
+        def make_grad_colors(n, cmap_name, start=0.25, end=0.95):
+            cmap = cm.get_cmap(cmap_name)
+            vals = np.linspace(start, end, n)   # 薄い -> 濃い
+            return [cmap(v) for v in vals]
+
+        def draw_gradient_series(ax, pts, idx_list, labels, axis_name, cmap_name, marker):
+            idx_list = sorted(idx_list, key=lambda i: labels[i][1])
+            n = len(idx_list)
+            colors = make_grad_colors(n, cmap_name)
+
+            for seg_i in range(n - 1):
+                i0 = idx_list[seg_i]
+                i1 = idx_list[seg_i + 1]
+                ax.plot(
+                    [pts[i0, 0], pts[i1, 0]],
+                    [pts[i0, 1], pts[i1, 1]],
+                    color=colors[seg_i + 1],
+                    linewidth=2.0,
+                    alpha=0.95,
+                )
+
+
+            for local_i, global_i in enumerate(idx_list):
+                ax.scatter(
+                    pts[global_i, 0],
+                    pts[global_i, 1],
+                    color=colors[local_i],
+                    s=42,
+                    marker=marker,
+                    edgecolors="black",
+                    linewidths=0.3,
+                    zorder=3,
+                )
+                _, step_idx = labels[global_i]
+                ax.text(
+                    pts[global_i, 0],
+                    pts[global_i, 1],
+                    f"{axis_name}{step_idx}",
+                    fontsize=8,
+                    alpha=0.9,
+                )
+
+
+            ax.plot([], [], color=colors[-1], marker=marker, label=f"{axis_name}-line")
+
         # -----------------------------
-        # 7) 可視化
+        # 7) PCA 可視化
         # -----------------------------
         fig, ax = plt.subplots(figsize=(7, 7), dpi=140)
 
-        # x方向系列
         xs_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "x"]
-        xs_idx = sorted(xs_idx, key=lambda i: labels[i][1])
-
-        ax.plot(z2[xs_idx, 0], z2[xs_idx, 1], marker="o", label="x-line")
-
-        for i in xs_idx:
-            axis, step_idx = labels[i]
-            ax.text(z2[i, 0], z2[i, 1], f"x{step_idx}", fontsize=9)
-
-        # y方向系列
         ys_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "y"]
-        ys_idx = sorted(ys_idx, key=lambda i: labels[i][1])
 
-        ax.plot(z2[ys_idx, 0], z2[ys_idx, 1], marker="s", label="y-line")
+        # x方向: 青系で薄い -> 濃い
+        draw_gradient_series(ax, z2, xs_idx, labels, axis_name="x", cmap_name="Blues", marker="o")
 
-        for i in ys_idx:
-            axis, step_idx = labels[i]
-            ax.text(z2[i, 0], z2[i, 1], f"y{step_idx}", fontsize=9)
+        # y方向: 赤系で薄い -> 濃い
+        draw_gradient_series(ax, z2, ys_idx, labels, axis_name="y", cmap_name="Reds", marker="s")
 
-        # 中心点を強調
         center_idx = [i for i, (axis, step_idx) in enumerate(labels) if step_idx == 0]
-        for i in center_idx:
-            ax.scatter(z2[i, 0], z2[i, 1], s=100, marker="*", label="center")
+
 
         ax.set_xlabel("PC1")
         ax.set_ylabel("PC2")
@@ -4586,69 +4636,36 @@ class ProbingEvaluator:
         Logger.run().log_figure(fig, f"{name_prefix}_pca_cross", dir_name="pca_encoder_cross")
         plt.close(fig)
 
-
         # -----------------------------
         # 8) 実空間(xy平面)での配置も可視化
         # -----------------------------
-        coords_np = np.asarray(coords)   # [N, 2]
-
         fig_xy, ax_xy = plt.subplots(figsize=(7, 7), dpi=140)
 
-        # x方向系列
-        xs_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "x"]
-        xs_idx = sorted(xs_idx, key=lambda i: labels[i][1])
-        ax_xy.plot(
-            coords_np[xs_idx, 0],
-            coords_np[xs_idx, 1],
-            marker="o",
-            label="x-line"
-        )
+        draw_gradient_series(ax_xy, coords_np, xs_idx, labels, axis_name="x", cmap_name="Blues", marker="o")
+        draw_gradient_series(ax_xy, coords_np, ys_idx, labels, axis_name="y", cmap_name="Reds", marker="s")
 
-        for i in xs_idx:
-            axis, step_idx = labels[i]
-            ax_xy.text(
-                coords_np[i, 0],
-                coords_np[i, 1],
-                f"x{step_idx}",
-                fontsize=9
-            )
+        # for t, i in enumerate(center_idx):
+        #     ax_xy.scatter(
+        #         coords_np[i, 0],
+        #         coords_np[i, 1],
+        #         s=140,
+        #         marker="*",
+        #         color="gold",
+        #         edgecolors="black",
+        #         linewidths=0.5,
+        #         label="center" if t == 0 else None,
+        #         zorder=5,
+        #     )
 
-        # y方向系列
-        ys_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "y"]
-        ys_idx = sorted(ys_idx, key=lambda i: labels[i][1])
-        ax_xy.plot(
-            coords_np[ys_idx, 0],
-            coords_np[ys_idx, 1],
-            marker="s",
-            label="y-line"
-        )
-
-        for i in ys_idx:
-            axis, step_idx = labels[i]
-            ax_xy.text(
-                coords_np[i, 0],
-                coords_np[i, 1],
-                f"y{step_idx}",
-                fontsize=9
-            )
-
-        # 中心点を強調
-        center_idx = [i for i, (axis, step_idx) in enumerate(labels) if step_idx == 0]
-        for t, i in enumerate(center_idx):
-            ax_xy.scatter(
-                coords_np[i, 0],
-                coords_np[i, 1],
-                s=120,
-                marker="*",
-                label="center" if t == 0 else None
-            )
-
-        # goal 位置も描くと比較しやすい
         ax_xy.scatter(
             fixed_goal[0], fixed_goal[1],
-            s=120,
+            s=140,
             marker="X",
-            label="goal"
+            color="green",
+            edgecolors="black",
+            linewidths=0.5,
+            label="goal",
+            zorder=5,
         )
 
         ax_xy.set_xlabel("x")
@@ -4666,11 +4683,9 @@ class ProbingEvaluator:
         )
         plt.close(fig_xy)
 
-
-
         print("finished making pca visual encoder")
-            
         pass
+
 
 
 
@@ -4696,6 +4711,56 @@ class ProbingEvaluator:
         robot_only: bool = True,
         settle_steps: int = 300,
     ):
+
+        def make_grad_colors(n, cmap_name, start=0.25, end=0.95):
+            cmap = cm.get_cmap(cmap_name)
+            vals = np.linspace(start, end, n)   # 薄い -> 濃い
+            return [cmap(v) for v in vals]
+
+        def draw_gradient_series(ax, pts, idx_list, labels, axis_name, cmap_name, marker):
+            idx_list = sorted(idx_list, key=lambda i: labels[i][1])
+            n = len(idx_list)
+            colors = make_grad_colors(n, cmap_name)
+
+            # 線（グラデーション）
+            for seg_i in range(n - 1):
+                i0 = idx_list[seg_i]
+                i1 = idx_list[seg_i + 1]
+                ax.plot(
+                    [pts[i0, 0], pts[i1, 0]],
+                    [pts[i0, 1], pts[i1, 1]],
+                    color=colors[seg_i + 1],
+                    linewidth=2.0,
+                    alpha=0.95,
+                )
+
+            # 点
+            for local_i, global_i in enumerate(idx_list):
+                ax.scatter(
+                    pts[global_i, 0],
+                    pts[global_i, 1],
+                    color=colors[local_i],
+                    s=42,
+                    marker=marker,
+                    edgecolors="black",
+                    linewidths=0.3,
+                    zorder=3,
+                )
+                _, step_idx = labels[global_i]
+                ax.text(
+                    pts[global_i, 0],
+                    pts[global_i, 1],
+                    f"{axis_name}{step_idx}",
+                    fontsize=8,
+                )
+
+            # 凡例
+            ax.plot([], [], color=colors[-1], marker=marker, label=f"{axis_name}-line")
+
+
+
+
+
         env_generator = FrankaEnvsGenerator(
             model_path=self.config.model_path,
             n_envs=1,
@@ -4706,7 +4771,6 @@ class ProbingEvaluator:
         env = env_generator()[0]
         device = self.device
 
-        print("[pldm/probing/evaluator.py] batch.states.shape:", batch.states.shape)
 
         # -----------------------------
         # 1) EE の十字配置を作る
@@ -4796,6 +4860,7 @@ class ProbingEvaluator:
         enc_output = jepa.backbone.forward_multiple(states)
         z = enc_output.obs_component
 
+
         # -----------------------------
         # 4) [N,D] に整形
         # -----------------------------
@@ -4825,25 +4890,20 @@ class ProbingEvaluator:
 
         xs_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "x"]
         xs_idx = sorted(xs_idx, key=lambda i: labels[i][1])
-        ax.plot(z2[xs_idx, 0], z2[xs_idx, 1], marker="o", label="x-line")
+        # ax.plot(z2[xs_idx, 0], z2[xs_idx, 1], marker="o", label="x-line")
+        draw_gradient_series(ax, z2, xs_idx, labels, "x", "Blues", "o")
         for i in xs_idx:
             _, step_idx = labels[i]
             ax.text(z2[i, 0], z2[i, 1], f"x{step_idx}", fontsize=9)
 
         ys_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "y"]
         ys_idx = sorted(ys_idx, key=lambda i: labels[i][1])
-        ax.plot(z2[ys_idx, 0], z2[ys_idx, 1], marker="s", label="y-line")
+        # ax.plot(z2[ys_idx, 0], z2[ys_idx, 1], marker="s", label="y-line")
+        draw_gradient_series(ax, z2, ys_idx, labels, "y", "Reds", "s")
         for i in ys_idx:
             _, step_idx = labels[i]
             ax.text(z2[i, 0], z2[i, 1], f"y{step_idx}", fontsize=9)
 
-        center_idx = [i for i, (axis, step_idx) in enumerate(labels) if step_idx == 0]
-        for t, i in enumerate(center_idx):
-            ax.scatter(
-                z2[i, 0], z2[i, 1],
-                s=100, marker="*",
-                label="center" if t == 0 else None
-            )
 
         ax.set_xlabel("PC1")
         ax.set_ylabel("PC2")
@@ -4872,37 +4932,39 @@ class ProbingEvaluator:
 
         xs_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "x"]
         xs_idx = sorted(xs_idx, key=lambda i: labels[i][1])
-        ax_xy.plot(
-            coords_np[xs_idx, 0],
-            coords_np[xs_idx, 1],
-            marker="o",
-            label="x-line"
-        )
+        # ax_xy.plot(
+        #     coords_np[xs_idx, 0],
+        #     coords_np[xs_idx, 1],
+        #     marker="o",
+        #     label="x-line"
+        # )
+        draw_gradient_series(ax_xy, coords_np, xs_idx, labels, "x", "Blues", "o")
         for i in xs_idx:
             _, step_idx = labels[i]
             ax_xy.text(coords_np[i, 0], coords_np[i, 1], f"x{step_idx}", fontsize=9)
 
         ys_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "y"]
         ys_idx = sorted(ys_idx, key=lambda i: labels[i][1])
-        ax_xy.plot(
-            coords_np[ys_idx, 0],
-            coords_np[ys_idx, 1],
-            marker="s",
-            label="y-line"
-        )
+        # ax_xy.plot(
+        #     coords_np[ys_idx, 0],
+        #     coords_np[ys_idx, 1],
+        #     marker="s",
+        #     label="y-line"
+        # )
+        draw_gradient_series(ax_xy, coords_np, ys_idx, labels, "y", "Reds", "s")
         for i in ys_idx:
             _, step_idx = labels[i]
             ax_xy.text(coords_np[i, 0], coords_np[i, 1], f"y{step_idx}", fontsize=9)
 
-        center_idx = [i for i, (axis, step_idx) in enumerate(labels) if step_idx == 0]
-        for t, i in enumerate(center_idx):
-            ax_xy.scatter(
-                coords_np[i, 0], coords_np[i, 1],
-                s=120, marker="*",
-                label="center" if t == 0 else None
-            )
+        # center_idx = [i for i, (axis, step_idx) in enumerate(labels) if step_idx == 0]
+        # for t, i in enumerate(center_idx):
+        #     ax_xy.scatter(
+        #         coords_np[i, 0], coords_np[i, 1],
+        #         s=120, marker="*",
+        #         label="center" if t == 0 else None
+        #     )
 
-        # 参考として箱位置も描く
+
         if not robot_only:
             ax_xy.scatter(
                 fixed_box_pos[0], fixed_box_pos[1],
@@ -4925,6 +4987,573 @@ class ProbingEvaluator:
         plt.close(fig_xy)
 
         print("finished making pca visual encoder for franka")
+
+
+    @torch.no_grad()
+    def pca_visual_encoder_bluebox_3d(
+        self,
+        batch,
+        jepa: "JEPA",
+        name_prefix: str = "",
+        idxs: Optional[List[int]] = None,
+        notebook: bool = False,
+        pool: str = "flat",              # "gap"/"flat"
+        k: int = 3,
+        align_closed: bool = True,
+        is_train: bool = False,
+        n_each_side: int = 2,
+        dx: float = 0.04,
+        dy: float = 0.04,
+        x_half_range: float = 0.10,
+        y_half_range: float = 0.10,
+        n_x_points: int = 101,
+        n_y_points: int = 101,
+    ):
+        import matplotlib.pyplot as plt
+        from matplotlib import cm
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+        env_generator = FrankaEnvsGenerator(
+            model_path=self.config.model_path,
+            n_envs=1,
+            max_dq=self.config.max_dq,
+            camera_name=self.config.camera_name
+        )
+
+        env = env_generator()[0]
+        device = self.device
+
+        print("[pldm/probing/evaluator.py] batch.states.shape:", batch.states.shape)
+
+        center = np.array([0.515, 0.0, 0.05], dtype=np.float32)
+        fixed_goal = np.array([0.58, 0.00, 0.05], dtype=np.float32)
+
+        positions = []
+
+        x_values = np.linspace(
+            center[0] - x_half_range,
+            center[0] + x_half_range,
+            n_x_points,
+            dtype=np.float32,
+        )
+
+        y_values = np.linspace(
+            center[1] - y_half_range,
+            center[1] + y_half_range,
+            n_y_points,
+            dtype=np.float32,
+        )
+
+        x_center_idx = n_x_points // 2
+        for idx, x in enumerate(x_values):
+            p = center.copy()
+            p[0] = x
+            positions.append(("x", idx - x_center_idx, p.copy()))
+
+        y_center_idx = n_y_points // 2
+        for idx, y in enumerate(y_values):
+            if np.isclose(y, center[1]):
+                continue
+            p = center.copy()
+            p[1] = y
+            positions.append(("y", idx - y_center_idx, p.copy()))
+
+        imgs = []
+        labels = []
+        coords = []
+
+        for axis, step_idx, start_pos in positions:
+            obs = env.reset(
+                start_pos=start_pos,
+                goal_pos=fixed_goal,
+                robot_only=False,
+            )
+
+            if isinstance(obs, np.ndarray):
+                obs = torch.from_numpy(obs)
+
+            imgs.append(obs.float().cpu())
+            labels.append((axis, step_idx))
+            coords.append(start_pos[:2].copy())
+
+        imgs = torch.stack(imgs, dim=0)   # [N,C,H,W]
+        states = imgs.unsqueeze(0).to(device)   # [1,N,C,H,W]
+
+        enc_output = jepa.backbone.forward_multiple(states)
+        z = enc_output.obs_component
+
+        if z.dim() == 5:
+            z = z[0]   # [N,C,H,W]
+            if pool == "gap":
+                z = z.mean(dim=(-2, -1))   # [N,C]
+            else:
+                z = z.flatten(start_dim=1) # [N,C*H*W]
+        elif z.dim() == 3:
+            z = z[0]   # [N,D]
+        else:
+            raise ValueError(f"Unexpected encoder output shape: {z.shape}")
+
+        z_np = z.detach().cpu().numpy()
+
+        # 3次元PCA
+        pca = PCA(n_components=3)
+        z3 = pca.fit_transform(z_np)
+
+        coords_np = np.asarray(coords)   # [N, 2]
+
+        def make_grad_colors(n, cmap_name, start=0.25, end=0.95):
+            cmap = cm.get_cmap(cmap_name)
+            vals = np.linspace(start, end, n)   # 薄い -> 濃い
+            return [cmap(v) for v in vals]
+
+        def draw_gradient_series_3d(ax, pts, idx_list, labels, axis_name, cmap_name, marker):
+            idx_list = sorted(idx_list, key=lambda i: labels[i][1])
+            n = len(idx_list)
+            colors = make_grad_colors(n, cmap_name)
+
+            # 線分
+            for seg_i in range(n - 1):
+                i0 = idx_list[seg_i]
+                i1 = idx_list[seg_i + 1]
+                ax.plot(
+                    [pts[i0, 0], pts[i1, 0]],
+                    [pts[i0, 1], pts[i1, 1]],
+                    [pts[i0, 2], pts[i1, 2]],
+                    color=colors[seg_i + 1],
+                    linewidth=2.0,
+                    alpha=0.95,
+                )
+
+            # 点
+            for local_i, global_i in enumerate(idx_list):
+                ax.scatter(
+                    pts[global_i, 0],
+                    pts[global_i, 1],
+                    pts[global_i, 2],
+                    color=colors[local_i],
+                    s=42,
+                    marker=marker,
+                    edgecolors="black",
+                    linewidths=0.3,
+                    depthshade=True,
+                )
+                _, step_idx = labels[global_i]
+                ax.text(
+                    pts[global_i, 0],
+                    pts[global_i, 1],
+                    pts[global_i, 2],
+                    f"{axis_name}{step_idx}",
+                    fontsize=8,
+                    alpha=0.9,
+                )
+
+            # 凡例用ダミー
+            ax.plot([], [], [], color=colors[-1], marker=marker, label=f"{axis_name}-line")
+
+        # -----------------------------
+        # 3D PCA 可視化
+        # -----------------------------
+        fig = plt.figure(figsize=(8, 8), dpi=140)
+        ax = fig.add_subplot(111, projection="3d")
+
+        xs_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "x"]
+        ys_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "y"]
+
+        draw_gradient_series_3d(ax, z3, xs_idx, labels, axis_name="x", cmap_name="Blues", marker="o")
+        draw_gradient_series_3d(ax, z3, ys_idx, labels, axis_name="y", cmap_name="Reds", marker="s")
+
+        ax.set_xlabel("PC1")
+        ax.set_ylabel("PC2")
+        ax.set_zlabel("PC3")
+        ax.set_title(
+            f"{name_prefix} | PCA of encoder features (3D)\n"
+            f"explained variance = "
+            f"{pca.explained_variance_ratio_[0]:.3f}, "
+            f"{pca.explained_variance_ratio_[1]:.3f}, "
+            f"{pca.explained_variance_ratio_[2]:.3f}"
+        )
+        ax.legend()
+        fig.tight_layout()
+
+        Logger.run().log_figure(
+            fig,
+            f"{name_prefix}_pca_cross_3d",
+            dir_name="pca_encoder_cross_3d"
+        )
+        plt.close(fig)
+
+        # -----------------------------
+        # 実空間(xy)も一応そのまま保存
+        # -----------------------------
+        fig_xy, ax_xy = plt.subplots(figsize=(7, 7), dpi=140)
+
+        def draw_gradient_series_2d(ax, pts, idx_list, labels, axis_name, cmap_name, marker):
+            idx_list = sorted(idx_list, key=lambda i: labels[i][1])
+            n = len(idx_list)
+            colors = make_grad_colors(n, cmap_name)
+
+            for seg_i in range(n - 1):
+                i0 = idx_list[seg_i]
+                i1 = idx_list[seg_i + 1]
+                ax.plot(
+                    [pts[i0, 0], pts[i1, 0]],
+                    [pts[i0, 1], pts[i1, 1]],
+                    color=colors[seg_i + 1],
+                    linewidth=2.0,
+                    alpha=0.95,
+                )
+
+            for local_i, global_i in enumerate(idx_list):
+                ax.scatter(
+                    pts[global_i, 0],
+                    pts[global_i, 1],
+                    color=colors[local_i],
+                    s=42,
+                    marker=marker,
+                    edgecolors="black",
+                    linewidths=0.3,
+                    zorder=3,
+                )
+                _, step_idx = labels[global_i]
+                ax.text(
+                    pts[global_i, 0],
+                    pts[global_i, 1],
+                    f"{axis_name}{step_idx}",
+                    fontsize=8,
+                    alpha=0.9,
+                )
+
+            ax.plot([], [], color=colors[-1], marker=marker, label=f"{axis_name}-line")
+
+        draw_gradient_series_2d(ax_xy, coords_np, xs_idx, labels, axis_name="x", cmap_name="Blues", marker="o")
+        draw_gradient_series_2d(ax_xy, coords_np, ys_idx, labels, axis_name="y", cmap_name="Reds", marker="s")
+
+        ax_xy.scatter(
+            fixed_goal[0], fixed_goal[1],
+            s=140,
+            marker="X",
+            color="green",
+            edgecolors="black",
+            linewidths=0.5,
+            label="goal",
+            zorder=5,
+        )
+
+        ax_xy.set_xlabel("x")
+        ax_xy.set_ylabel("y")
+        ax_xy.set_title(f"{name_prefix} | bluebox positions on xy-plane")
+        ax_xy.legend()
+        ax_xy.grid(True)
+        ax_xy.set_aspect("equal", adjustable="box")
+        fig_xy.tight_layout()
+
+        Logger.run().log_figure(
+            fig_xy,
+            f"{name_prefix}_xy_cross_3dsrc",
+            dir_name="pca_encoder_cross_3d"
+        )
+        plt.close(fig_xy)
+
+        print("finished making 3D pca visual encoder")
+
+
+    @torch.no_grad()
+    def pca_visual_encoder_franka_3d(
+        self,
+        batch,
+        jepa: "JEPA",
+        name_prefix: str = "",
+        idxs: Optional[List[int]] = None,
+        notebook: bool = False,
+        pool: str = "flat",              # "gap"/"flat"
+        k: int = 3,
+        align_closed: bool = True,
+        is_train: bool = False,
+        x_half_range: float = 0.10,
+        y_half_range: float = 0.10,
+        n_x_points: int = 101,
+        n_y_points: int = 101,
+        ee_z: float = 0.10,
+        fixed_box_pos: tuple = (0.515, 0.0, 0.05),
+        fixed_goal_pos: tuple = (0.58, 0.00, 0.05),
+        robot_only: bool = True,
+        settle_steps: int = 300,
+    ):
+        import matplotlib.pyplot as plt
+        from matplotlib import cm
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+        def make_grad_colors(n, cmap_name, start=0.25, end=0.95):
+            cmap = cm.get_cmap(cmap_name)
+            vals = np.linspace(start, end, n)   # 薄い -> 濃い
+            return [cmap(v) for v in vals]
+
+        def draw_gradient_series_3d(ax, pts, idx_list, labels, axis_name, cmap_name, marker):
+            idx_list = sorted(idx_list, key=lambda i: labels[i][1])
+            n = len(idx_list)
+            colors = make_grad_colors(n, cmap_name)
+
+            # 線
+            for seg_i in range(n - 1):
+                i0 = idx_list[seg_i]
+                i1 = idx_list[seg_i + 1]
+                ax.plot(
+                    [pts[i0, 0], pts[i1, 0]],
+                    [pts[i0, 1], pts[i1, 1]],
+                    [pts[i0, 2], pts[i1, 2]],
+                    color=colors[seg_i + 1],
+                    linewidth=2.0,
+                    alpha=0.95,
+                )
+
+            # 点
+            for local_i, global_i in enumerate(idx_list):
+                ax.scatter(
+                    pts[global_i, 0],
+                    pts[global_i, 1],
+                    pts[global_i, 2],
+                    color=colors[local_i],
+                    s=42,
+                    marker=marker,
+                    edgecolors="black",
+                    linewidths=0.3,
+                    depthshade=True,
+                )
+                _, step_idx = labels[global_i]
+                ax.text(
+                    pts[global_i, 0],
+                    pts[global_i, 1],
+                    pts[global_i, 2],
+                    f"{axis_name}{step_idx}",
+                    fontsize=8,
+                )
+
+            # 凡例用ダミー
+            ax.plot([], [], [], color=colors[-1], marker=marker, label=f"{axis_name}-line")
+
+        def draw_gradient_series_2d(ax, pts, idx_list, labels, axis_name, cmap_name, marker):
+            idx_list = sorted(idx_list, key=lambda i: labels[i][1])
+            n = len(idx_list)
+            colors = make_grad_colors(n, cmap_name)
+
+            for seg_i in range(n - 1):
+                i0 = idx_list[seg_i]
+                i1 = idx_list[seg_i + 1]
+                ax.plot(
+                    [pts[i0, 0], pts[i1, 0]],
+                    [pts[i0, 1], pts[i1, 1]],
+                    color=colors[seg_i + 1],
+                    linewidth=2.0,
+                    alpha=0.95,
+                )
+
+            for local_i, global_i in enumerate(idx_list):
+                ax.scatter(
+                    pts[global_i, 0],
+                    pts[global_i, 1],
+                    color=colors[local_i],
+                    s=42,
+                    marker=marker,
+                    edgecolors="black",
+                    linewidths=0.3,
+                    zorder=3,
+                )
+                _, step_idx = labels[global_i]
+                ax.text(
+                    pts[global_i, 0],
+                    pts[global_i, 1],
+                    f"{axis_name}{step_idx}",
+                    fontsize=8,
+                )
+
+            ax.plot([], [], color=colors[-1], marker=marker, label=f"{axis_name}-line")
+
+        env_generator = FrankaEnvsGenerator(
+            model_path=self.config.model_path,
+            n_envs=1,
+            max_dq=self.config.max_dq,
+            camera_name=self.config.camera_name,
+        )
+
+        env = env_generator()[0]
+        device = self.device
+
+        print("[pldm/probing/evaluator.py] batch.states.shape:", batch.states.shape)
+
+        # -----------------------------
+        # 1) EE の十字配置を作る
+        # -----------------------------
+        ee_center = np.array([0.515, 0.0, ee_z], dtype=np.float32)
+        fixed_box_pos = np.array(fixed_box_pos, dtype=np.float32)
+        fixed_goal_pos = np.array(fixed_goal_pos, dtype=np.float32)
+
+        positions = []
+
+        x_values = np.linspace(
+            ee_center[0] - x_half_range,
+            ee_center[0] + x_half_range,
+            n_x_points,
+            dtype=np.float32,
+        )
+
+        y_values = np.linspace(
+            ee_center[1] - y_half_range,
+            ee_center[1] + y_half_range,
+            n_y_points,
+            dtype=np.float32,
+        )
+
+        x_center_idx = n_x_points // 2
+        for idx, x in enumerate(x_values):
+            p = ee_center.copy()
+            p[0] = x
+            positions.append(("x", idx - x_center_idx, p.copy()))
+
+        y_center_idx = n_y_points // 2
+        for idx, y in enumerate(y_values):
+            p = ee_center.copy()
+            p[1] = y
+            positions.append(("y", idx - y_center_idx, p.copy()))
+
+        # -----------------------------
+        # 2) 各EE位置で画像を取得
+        # -----------------------------
+        imgs = []
+        labels = []
+        coords = []
+
+        for axis, step_idx, ee_target in positions:
+            obs = env.reset(
+                start_pos=fixed_box_pos,
+                goal_pos=fixed_goal_pos,
+                robot_only=robot_only,
+            )
+
+            try:
+                _, ee_actual = env.set_xyz(
+                    target_pos=ee_target,
+                    target_rotmat=None,
+                    rot_weight=0.1,
+                    settle_steps=settle_steps,
+                    sync_ctrl=True,
+                )
+            except Exception as e:
+                print(f"[WARN] IK failed at {axis}{step_idx}: target={ee_target}, err={e}")
+                continue
+
+            obs = env.get_obs()
+
+            if isinstance(obs, np.ndarray):
+                obs = torch.from_numpy(obs)
+
+            imgs.append(obs.float().cpu())
+            labels.append((axis, step_idx))
+            coords.append(ee_actual[:2].copy())   # xyのみ保存
+
+        if len(imgs) == 0:
+            raise RuntimeError("No valid samples were collected in pca_visual_encoder_franka_3d().")
+
+        imgs = torch.stack(imgs, dim=0)   # [N,C,H,W]
+
+        # -----------------------------
+        # 3) encoder に通すため T=1 にする
+        # -----------------------------
+        states = imgs.unsqueeze(0).to(device)   # [1,N,C,H,W]
+
+        enc_output = jepa.backbone.forward_multiple(states)
+        z = enc_output.obs_component
+
+        # -----------------------------
+        # 4) [N,D] に整形
+        # -----------------------------
+        if z.dim() == 5:
+            z = z[0]   # [N,C,H,W]
+            if pool == "gap":
+                z = z.mean(dim=(-2, -1))   # [N,C]
+            else:
+                z = z.flatten(start_dim=1) # [N,C*H*W]
+        elif z.dim() == 3:
+            z = z[0]   # [N,D]
+        else:
+            raise ValueError(f"Unexpected encoder output shape: {z.shape}")
+
+        z_np = z.detach().cpu().numpy()
+
+        # -----------------------------
+        # 5) PCA(3D)
+        # -----------------------------
+        pca = PCA(n_components=3)
+        z3 = pca.fit_transform(z_np)
+
+        # -----------------------------
+        # 6) 潜在空間の3D可視化
+        # -----------------------------
+        fig = plt.figure(figsize=(8, 8), dpi=140)
+        ax = fig.add_subplot(111, projection="3d")
+
+        xs_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "x"]
+        ys_idx = [i for i, (axis, step_idx) in enumerate(labels) if axis == "y"]
+
+        draw_gradient_series_3d(ax, z3, xs_idx, labels, "x", "Blues", "o")
+        draw_gradient_series_3d(ax, z3, ys_idx, labels, "y", "Reds", "s")
+
+        ax.set_xlabel("PC1")
+        ax.set_ylabel("PC2")
+        ax.set_zlabel("PC3")
+        ax.set_title(
+            f"{name_prefix} | PCA of encoder features (Franka EE motion, 3D)\n"
+            f"explained variance = "
+            f"{pca.explained_variance_ratio_[0]:.3f}, "
+            f"{pca.explained_variance_ratio_[1]:.3f}, "
+            f"{pca.explained_variance_ratio_[2]:.3f}"
+        )
+        ax.legend()
+        fig.tight_layout()
+
+        Logger.run().log_figure(
+            fig,
+            f"{name_prefix}_pca_franka_cross_3d",
+            dir_name="pca_encoder_cross_3d"
+        )
+        plt.close(fig)
+
+        # -----------------------------
+        # 7) 実空間(xy平面)のEE位置も可視化
+        # -----------------------------
+        coords_np = np.asarray(coords)   # [N,2]
+
+        fig_xy, ax_xy = plt.subplots(figsize=(7, 7), dpi=140)
+
+        draw_gradient_series_2d(ax_xy, coords_np, xs_idx, labels, "x", "Blues", "o")
+        draw_gradient_series_2d(ax_xy, coords_np, ys_idx, labels, "y", "Reds", "s")
+
+        if not robot_only:
+            ax_xy.scatter(
+                fixed_box_pos[0], fixed_box_pos[1],
+                s=120,
+                marker="X",
+                label="box"
+            )
+
+        ax_xy.set_xlabel("x")
+        ax_xy.set_ylabel("y")
+        ax_xy.set_title(f"{name_prefix} | Franka EE positions on xy-plane")
+        ax_xy.legend()
+        ax_xy.grid(True)
+        ax_xy.set_aspect("equal", adjustable="box")
+        fig_xy.tight_layout()
+
+        Logger.run().log_figure(
+            fig_xy,
+            f"{name_prefix}_xy_franka_cross_3dsrc",
+            dir_name="pca_encoder_cross_3d"
+        )
+        plt.close(fig_xy)
+
+        print("finished making 3D pca visual encoder for franka")
+
+
+
 
 
     def _make_cartesian_action_directions(
@@ -5276,3 +5905,239 @@ class ProbingEvaluator:
         else:
             Logger.run().log_figure(fig, f"{name_prefix}-ee_cartesian_debug", dir_name="pca_ac_cond_val/action_log")
             plt.close(fig)
+
+
+    @torch.no_grad()
+    def plot_pca_rgb(
+        self,
+        btc,
+        model,
+        name_prefix: str = "",
+        idxs: Optional[List[int]] = None,
+        notebook: bool = False,
+        is_train: bool = False,
+        upsample: Optional[Tuple[int, int]] = None,   # 例: (224, 224)
+        max_cols: int = 8,
+    ):
+        """
+        上段: 実画像
+        下段: encoder の潜在特徴マップを PCA で 3 次元に落として RGB 化した画像
+        """
+        import gc
+        import math
+        import itertools
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import torch
+        import torch.nn.functional as F
+        from sklearn.decomposition import PCA
+
+        device = self.device
+
+        def _minmax01(x: np.ndarray, eps: float = 1e-8) -> np.ndarray:
+            x = x - x.min()
+            x = x / (x.max() + eps)
+            return x
+
+        def _resize_rgb(rgb_hw3: np.ndarray, out_hw):
+            if out_hw is None:
+                return rgb_hw3
+            out_h, out_w = out_hw
+            rgb_t = torch.from_numpy(rgb_hw3).permute(2, 0, 1).unsqueeze(0).float()
+            rgb_t = F.interpolate(rgb_t, size=(out_h, out_w), mode="bilinear", align_corners=False)
+            rgb = rgb_t[0].permute(1, 2, 0).cpu().numpy()
+            return np.clip(rgb, 0.0, 1.0)
+
+        def _best_perm(rgb_hw3: np.ndarray) -> np.ndarray:
+            perms = list(itertools.permutations([0, 1, 2]))
+            best_img = None
+            best_score = -1e18
+            for p in perms:
+                cand = rgb_hw3[:, :, p]
+                score = cand.std(axis=(0, 1)).sum()
+                if score > best_score:
+                    best_score = score
+                    best_img = cand
+            return best_img
+
+        def _to_BTCHW(x, T_ref, B_ref):
+            if x.shape[0] == T_ref and x.shape[1] == B_ref:
+                # [T,B,...] -> [B,T,...]
+                x = x.permute(1, 0, 2, 3, 4)
+            elif x.shape[0] == B_ref and x.shape[1] == T_ref:
+                # [B,T,...]
+                pass
+            else:
+                raise ValueError(
+                    f"unexpected shape {x.shape}, expected [T,B,...]=[{T_ref},{B_ref},...] "
+                    f"or [B,T,...]=[{B_ref},{T_ref},...]"
+                )
+            return x.contiguous()
+
+        # --------------------------------------------------
+        # 1. states を取得
+        # --------------------------------------------------
+        states = btc.states.to(device)
+
+        if states.dim() != 5:
+            raise ValueError(f"btc.states must be 5D, got shape={tuple(states.shape)}")
+
+        # btc.states は [B,T,C,H,W] 前提
+        states_TB = states.transpose(0, 1).contiguous()   # [T,B,C,H,W]
+        T_ref, B_ref = states_TB.shape[0], states_TB.shape[1]
+
+        # 可視化用に元画像も [B,T,C,H,W] に揃える
+        states_BT = states.contiguous()  # [B,T,C,H,W]
+
+        # --------------------------------------------------
+        # 2. encoder 出力を取得
+        # --------------------------------------------------
+        if hasattr(model, "backbone") and hasattr(model.backbone, "forward_multiple"):
+            enc_output = model.backbone.forward_multiple(states_TB)
+        elif hasattr(model, "forward_multiple"):
+            enc_output = model.forward_multiple(states_TB)
+        else:
+            raise AttributeError(
+                "model.backbone.forward_multiple(...) か model.forward_multiple(...) が必要です。"
+            )
+
+        if getattr(enc_output, "obs_component", None) is not None:
+            z = enc_output.obs_component
+        else:
+            raise AttributeError("encoder output に obs_component がありません。")
+
+        print("[plot_pca_rgb] states_TB.shape:", states_TB.shape)
+        print("[plot_pca_rgb] z.shape:", z.shape)
+
+        # --------------------------------------------------
+        # 3. [B,T,C,H,W] に正規化
+        # --------------------------------------------------
+        z = _to_BTCHW(z, T_ref, B_ref)
+        B, T, C, H, W = z.shape
+
+        if idxs is None:
+            idxs = list(range(B))
+
+        # --------------------------------------------------
+        # 4. 各 trajectory ごとに PCA を fit して RGB 化
+        # --------------------------------------------------
+        rgb_maps = {}
+
+        for i in idxs:
+            feat_i = z[i]              # [T,C,H,W]
+            img_i  = states_BT[i]      # [T,C,H,W]
+
+            # trajectory 全体で共通 PCA
+            Z = (
+                feat_i.permute(0, 2, 3, 1)   # [T,H,W,C]
+                .reshape(T * H * W, C)
+                .detach()
+                .float()
+                .cpu()
+                .numpy()
+            )
+
+            pca = PCA(n_components=min(3, C))
+            Y = pca.fit_transform(Z)   # [T*H*W, 3]
+            expl = pca.explained_variance_ratio_
+
+            # 成分ごとに [0,1] 正規化
+            Y_norm = np.zeros_like(Y)
+            for c_idx in range(Y.shape[1]):
+                Y_norm[:, c_idx] = _minmax01(Y[:, c_idx])
+
+            Y_norm = Y_norm.reshape(T, H, W, Y.shape[1])
+
+            # 3次元未満なら 0 埋め
+            if Y_norm.shape[-1] < 3:
+                pad = np.zeros((T, H, W, 3 - Y_norm.shape[-1]), dtype=Y_norm.dtype)
+                Y_norm = np.concatenate([Y_norm, pad], axis=-1)
+
+            frames_rgb = []
+            frames_img = []
+
+            for t in range(T):
+                # PCA-RGB
+                rgb = Y_norm[t]
+                rgb = _best_perm(rgb)
+                rgb = _resize_rgb(rgb, upsample)
+                frames_rgb.append(rgb)
+
+                # 実画像
+                img = img_i[t].detach().float().cpu()   # [C,H,W]
+                img = img.permute(1, 2, 0).numpy()      # [H,W,C]
+
+                # 画像が正規化済みなら可視化用に 0-1 に戻す
+                # いったん min-max で表示
+                img_vis = img.copy()
+                for ch in range(img_vis.shape[2]):
+                    img_vis[:, :, ch] = _minmax01(img_vis[:, :, ch])
+
+                if upsample is not None:
+                    img_vis = _resize_rgb(img_vis, upsample)
+
+                frames_img.append(np.clip(img_vis, 0.0, 1.0))
+
+            rgb_maps[i] = np.stack(frames_rgb, axis=0)   # [T,H,W,3]
+
+            # --------------------------------------------------
+            # 5. 可視化
+            # --------------------------------------------------
+            # 2行 x T列
+            ncols = T
+            fig, axes = plt.subplots(
+                2, ncols,
+                figsize=(2.2 * ncols, 4.6),
+                dpi=140
+            )
+
+            if T == 1:
+                axes = np.array(axes).reshape(2, 1)
+
+            for t in range(T):
+                # 上段: 実画像
+                axes[0, t].imshow(frames_img[t])
+                axes[0, t].set_title(f"t={t}", fontsize=8)
+                axes[0, t].axis("off")
+
+                # 下段: PCA-RGB
+                axes[1, t].imshow(frames_rgb[t])
+                axes[1, t].axis("off")
+
+            axes[0, 0].set_ylabel("Image", fontsize=10)
+            axes[1, 0].set_ylabel("PCA-RGB", fontsize=10)
+
+            fig.suptitle(
+                f"{name_prefix} | idx={i} | PCA-RGB | "
+                + ", ".join(f"{v:.3f}" for v in expl[:min(3, len(expl))]),
+                fontsize=11
+            )
+            fig.tight_layout()
+
+            if not notebook:
+                if not is_train:
+                    Logger.run().log_figure(
+                        fig,
+                        f"{name_prefix}-pca-rgb-i{i}",
+                        dir_name="pca_rgb_val"
+                    )
+                else:
+                    Logger.run().log_figure(
+                        fig,
+                        f"{name_prefix}-pca-rgb-i{i}",
+                        dir_name="pca_rgb_train"
+                    )
+                plt.close(fig)
+            else:
+                plt.show()
+                plt.close(fig)
+
+        plt.close("all")
+        try:
+            del z, enc_output, states, states_TB, states_BT
+        except Exception:
+            pass
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        return rgb_maps

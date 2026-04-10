@@ -217,6 +217,7 @@ class SequencePredictor(torch.nn.Module):
         state_predictions = torch.stack(state_predictions)
         if flatten_output:
             state_predictions = state_predictions.view(t, bs, -1)
+        print("state_predictions.shape:", state_predictions.shape) #[2, 16, 17, 1024](vit) [2, 16, 16, 26, 26](conv2)
 
         prior_mus = torch.stack(prior_mus) if prior_mus else None
         prior_vars = torch.stack(prior_vars) if prior_vars else None
@@ -227,6 +228,8 @@ class SequencePredictor(torch.nn.Module):
         posterior_logits = torch.stack(posterior_logits) if posterior_logits else None
         posteriors = torch.stack(posteriors) if posteriors else None
 
+        print("repr_dim:", self.repr_dim) #(30, 26, 26)(conv2)
+        print("self.pred_propio_dim:", self.pred_propio_dim) #1024 #(14, 26, 26)(conv2)
         if self.pred_propio_dim:
             if isinstance(self.pred_propio_dim, int):
                 obs_component = state_predictions[:, :, : -self.pred_propio_dim]
@@ -623,6 +626,120 @@ class ViTPredictor(SequencePredictor):
 
 
 
+class ViTRawPredictor(SequencePredictor):
+    def __init__(
+        self,
+        config,
+        repr_dim,
+        z_dim: Optional[int] = None,
+        z_min_std: Optional[float] = None,
+        z_discrete: Optional[bool] = None,
+        z_discrete_dists: Optional[int] = None,
+        z_discrete_dim: Optional[int] = None,
+        posterior_drop_p: Optional[float] = None,
+        prior_arch: Optional[str] = None,
+        posterior_arch: Optional[str] = None,
+        posterior_input_type: Optional[str] = None,
+        posterior_input_dim: Optional[str] = None,
+        action_dim=2,
+        pred_propio_dim=0,
+        pred_obs_dim=0,
+        depth=4,
+        num_heads=4,
+        mlp_ratio=4.0,
+        dropout=0.0,
+        use_action_token=False,
+    ):
+        super().__init__(
+            config=config,
+            repr_dim=repr_dim,
+            z_dim=z_dim,
+            z_min_std=z_min_std,
+            z_discrete=z_discrete,
+            z_discrete_dists=z_discrete_dists,
+            z_discrete_dim=z_discrete_dim,
+            posterior_drop_p=posterior_drop_p,
+            prior_arch=prior_arch,
+            posterior_arch=posterior_arch,
+            posterior_input_type=posterior_input_type,
+            posterior_input_dim=posterior_input_dim,
+            action_dim=action_dim,
+            pred_propio_dim=pred_propio_dim,
+            pred_obs_dim=pred_obs_dim,
+        )
+
+        # repr_dim = (N, D) を想定
+        assert isinstance(repr_dim, (tuple, list)) and len(repr_dim) == 2, \
+            f"RawTokenViTPredictor expects repr_dim=(N,D), got {repr_dim}"
+
+        self.num_tokens, self.embed_dim = repr_dim
+        self.use_action_token = use_action_token
+
+        self.action_proj = nn.Sequential(
+            nn.Linear(action_dim, self.embed_dim),
+            nn.GELU(),
+            nn.Linear(self.embed_dim, self.embed_dim),
+        )
+
+        token_count = self.num_tokens + (1 if use_action_token else 0)
+        self.pos_embed = nn.Parameter(torch.zeros(1, token_count, self.embed_dim))
+        self.pos_drop = nn.Dropout(dropout)
+
+        self.depth = depth
+        self.num_heads = num_heads
+
+        print("[pldm/models/predictors.py] self.embed_dim:", self.embed_dim)
+        print("[pldm/models/predictors.py] self.num_heads:", self.num_heads)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self.embed_dim,
+            nhead=self.num_heads,
+            dim_feedforward=int(self.embed_dim * mlp_ratio),
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=self.depth)
+
+        self.out_proj = nn.Identity()
+
+    def forward(self, current_state, curr_action):
+        """
+        current_state: [B, N, D]
+        curr_action:   [B, A]
+        return:        [B, N, D]
+        """
+        b, n, d = current_state.shape
+        assert n == self.num_tokens and d == self.embed_dim, \
+            f"Expected {(self.num_tokens, self.embed_dim)}, got {(n, d)}"
+
+        x = current_state  # [B, N, D]
+
+        a = self.action_proj(curr_action)  # [B, D]
+
+        if self.use_action_token:
+            a_token = a.unsqueeze(1)  # [B, 1, D]
+            x = torch.cat([a_token, x], dim=1)  # [B, N+1, D]
+            x = x + self.pos_embed[:, :x.shape[1], :]
+            x = self.pos_drop(x)
+            x = self.transformer(x)
+            x = x[:, 1:, :]  # action token を除去
+        else:
+            x = x + a.unsqueeze(1)  # [B, N, D]
+            x = x + self.pos_embed[:, :x.shape[1], :]
+            x = self.pos_drop(x)
+            x = self.transformer(x)
+
+        x = self.out_proj(x)
+
+        if self.config.residual:
+            x = x + current_state
+
+        return x
+
+
+
+
 
 
 class RNNPredictorV3(torch.nn.Module):
@@ -887,15 +1004,36 @@ def build_predictor(
             action_dim=action_dim,
             pred_propio_dim=pred_propio_dim,
             pred_obs_dim=pred_obs_dim,
-            depth=4,
-            num_heads=3,
-            mlp_ratio=4.0,
-            dropout=0.0,
+            depth=config.vit.depth,
+            num_heads=config.vit.num_heads,
+            mlp_ratio=config.vit.mlp_ratio,
+            dropout=config.vit.dropout,
             use_action_token=False,
         )
-
-        print("[pldm/models/predictors.py] ViT.depth", predictor.depth)
-        print("[pldm/models/predictors.py] ViT.num_heads", predictor.num_heads)
+        
+    elif arch == "vit_raw":
+        predictor = ViTRawPredictor(
+            config=config,
+            repr_dim=repr_dim,
+            z_discrete=z_discrete,
+            z_discrete_dists=z_discrete_dists,
+            z_discrete_dim=z_discrete_dim,
+            z_dim=z_dim,
+            z_min_std=z_min_std,
+            posterior_drop_p=posterior_drop_p,
+            prior_arch=prior_arch,
+            posterior_arch=posterior_arch,
+            posterior_input_type=posterior_input_type,
+            posterior_input_dim=posterior_input_dim,
+            action_dim=action_dim,
+            pred_propio_dim=1, #pred_propio_dim
+            pred_obs_dim=pred_obs_dim,
+            depth=config.vit.depth,
+            num_heads=config.vit.num_heads,
+            mlp_ratio=config.vit.mlp_ratio,
+            dropout=config.vit.dropout,
+            use_action_token=False,
+        )
 
 
 

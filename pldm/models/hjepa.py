@@ -121,3 +121,28 @@ class HJEPA(torch.nn.Module):
 
     def update_ema(self):
         self.level1.update_ema()
+
+
+    # def forward_open_token(
+    #     self,
+    #     input_states: torch.Tensor,          # [T+1, B, C, H, W]
+    #     actions: torch.Tensor,               # [T, B, A]
+    #     propio_pos: Optional[torch.Tensor] = None,
+    #     propio_vel: Optional[torch.Tensor] = None,
+    # ) -> ForwardResult:
+    #     forward_result_l1 = None
+
+    #     if self.config.train_l1:
+    #         l1_input_states = input_states
+    #         l1_actions = actions
+    #         l1_propio_pos = propio_pos
+    #         l1_propio_vel = propio_vel
+
+    #         forward_result_l1 = self.level1.forward_open_token(
+    #             l1_input_states,
+    #             l1_actions,
+    #             propio_pos=l1_propio_pos,
+    #             propio_vel=l1_propio_vel,
+    #         )
+
+    #     return ForwardResult(level1=forward_result_l1)

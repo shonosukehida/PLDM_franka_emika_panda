@@ -204,13 +204,14 @@ class JEPA(torch.nn.Module):
                 )
             else:
                 backbone_output = self.backbone.forward_multiple(input_states)
-            
-            # print("[DBG_PROPIO] backbone_output.propio_component.shape:", backbone_output.propio_component.shape)
-            # print("[DBG_STATE] backbone_output.obs_component.shape:", backbone_output.obs_component.shape)
 
             state_encs = backbone_output.encodings
         else:
             state_encs = input_states  # might be problematic for l2
+        # print("self.backbone:", self.backbone)
+        print("backbone_output.encodings.shape: ", backbone_output.encodings.shape) #[2, 16, 17, 1024]
+        print("backbone_output.obs_component.shape:", backbone_output.obs_component.shape) #[2, 16, 16, 1024]
+        print("backbone_output.propio_component.shape:", backbone_output.propio_component.shape) #[2, 16, 1, 1024]
 
         if self.config.momentum > 0:
             if self.config.backbone.propio_dim is not None:
@@ -239,10 +240,16 @@ class JEPA(torch.nn.Module):
             )
 
         T = input_states.shape[0] - 1
+        print("T:", T) #1
 
         pred_output = self.predictor.forward_multiple(
             state_encs, actions, T, compute_posterior=True, alpha=alpha,
         )
+
+        print("pred_output.predictions.shape:", pred_output.predictions.shape)
+        print("pred_output.obs_component.shape:", pred_output.obs_component.shape)
+        print("pred_output.propio_component.shape:", pred_output.propio_component.shape)
+        
 
         return ForwardResult(
             backbone_output=backbone_output,
@@ -328,8 +335,8 @@ class JEPA(torch.nn.Module):
             actions=actions,
         )
 
-
-    def forward_open(
+    #今使っているforward_open
+    def _forward_open(
         self,
         input_states: torch.Tensor,          # [T+1, B, C, H, W]
         actions: torch.Tensor,               # [T, B, A]
@@ -420,6 +427,120 @@ class JEPA(torch.nn.Module):
             actions=actions,
         )
 
+    #ViT用に修正中
+    def forward_open(
+        self,
+        input_states: torch.Tensor,          # [T+1, B, C, H, W]
+        actions: torch.Tensor,               # [T, B, A]
+        propio_pos: Optional[torch.Tensor] = None,
+        propio_vel: Optional[torch.Tensor] = None,
+        chunked_locations: Optional[torch.Tensor] = None,
+        chunked_propio_pos: Optional[torch.Tensor] = None,
+        chunked_propio_vel: Optional[torch.Tensor] = None,
+        goal: Optional[torch.Tensor] = None,
+    ):
+        """
+        open-loop
+        z_t = h(s_t) を毎時刻で使って rollout
+        """
+        T = actions.shape[0]
+        # proprio 用意
+        prop_batch = None
+        if propio_pos is not None and propio_pos.numel():
+            prop_batch = propio_pos
+        if propio_vel is not None and propio_vel.numel():
+            prop_batch = torch.cat([prop_batch, propio_vel], dim=-1) if prop_batch is not None else propio_vel
+
+        # 毎stepの観測をエンコーダに通し, 潜在表現を取得
+        if prop_batch is not None:
+            encoded_seq = self.backbone.forward_multiple(input_states[:T], propio=prop_batch[:T])
+        else:
+            encoded_seq = self.backbone.forward_multiple(input_states[:T])
+        state_encs = encoded_seq.encodings  # [T, B, D] or [T, B, C, H, W]
+        
+        # print("self.backbone:", self.backbone) #VJEPA2RawBackbone
+        # print("T:", T) #1
+        # print("input_states[:T].shape:", input_states[:T].shape) #[1, 16, 3, 64, 64]
+        # print("prop_batch is not None:", prop_batch is not None) #True
+        # if (prop_batch is not None):
+        #     print("prop_batch[:T].shape:", prop_batch[:T].shape) #[1, 16, 14]
+        # print("encoded_seq.type:", type(encoded_seq)) #<class 'pldm.models.encoders.enums.BackboneOutput'>
+        # print("encoded_seq.encodings.shape:", encoded_seq.encodings.shape) #[1, 16, 17, 1024]
+        # print("encoded_seq.obs_component.shape:", encoded_seq.obs_component.shape) #[1, 16, 16, 1024]
+        # print("encoded_seq.propio_component.shape:", encoded_seq.propio_component.shape) #[1, 16, 1, 1024] #[1, 16, 14, 26, 26](conv2)
+
+        # 毎step ダイナミクスモデルに通す
+        state_preds = [state_encs[0]]
+        for t in range(T):
+            pred = self.predictor.forward(state_encs[t], actions[t])
+            state_preds.append(pred)
+        state_preds = torch.stack(state_preds)  # [T + 1, B, C, H, W] 
+        # print("state_preds.shape:", state_preds.shape) #[2, 16, 17, 1024] #[2, 16, 30, 26, 26](conv2)
+
+        # rollout結果, 潜在表現を obs, propio に分割
+        # print("self.predictor.pred_propio_dim:", self.predictor.pred_propio_dim) #1024 #(14, 26, 26)(conv2)
+        # print("encoded_seq.propio_component[0, 0].shape: ", tuple(encoded_seq.propio_component[0, 0].shape)) #
+        
+        
+        propio_channel = tuple(encoded_seq.propio_component[0, 0].shape)
+        # print("propio_channel:", propio_channel)
+        # print("propio_channel == self.predictor.pred_propio_dim", propio_channel == self.predictor.pred_propio_dim)
+        if propio_channel:
+            if isinstance(propio_channel, int):
+                obs_component = state_preds[:, :, :-self.predictor.pred_propio_dim]
+                propio_component = state_preds[:, :, -self.predictor.pred_propio_dim:]
+            else:
+                pred_propio_channels = propio_channel[0]
+                obs_component = state_preds[:, :, :-pred_propio_channels]
+                propio_component = state_preds[:, :, -pred_propio_channels:]
+        else:
+            obs_component = state_preds
+            propio_component = None
+
+        # === 教師信号用 backbone 出力 ===
+        if prop_batch is not None:
+            backbone_output = self.backbone.forward_multiple(
+                input_states, propio=prop_batch
+            )
+        else:
+            backbone_output = self.backbone.forward_multiple(input_states)
+
+        # === EMA teacher（あれば）===
+        if self.config.momentum > 0:
+            with torch.no_grad():
+                if prop_batch is not None:
+                    ema_backbone_output = self.backbone_ema.forward_multiple(
+                        input_states, propio=prop_batch
+                    )
+                else:
+                    ema_backbone_output = self.backbone_ema.forward_multiple(input_states)
+        else:
+            ema_backbone_output = None
+
+        pred_output = PredictorOutput(
+            predictions=state_preds,
+            obs_component=obs_component,
+            propio_component=propio_component,
+            prior_mus=None,
+            prior_vars=None,
+            prior_logits=None,
+            priors=None,
+            posterior_mus=None,
+            posterior_vars=None,
+            posterior_logits=None,
+            posteriors=None,
+        )
+
+        return ForwardResult(
+            backbone_output=backbone_output,
+            ema_backbone_output=ema_backbone_output,
+            pred_output=pred_output,
+            actions=actions,
+        )
+
+
+
+
     def update_ema(self):
         if self.config.momentum > 0:
             for param, ema_param in zip(
@@ -428,3 +549,83 @@ class JEPA(torch.nn.Module):
                 ema_param.data.mul_(self.config.momentum).add_(
                     param.data, alpha=1 - self.config.momentum
                 )
+
+
+
+
+    # def forward_open_token(
+    #     self,
+    #     input_states: torch.Tensor,
+    #     actions: torch.Tensor,
+    #     propio_pos: Optional[torch.Tensor] = None,
+    #     propio_vel: Optional[torch.Tensor] = None,
+    #     chunked_locations: Optional[torch.Tensor] = None,
+    #     chunked_propio_pos: Optional[torch.Tensor] = None,
+    #     chunked_propio_vel: Optional[torch.Tensor] = None,
+    #     goal: Optional[torch.Tensor] = None,
+    # ):
+    #     T = actions.shape[0]
+
+    #     prop_batch = None
+    #     if propio_pos is not None and propio_pos.numel():
+    #         prop_batch = propio_pos
+    #     if propio_vel is not None and propio_vel.numel():
+    #         prop_batch = torch.cat([prop_batch, propio_vel], dim=-1) if prop_batch is not None else propio_vel
+
+    #     # rollout 用の現在状態エンコード
+    #     if prop_batch is not None:
+    #         encoded_seq = self.backbone.forward_multiple(input_states[:T], propio=prop_batch[:T])
+    #     else:
+    #         encoded_seq = self.backbone.forward_multiple(input_states[:T])
+
+    #     state_encs = encoded_seq.encodings   # [T,B,N,D] or [T,B,N+1,D]
+    #     num_obs_tokens = encoded_seq.obs_component.shape[2]   # visual token 数
+
+    #     # rollout
+    #     state_preds = [state_encs[0]]
+    #     for t in range(T):
+    #         pred = self.predictor.forward(state_encs[t], actions[t])   # [B,N,D] or [B,N+1,D]
+    #         state_preds.append(pred)
+    #     state_preds = torch.stack(state_preds)   # [T+1,B,N,D] or [T+1,B,N+1,D]
+
+    #     # token-based split
+    #     obs_component = state_preds[:, :, :num_obs_tokens, :]
+    #     propio_component = None
+    #     if state_preds.shape[2] > num_obs_tokens:
+    #         propio_component = state_preds[:, :, num_obs_tokens:, :]
+
+    #     # teacher
+    #     if prop_batch is not None:
+    #         backbone_output = self.backbone.forward_multiple(input_states, propio=prop_batch)
+    #     else:
+    #         backbone_output = self.backbone.forward_multiple(input_states)
+
+    #     if self.config.momentum > 0:
+    #         with torch.no_grad():
+    #             if prop_batch is not None:
+    #                 ema_backbone_output = self.backbone_ema.forward_multiple(input_states, propio=prop_batch)
+    #             else:
+    #                 ema_backbone_output = self.backbone_ema.forward_multiple(input_states)
+    #     else:
+    #         ema_backbone_output = None
+
+    #     pred_output = PredictorOutput(
+    #         predictions=state_preds,
+    #         obs_component=obs_component,
+    #         propio_component=propio_component,
+    #         prior_mus=None,
+    #         prior_vars=None,
+    #         prior_logits=None,
+    #         priors=None,
+    #         posterior_mus=None,
+    #         posterior_vars=None,
+    #         posterior_logits=None,
+    #         posteriors=None,
+    #     )
+
+    #     return ForwardResult(
+    #         backbone_output=backbone_output,
+    #         ema_backbone_output=ema_backbone_output,
+    #         pred_output=pred_output,
+    #         actions=actions,
+    #     )

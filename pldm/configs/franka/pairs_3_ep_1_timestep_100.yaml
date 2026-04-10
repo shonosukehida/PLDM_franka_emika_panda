@@ -54,7 +54,7 @@ hjepa:
   disable_l2: true
   level1:
     backbone:
-      arch: vjepa2 #menet6/vjepa2
+      arch: vjepa2_raw #menet6/vjepa2/vjepa2_raw
       backbone_subclass: d4rl_a
       backbone_mlp: null
       backbone_width_factor: 2
@@ -73,7 +73,7 @@ hjepa:
     predictor:
       residual: true
       action_encoder_arch: 'id'
-      predictor_arch: vit
+      predictor_arch: vit_raw #conv2, vit, vit_raw
       predictor_subclass: franka_b_p
       rnn_converter_arch: ''
       rnn_layers: 1
@@ -83,10 +83,10 @@ hjepa:
 
       vit:
         depth: 4
-        num_heads: 3
+        num_heads: 4
         mlp_ratio: 4.0
         dropout: 0.1
-        use_action_token: true
+        use_action_token: false
     encode_only: false
     use_z_goal: false
     action_dim: 7
@@ -100,7 +100,7 @@ objectives_l1:
   idm:
     action_dim: 7
     coeff: 5.0 #5.3964
-    arch: 'conv'
+    arch: '' #'conv'
     use_pred: false
     arch_subclass: a
   clsd_objectives:

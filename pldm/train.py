@@ -256,7 +256,6 @@ class Trainer:
             use_propio_vel=use_propio_vel,
         ).to(self.device)
         self.model = self.model.to(self.device)
-        print("[DBG][pldm/train.py] cfg sigreg coeff:", self.config.objectives_l1.sigreg.coeff)
         
 
         # create clsd objectives
@@ -488,15 +487,26 @@ class Trainer:
                 
                 with torch.no_grad():
                     
+                    print("self.model.level1.config.predictor.predictor_arch", self.model.level1.config.predictor.predictor_arch) #vit_raw
+                    print("[pldm/train.py] s.shape:", s.shape) #[2, 16, 3, 64, 64]
+                    print("[pldm/train.py] a.shape:", a.shape) #[1, 16, 7]
+                    print("[pldm/train.py] propio_pos.shape:", optional_fields.get("propio_pos", None).shape) #[2, 16, 7]
+                    print("[pldm/train.py] propio_vel.shape:", optional_fields.get("propio_vel", None).shape) #[2, 16, 7]
                     
-                    #実際のopen_forward
-                    open_output = self.model.forward_open(
-                        input_states=s,  # [T, B, C, H, W] = [15, 64, 3, 64, 64]
-                        actions=a,       # [T - 1, B, D] = [14, 64, 2]
-                        propio_pos=optional_fields.get("propio_pos", None), #[T, B, D]
-                        propio_vel=optional_fields.get("propio_vel", None), #[T, B, D]
-                    )
+                    if "vit" not in self.model.level1.config.predictor.predictor_arch or True:
+                        #実際のopen_forward
+                        open_output = self.model.forward_open(
+                            input_states=s,  # [T, B, C, H, W] = [15, 64, 3, 64, 64]
+                            actions=a,       # [T - 1, B, D] = [14, 64, 2]
+                            propio_pos=optional_fields.get("propio_pos", None), #[T, B, D]
+                            propio_vel=optional_fields.get("propio_vel", None), #[T, B, D]
+                        )
+                    else:
+                        pass
                     mem("after forward_open")
+                    print('[DBG][pldm/train.py] pred_output.obs_component.shape:', open_output.level1.pred_output.obs_component.shape) #[70, 16, 16, 26, 26]=[T,B,C,H,W]
+                    print('[DBG][pldm/train.py] pred_output.predictions: ', open_output.level1.pred_output.predictions.shape) #[70, 16, 30, 26, 26]=[T,B,C,H,W]
+                    print('[DBG][pldm/train.py] pred_output.propio_component: ', open_output.level1.pred_output.propio_component.shape) #[70, 16, 14, 26, 26]=[T,B,C,H,W]
                     
                     open_loss_infos = [
                         objective(batch, [open_output.level1])

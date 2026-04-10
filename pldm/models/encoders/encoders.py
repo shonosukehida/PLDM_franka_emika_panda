@@ -17,7 +17,7 @@ from pldm.models.encoders.enums import BackboneConfig, BackboneOutput
 from pldm.models.encoders.base_class import SequenceBackbone
 from pldm.models.encoders.impala import ImpalaEncoder
 
-from pldm.models.encoders.vjepa2_backbone import VJEPA2Backbone
+from pldm.models.encoders.vjepa2_backbone import VJEPA2Backbone, VJEPA2RawBackbone
 
 ResNet18 = resnet18
 ResNet18ID = resnet18ID
@@ -455,6 +455,16 @@ def build_backbone(
             out_obs_channels=16,
             total_channels=30,
             out_hw=config.vjepa2_adapter_hw,
+            freeze=config.vjepa2_freeze,
+            img_size=getattr(config, "vjepa2_img_size", 64),
+            propio_dim=config.propio_dim,
+            propio_encoder_arch=config.propio_encoder_arch,
+            chunk_size=config.vjepa2_chunk_size,
+            normalizer=normalizer,
+        )
+    elif arch == "vjepa2_raw":
+        backbone = VJEPA2RawBackbone(
+            repo=config.vjepa2_repo,
             freeze=config.vjepa2_freeze,
             img_size=getattr(config, "vjepa2_img_size", 64),
             propio_dim=config.propio_dim,
