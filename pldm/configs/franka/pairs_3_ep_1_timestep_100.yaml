@@ -25,7 +25,7 @@ data:
     random_actions: false
     img_size: 64
     alpha: 0.6
-    batch_size: 16 #128
+    batch_size: 8 #128
     beta: 0.4
     crop_length: null
     images_path: pldm_envs/franka/presaved_datasets/pairs_3_ep_1_timestep_100/images.npy
@@ -70,6 +70,8 @@ hjepa:
       vjepa2_adapter_channels: 16
       vjepa2_adapter_hw: 26
       vjepa2_chunk_size: 16
+      vjepa2_append_propio_as_token: false
+      vjepa2_append_propio_as_latent: true
     predictor:
       residual: true
       action_encoder_arch: 'id'
@@ -87,6 +89,7 @@ hjepa:
         mlp_ratio: 4.0
         dropout: 0.1
         use_action_token: false
+
     encode_only: false
     use_z_goal: false
     action_dim: 7
@@ -107,13 +110,13 @@ objectives_l1:
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   # - ObjectiveType.SIGReg
-  - ObjectiveType.IDM
+  # - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   opn_objectives:
   - ObjectiveType.VICRegObs
   # - ObjectiveType.VICReg
   # - ObjectiveType.SIGReg
-  - ObjectiveType.IDM
+  # - ObjectiveType.IDM
   - ObjectiveType.PredictionPropio
   vicreg_obs:
     adjust_cov: true

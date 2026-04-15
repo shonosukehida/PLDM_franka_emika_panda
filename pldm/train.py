@@ -487,11 +487,16 @@ class Trainer:
                 
                 with torch.no_grad():
                     
-                    print("self.model.level1.config.predictor.predictor_arch", self.model.level1.config.predictor.predictor_arch) #vit_raw
-                    print("[pldm/train.py] s.shape:", s.shape) #[2, 16, 3, 64, 64]
-                    print("[pldm/train.py] a.shape:", a.shape) #[1, 16, 7]
-                    print("[pldm/train.py] propio_pos.shape:", optional_fields.get("propio_pos", None).shape) #[2, 16, 7]
-                    print("[pldm/train.py] propio_vel.shape:", optional_fields.get("propio_vel", None).shape) #[2, 16, 7]
+                    # print("self.model.level1.config.predictor.predictor_arch", self.model.level1.config.predictor.predictor_arch) #vit_raw
+                    # print("[pldm/train.py] s.shape:", s.shape) #[2, 16, 3, 64, 64]
+                    # print("[pldm/train.py] a.shape:", a.shape) #[1, 16, 7]
+                    propio_pos = optional_fields.get("propio_pos", None)
+                    propio_vel = optional_fields.get("propio_vel", None)
+                    # print("[pldm/train.py] propio_pos.shape:", propio_pos.shape) #[2, 16, 7]
+                    # print("[pldm/train.py] propio_vel.shape:", propio_vel.shape) #[2, 16, 7]
+                    # print("[pldm/train.py] propio_pos.min():", propio_pos.min(), "propio_pos.max():", propio_pos.max(), "propio_pos.mean():", propio_pos.mean(), "propio_pos.std():", propio_pos.std())
+                    # print("[pldm/train.py] propio_vel.min():", propio_vel.min(), "propio_vel.max():", propio_vel.max(), "propio_vel.mean():", propio_vel.mean(), "propio_vel.std():", propio_vel.std())
+                    
                     
                     if "vit" not in self.model.level1.config.predictor.predictor_arch or True:
                         #実際のopen_forward
@@ -504,9 +509,7 @@ class Trainer:
                     else:
                         pass
                     mem("after forward_open")
-                    print('[DBG][pldm/train.py] pred_output.obs_component.shape:', open_output.level1.pred_output.obs_component.shape) #[70, 16, 16, 26, 26]=[T,B,C,H,W]
-                    print('[DBG][pldm/train.py] pred_output.predictions: ', open_output.level1.pred_output.predictions.shape) #[70, 16, 30, 26, 26]=[T,B,C,H,W]
-                    print('[DBG][pldm/train.py] pred_output.propio_component: ', open_output.level1.pred_output.propio_component.shape) #[70, 16, 14, 26, 26]=[T,B,C,H,W]
+
                     
                     open_loss_infos = [
                         objective(batch, [open_output.level1])
@@ -528,9 +531,9 @@ class Trainer:
                 forward_result = self.model.forward_posterior(s.to(self.device), a.to(self.device), alpha = self.config.alpha, **optional_fields)
                 mem("after forward closed")
                 
-                # print('[DBG][pldm/train.py] pred_output.obs_component.shape:', forward_result.level1.pred_output.obs_component.shape) #[70, 16, 16, 26, 26]=[T,B,C,H,W]
-                # print('[DBG][pldm/train.py] pred_output.predictions: ', forward_result.level1.pred_output.predictions.shape) #[70, 16, 30, 26, 26]=[T,B,C,H,W]
-                # print('[DBG][pldm/train.py] pred_output.propio_component: ', forward_result.level1.pred_output.propio_component.shape) #[70, 16, 14, 26, 26]=[T,B,C,H,W]
+                print('[DBG][pldm/train.py] pred_output.obs_component.shape:', forward_result.level1.pred_output.obs_component.shape) #[70, 16, 16, 26, 26]=[T,B,C,H,W]
+                print('[DBG][pldm/train.py] pred_output.predictions: ', forward_result.level1.pred_output.predictions.shape) #[70, 16, 30, 26, 26]=[T,B,C,H,W]
+                print('[DBG][pldm/train.py] pred_output.propio_component: ', forward_result.level1.pred_output.propio_component.shape) #[70, 16, 14, 26, 26]=[T,B,C,H,W]
 
 
                 

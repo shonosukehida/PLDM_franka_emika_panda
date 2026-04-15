@@ -70,6 +70,8 @@ hjepa:
       vjepa2_adapter_channels: 16
       vjepa2_adapter_hw: 26
       vjepa2_chunk_size: 16
+      vjepa2_append_propio_as_token: false
+      vjepa2_append_propio_as_latent: true
 
     predictor:
       residual: true

@@ -29,6 +29,8 @@ class BackboneConfig(ConfigBase):
     vjepa2_adapter_channels: int = 16
     vjepa2_adapter_hw: int = 26
     vjepa2_chunk_size: int = 2
+    vjepa2_append_propio_as_token : bool = False
+    vjepa2_append_propio_as_latent : bool = True
 
 class BackboneOutput:
     def __init__(

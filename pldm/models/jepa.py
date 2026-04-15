@@ -209,9 +209,9 @@ class JEPA(torch.nn.Module):
         else:
             state_encs = input_states  # might be problematic for l2
         # print("self.backbone:", self.backbone)
-        print("backbone_output.encodings.shape: ", backbone_output.encodings.shape) #[2, 16, 17, 1024]
-        print("backbone_output.obs_component.shape:", backbone_output.obs_component.shape) #[2, 16, 16, 1024]
-        print("backbone_output.propio_component.shape:", backbone_output.propio_component.shape) #[2, 16, 1, 1024]
+        # print("backbone_output.encodings.shape: ", backbone_output.encodings.shape) #[2, 16, 17, 1024]
+        # print("backbone_output.obs_component.shape:", backbone_output.obs_component.shape) #[2, 16, 16, 1024]
+        # print("backbone_output.propio_component.shape:", backbone_output.propio_component.shape) #[2, 16, 1, 1024]
 
         if self.config.momentum > 0:
             if self.config.backbone.propio_dim is not None:
@@ -246,9 +246,9 @@ class JEPA(torch.nn.Module):
             state_encs, actions, T, compute_posterior=True, alpha=alpha,
         )
 
-        print("pred_output.predictions.shape:", pred_output.predictions.shape)
-        print("pred_output.obs_component.shape:", pred_output.obs_component.shape)
-        print("pred_output.propio_component.shape:", pred_output.propio_component.shape)
+        # print("pred_output.predictions.shape:", pred_output.predictions.shape)
+        # print("pred_output.obs_component.shape:", pred_output.obs_component.shape)
+        # print("pred_output.propio_component.shape:", pred_output.propio_component.shape)
         
 
         return ForwardResult(
@@ -451,12 +451,12 @@ class JEPA(torch.nn.Module):
         if propio_vel is not None and propio_vel.numel():
             prop_batch = torch.cat([prop_batch, propio_vel], dim=-1) if prop_batch is not None else propio_vel
 
-        # 毎stepの観測をエンコーダに通し, 潜在表現を取得
+        # 毎stepの観測をエンコーダに通し, 潜在表現を取得]
         if prop_batch is not None:
             encoded_seq = self.backbone.forward_multiple(input_states[:T], propio=prop_batch[:T])
         else:
             encoded_seq = self.backbone.forward_multiple(input_states[:T])
-        state_encs = encoded_seq.encodings  # [T, B, D] or [T, B, C, H, W]
+        state_encs = encoded_seq.encodings  # [T, B, D] or [T, B, C, H, W] or [T, B, N, D]
         
         # print("self.backbone:", self.backbone) #VJEPA2RawBackbone
         # print("T:", T) #1
@@ -481,18 +481,25 @@ class JEPA(torch.nn.Module):
         # print("self.predictor.pred_propio_dim:", self.predictor.pred_propio_dim) #1024 #(14, 26, 26)(conv2)
         # print("encoded_seq.propio_component[0, 0].shape: ", tuple(encoded_seq.propio_component[0, 0].shape)) #
         
-        
+        print("state_encs.shape:", state_encs.shape) #[1, 16, 16, 2048]
+        print("encoded_seq.propio_component.shape:", encoded_seq.propio_component.shape) #[1, 16, 1, 16, 1024]
         propio_channel = tuple(encoded_seq.propio_component[0, 0].shape)
-        # print("propio_channel:", propio_channel)
-        # print("propio_channel == self.predictor.pred_propio_dim", propio_channel == self.predictor.pred_propio_dim)
+        print("propio_channel:", propio_channel)
+        print("self.predictor.pred_propio_dim:", self.predictor.pred_propio_dim)
         if propio_channel:
             if isinstance(propio_channel, int):
                 obs_component = state_preds[:, :, :-self.predictor.pred_propio_dim]
                 propio_component = state_preds[:, :, -self.predictor.pred_propio_dim:]
             else:
-                pred_propio_channels = propio_channel[0]
-                obs_component = state_preds[:, :, :-pred_propio_channels]
-                propio_component = state_preds[:, :, -pred_propio_channels:]
+                if (len(propio_channel) == 3):
+                    pred_propio_channels = propio_channel[0]
+                    obs_component = state_preds[:, :, :-pred_propio_channels]
+                    propio_component = state_preds[:, :, -pred_propio_channels:]
+                else:
+                    pred_propio_channels = propio_channel[1]
+                    obs_component = state_preds[:, :, :, :-pred_propio_channels]
+                    propio_component = state_preds[:, :, :, -pred_propio_channels:]
+                print("pred_propio_channels:", pred_propio_channels)
         else:
             obs_component = state_preds
             propio_component = None

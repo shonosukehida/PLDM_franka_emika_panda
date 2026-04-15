@@ -217,7 +217,7 @@ class SequencePredictor(torch.nn.Module):
         state_predictions = torch.stack(state_predictions)
         if flatten_output:
             state_predictions = state_predictions.view(t, bs, -1)
-        print("state_predictions.shape:", state_predictions.shape) #[2, 16, 17, 1024](vit) [2, 16, 16, 26, 26](conv2)
+        # print("state_predictions.shape:", state_predictions.shape) #[2, 16, 17, 1024](vit) [2, 16, 16, 26, 26](conv2)
 
         prior_mus = torch.stack(prior_mus) if prior_mus else None
         prior_vars = torch.stack(prior_vars) if prior_vars else None
@@ -228,16 +228,24 @@ class SequencePredictor(torch.nn.Module):
         posterior_logits = torch.stack(posterior_logits) if posterior_logits else None
         posteriors = torch.stack(posteriors) if posteriors else None
 
-        print("repr_dim:", self.repr_dim) #(30, 26, 26)(conv2)
-        print("self.pred_propio_dim:", self.pred_propio_dim) #1024 #(14, 26, 26)(conv2)
+        # print("repr_dim:", self.repr_dim) #(17, 2024) (30, 26, 26)(conv2)
+        # print("self.pred_propio_dim:", self.pred_propio_dim) #1 #(14, 26, 26)(conv2)
+        # print("state_predictions.shape: ", state_predictions.shape)
         if self.pred_propio_dim:
             if isinstance(self.pred_propio_dim, int):
                 obs_component = state_predictions[:, :, : -self.pred_propio_dim]
                 propio_component = state_predictions[:, :, -self.pred_propio_dim :]
             else:
-                pred_propio_channels = self.pred_propio_dim[0]
-                obs_component = state_predictions[:, :, :-pred_propio_channels]
-                propio_component = state_predictions[:, :, -pred_propio_channels:]
+                if (len(self.pred_propio_dim) == 3):
+                    pred_propio_channels = self.pred_propio_dim[0]
+                    # print("pred_propio_channels:", pred_propio_channels)
+                    obs_component = state_predictions[:, :, :-pred_propio_channels]
+                    propio_component = state_predictions[:, :, -pred_propio_channels:]
+                else:
+                    pred_propio_channels = self.pred_propio_dim[1]
+                    # print("pred_propio_channels:", pred_propio_channels)
+                    obs_component = state_predictions[:, :, :, :-pred_propio_channels]
+                    propio_component = state_predictions[:, :, :, -pred_propio_channels:]
         else:
             obs_component = state_predictions
             propio_component = None
@@ -600,7 +608,8 @@ class ViTPredictor(SequencePredictor):
 
         a = self.action_proj(curr_action)  # [B, C]
 
-        if self.use_action_token:
+        print("self.use_action_token:", self.use_action_token)
+        if self.use_action_token: #False
             a_token = a.unsqueeze(1)  # [B, 1, C]
             x = torch.cat([a_token, x], dim=1)
             x = x + self.pos_embed[:, :x.shape[1], :]
@@ -618,6 +627,7 @@ class ViTPredictor(SequencePredictor):
         # [B, N, C] -> [B, C, H, W]
         x = x.transpose(1, 2).reshape(b, c, h, w)
 
+        # print("[ViTPred] self.config.residual:", self.config.residual) #True
         if self.config.residual:
             x = x + current_state
 
@@ -668,7 +678,8 @@ class ViTRawPredictor(SequencePredictor):
             pred_obs_dim=pred_obs_dim,
         )
 
-        # repr_dim = (N, D) を想定
+        # repr_dim = (N + 1, D) を想定
+        # print("[pldm/models/predictors.py] rper_dim:", repr_dim) #(17, 1024)
         assert isinstance(repr_dim, (tuple, list)) and len(repr_dim) == 2, \
             f"RawTokenViTPredictor expects repr_dim=(N,D), got {repr_dim}"
 
@@ -713,10 +724,12 @@ class ViTRawPredictor(SequencePredictor):
         assert n == self.num_tokens and d == self.embed_dim, \
             f"Expected {(self.num_tokens, self.embed_dim)}, got {(n, d)}"
 
-        x = current_state  # [B, N, D]
+        x = current_state  # [B, N + 1, D]
 
         a = self.action_proj(curr_action)  # [B, D]
+        print("a.shape:", a.shape) #[16, 1024]
 
+        print("self.use_action_token:", self.use_action_token) #False
         if self.use_action_token:
             a_token = a.unsqueeze(1)  # [B, 1, D]
             x = torch.cat([a_token, x], dim=1)  # [B, N+1, D]
@@ -724,16 +737,25 @@ class ViTRawPredictor(SequencePredictor):
             x = self.pos_drop(x)
             x = self.transformer(x)
             x = x[:, 1:, :]  # action token を除去
-        else:
-            x = x + a.unsqueeze(1)  # [B, N, D]
+        else:   
+            a_token = a.unsqueeze(1)
+            # print("[0]x.shape:", x.shape) #[16, 16, 2048]
+            x = x + a_token  # [B, N, D]
+            # print("a_token.shape: ", a_token.shape) #[16, 1, 2048]
+            # print("[1]x.shape:", x.shape) #[16, 16, 2048]
             x = x + self.pos_embed[:, :x.shape[1], :]
+            # print("[2]x.shape:", x.shape) #[16, 16, 2048]
             x = self.pos_drop(x)
+            # print("[3]x.shape:", x.shape) #[16, 16, 2048]
             x = self.transformer(x)
+            # print("[4]x.shape:", x.shape) #[16, 16, 2048]
 
         x = self.out_proj(x)
-
+        # print("self.config.redidual:", self.config.residual) #True
         if self.config.residual:
             x = x + current_state
+        
+        # print("[5]x.shape:", x.shape) #[16, 16, 2048]
 
         return x
 
@@ -1026,13 +1048,13 @@ def build_predictor(
             posterior_input_type=posterior_input_type,
             posterior_input_dim=posterior_input_dim,
             action_dim=action_dim,
-            pred_propio_dim=1, #pred_propio_dim
+            pred_propio_dim=(16, 1024), #pred_propio_dim
             pred_obs_dim=pred_obs_dim,
             depth=config.vit.depth,
             num_heads=config.vit.num_heads,
             mlp_ratio=config.vit.mlp_ratio,
             dropout=config.vit.dropout,
-            use_action_token=False,
+            use_action_token=config.vit.use_action_token,
         )
 
 

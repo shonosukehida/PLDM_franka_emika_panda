@@ -471,6 +471,8 @@ def build_backbone(
             propio_encoder_arch=config.propio_encoder_arch,
             chunk_size=config.vjepa2_chunk_size,
             normalizer=normalizer,
+            append_propio_as_token=config.vjepa2_append_propio_as_token,
+            append_propio_as_latent=config.vjepa2_append_propio_as_latent,
         )
     elif arch == "mlp":
         backbone = MLPEncoder(
