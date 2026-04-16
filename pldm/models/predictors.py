@@ -228,27 +228,56 @@ class SequencePredictor(torch.nn.Module):
         posterior_logits = torch.stack(posterior_logits) if posterior_logits else None
         posteriors = torch.stack(posteriors) if posteriors else None
 
+        print("predictor_arch:", self.config.predictor_arch)
+        print("predictor_propio_conditioning:", self.config.vit.propio_conditioning)
+        
         # print("repr_dim:", self.repr_dim) #(17, 2024) (30, 26, 26)(conv2)
-        # print("self.pred_propio_dim:", self.pred_propio_dim) #1 #(14, 26, 26)(conv2)
-        # print("state_predictions.shape: ", state_predictions.shape)
+        print("self.pred_propio_dim:", self.pred_propio_dim) #1 #(14, 26, 26)(conv2)
+        print("state_predictions.shape: ", state_predictions.shape)
         if self.pred_propio_dim:
-            if isinstance(self.pred_propio_dim, int):
-                obs_component = state_predictions[:, :, : -self.pred_propio_dim]
-                propio_component = state_predictions[:, :, -self.pred_propio_dim :]
-            else:
-                if (len(self.pred_propio_dim) == 3):
-                    pred_propio_channels = self.pred_propio_dim[0]
-                    # print("pred_propio_channels:", pred_propio_channels)
-                    obs_component = state_predictions[:, :, :-pred_propio_channels]
-                    propio_component = state_predictions[:, :, -pred_propio_channels:]
+            if "vit" not in self.config.predictor_arch:
+                if isinstance(self.pred_propio_dim, int):
+                    obs_component = state_predictions[:, :, : -self.pred_propio_dim]
+                    propio_component = state_predictions[:, :, -self.pred_propio_dim :]
                 else:
-                    pred_propio_channels = self.pred_propio_dim[1]
-                    # print("pred_propio_channels:", pred_propio_channels)
-                    obs_component = state_predictions[:, :, :, :-pred_propio_channels]
-                    propio_component = state_predictions[:, :, :, -pred_propio_channels:]
+                    if (len(self.pred_propio_dim) == 3):
+                        pred_propio_channels = self.pred_propio_dim[0]
+                        # print("pred_propio_channels:", pred_propio_channels)
+                        obs_component = state_predictions[:, :, :-pred_propio_channels]
+                        propio_component = state_predictions[:, :, -pred_propio_channels:]
+                    else:
+                        pred_propio_channels = self.pred_propio_dim[1]
+                        # print("pred_propio_channels:", pred_propio_channels)
+                        obs_component = state_predictions[:, :, :, :-pred_propio_channels]
+                        propio_component = state_predictions[:, :, :, -pred_propio_channels:]
+            else:
+                if isinstance(self.pred_propio_dim, int):
+                    obs_component = state_predictions[:, :, : -self.pred_propio_dim]
+                    propio_component = state_predictions[:, :, -self.pred_propio_dim :]
+                else:
+                    if (len(self.pred_propio_dim) == 3):
+                        pred_propio_channels = self.pred_propio_dim[0]
+                        # print("pred_propio_channels:", pred_propio_channels)
+                        obs_component = state_predictions[:, :, :-pred_propio_channels]
+                        propio_component = state_predictions[:, :, -pred_propio_channels:]
+                    else:
+                        if self.config.vit.propio_conditioning == "token":
+                            pred_propio_channels = self.pred_propio_dim[0]
+                            # print("pred_propio_channels:", pred_propio_channels)
+                            obs_component = state_predictions[:, :, :-pred_propio_channels]
+                            propio_component = state_predictions[:, :, -pred_propio_channels:]
+                        elif self.config.vit.propio_conditioning == "latent":
+                            pred_propio_channels = self.pred_propio_dim[1]
+                            # print("pred_propio_channels:", pred_propio_channels)
+                            obs_component = state_predictions[:, :, :, :-pred_propio_channels]
+                            propio_component = state_predictions[:, :, :, -pred_propio_channels:]
+                        
+                        
         else:
             obs_component = state_predictions
             propio_component = None
+        print("obs_component:", obs_component.shape)
+        print("propio_component:", propio_component.shape)
 
         output = PredictorOutput(
             predictions=state_predictions,
@@ -678,7 +707,7 @@ class ViTRawPredictor(SequencePredictor):
             pred_obs_dim=pred_obs_dim,
         )
 
-        # repr_dim = (N + 1, D) を想定
+
         # print("[pldm/models/predictors.py] rper_dim:", repr_dim) #(17, 1024)
         assert isinstance(repr_dim, (tuple, list)) and len(repr_dim) == 2, \
             f"RawTokenViTPredictor expects repr_dim=(N,D), got {repr_dim}"
@@ -713,6 +742,9 @@ class ViTRawPredictor(SequencePredictor):
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=self.depth)
 
         self.out_proj = nn.Identity()
+        
+        # print("propio_conditioning:", config.vit.propio_conditioning)
+
 
     def forward(self, current_state, curr_action):
         """
@@ -963,6 +995,7 @@ def build_predictor(
     pred_obs_dim: Union[int, tuple],
     backbone_ln: Optional[torch.nn.Module] = None,
 ):
+    print("[build_predictor] pred_propio_dim", pred_propio_dim)
     arch = config.predictor_arch
     predictor_subclass = config.predictor_subclass
     rnn_layers = config.rnn_layers
@@ -1048,7 +1081,7 @@ def build_predictor(
             posterior_input_type=posterior_input_type,
             posterior_input_dim=posterior_input_dim,
             action_dim=action_dim,
-            pred_propio_dim=(16, 1024), #pred_propio_dim
+            pred_propio_dim=pred_propio_dim, #pred_propio_dim
             pred_obs_dim=pred_obs_dim,
             depth=config.vit.depth,
             num_heads=config.vit.num_heads,

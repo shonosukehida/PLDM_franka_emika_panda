@@ -481,8 +481,12 @@ class JEPA(torch.nn.Module):
         # print("self.predictor.pred_propio_dim:", self.predictor.pred_propio_dim) #1024 #(14, 26, 26)(conv2)
         # print("encoded_seq.propio_component[0, 0].shape: ", tuple(encoded_seq.propio_component[0, 0].shape)) #
         
-        print("state_encs.shape:", state_encs.shape) #[1, 16, 16, 2048]
-        print("encoded_seq.propio_component.shape:", encoded_seq.propio_component.shape) #[1, 16, 1, 16, 1024]
+        
+
+        print("hasattr(self.backbone, propio_conditioning):", hasattr(self.backbone, "propio_conditioning"))
+        
+        print("state_encs.shape:", state_encs.shape) 
+        print("encoded_seq.propio_component.shape:", encoded_seq.propio_component.shape) #[1, 8, 1, 1024]
         propio_channel = tuple(encoded_seq.propio_component[0, 0].shape)
         print("propio_channel:", propio_channel)
         print("self.predictor.pred_propio_dim:", self.predictor.pred_propio_dim)
@@ -491,14 +495,25 @@ class JEPA(torch.nn.Module):
                 obs_component = state_preds[:, :, :-self.predictor.pred_propio_dim]
                 propio_component = state_preds[:, :, -self.predictor.pred_propio_dim:]
             else:
-                if (len(propio_channel) == 3):
-                    pred_propio_channels = propio_channel[0]
-                    obs_component = state_preds[:, :, :-pred_propio_channels]
-                    propio_component = state_preds[:, :, -pred_propio_channels:]
+                if (not hasattr(self.backbone, "propio_conditioning")):
+                    if (len(propio_channel) == 3):
+                        pred_propio_channels = propio_channel[0]
+                        obs_component = state_preds[:, :, :-pred_propio_channels]
+                        propio_component = state_preds[:, :, -pred_propio_channels:]
+                    else:
+                        pred_propio_channels = propio_channel[1]
+                        obs_component = state_preds[:, :, :, :-pred_propio_channels]
+                        propio_component = state_preds[:, :, :, -pred_propio_channels:] 
                 else:
-                    pred_propio_channels = propio_channel[1]
-                    obs_component = state_preds[:, :, :, :-pred_propio_channels]
-                    propio_component = state_preds[:, :, :, -pred_propio_channels:]
+                    if (self.backbone.propio_conditioning == "token"):
+                        pred_propio_channels = propio_channel[0]
+                        obs_component = state_preds[:, :, :-pred_propio_channels]
+                        propio_component = state_preds[:, :, -pred_propio_channels:]
+                    elif (self.backbone.propio_conditioning == "latent"):
+                        pred_propio_channels = propio_channel[1]
+                        obs_component = state_preds[:, :, :, :-pred_propio_channels]
+                        propio_component = state_preds[:, :, :, -pred_propio_channels:]
+                        
                 print("pred_propio_channels:", pred_propio_channels)
         else:
             obs_component = state_preds

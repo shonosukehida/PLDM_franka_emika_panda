@@ -11,6 +11,7 @@ class ViTConfig:
     mlp_ratio: float = 4.0
     dropout: float = 0.0
     use_action_token: bool = False
+    propio_conditioning: str = "latent"
 
 
 

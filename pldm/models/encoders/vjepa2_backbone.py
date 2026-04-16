@@ -224,24 +224,7 @@ class VJEPA2Backbone(SequenceBackbone):
 
 
 class VJEPA2RawBackbone(SequenceBackbone):
-    """
-    V-JEPA2 の raw token をそのまま返す backbone.
 
-    出力:
-      - obs_component: [BS, N, D]         (forward)
-                       [T, BS, N, D]      (forward_multiple)
-      - propio_component:
-            propio_encoder_arch == "id" のとき
-                [BS, P] / [T, BS, P]
-            MLP を通すとき
-                [BS, P_out] / [T, BS, P_out]
-      - encodings:
-            propio が無いとき
-                visual tokens と同じ [BS, N, D]
-            propio があるとき
-                [BS, N + 1, D] もしくは [T, BS, N + 1, D]
-                （propio を 1 token として後ろに付加）
-    """
 
     def __init__(
         self,
@@ -252,8 +235,7 @@ class VJEPA2RawBackbone(SequenceBackbone):
         propio_encoder_arch: str | None = "id",
         chunk_size: int = 2,
         normalizer=None,
-        append_propio_as_token: bool = False,
-        append_propio_as_latent: bool = True,
+        propio_conditioning="token", #"latent"/"token"
     ):
         super().__init__()
         self.freeze = freeze
@@ -262,8 +244,7 @@ class VJEPA2RawBackbone(SequenceBackbone):
         self.propio_encoder_arch = propio_encoder_arch
         self.chunk_size = chunk_size
         self.normalizer = normalizer
-        self.append_propio_as_token = append_propio_as_token
-        self.append_propio_as_latent = append_propio_as_latent
+        self.propio_conditioning = propio_conditioning
         
 
         self.vjepa2 = AutoModel.from_pretrained(repo)
@@ -283,6 +264,7 @@ class VJEPA2RawBackbone(SequenceBackbone):
         else:
             self.propio_encoder = None
         # print("self.propio_encoder: ", self.propio_encoder)
+        
 
     def _infer_vjepa2_shape_with_dummy_forward(self):
         p = next(self.vjepa2.parameters())
@@ -306,10 +288,6 @@ class VJEPA2RawBackbone(SequenceBackbone):
         return B, N, D
 
     def _build_propio_encoder(self) -> nn.Module:
-        """
-        proprio を token 次元 D に合わせる encoder.
-        最終出力は [BS, D] を想定。
-        """
         # print("enter _build_propio_encoder")
         if (self.propio_encoder_arch is None) or (self.propio_encoder_arch == "id"):
             if self.propio_dim == self.token_dim:
@@ -332,17 +310,6 @@ class VJEPA2RawBackbone(SequenceBackbone):
         return nn.Sequential(*layers)
 
     def forward(self, x, propio=None):
-        """
-        x:      (BS, C, H, W)
-        propio: (BS, propio_dim) or None
-
-        return:
-          BackboneOutput(
-            encodings        = [BS, N, D] or [BS, N+1, D],
-            obs_component    = [BS, N, D],
-            propio_component = [BS, D] or None,
-          )
-        """
         if x.dim() != 4:
             raise ValueError(f"expects (BS,C,H,W), got {tuple(x.shape)}")
 
@@ -367,13 +334,14 @@ class VJEPA2RawBackbone(SequenceBackbone):
             z_prop = self.propio_encoder(propio)  # [BS, D]
             print("[pldm/models/encoders/vjepa2_backbone.py] z_prop.shape:", z_prop.shape) #[1, 1024]
 
-            # print("[pldm/models/encoders/vjepa2_backbone.py] self.append_propio_as_token:", self.append_propio_as_token) #False
-            # print("[pldm/models/encoders/vjepa2_backbone.py] self.append_propio_as_latent:", self.append_propio_as_latent) #True
-            if self.append_propio_as_token and (not self.append_propio_as_latent):
+            print("[before]self.propio_conditioning:", self.propio_conditioning)
+            if self.propio_conditioning == "token":
+                print("[after]token", self.propio_conditioning)
                 z_prop = z_prop.unsqueeze(1)  # [BS, 1, D]
                 # print("[pldm/models/encoders/vjepa2_backbone.py] prop_token.shape:", prop_token.shape) #[16, 1, 1024]
                 enc = torch.cat([z_obs, z_prop], dim=1)  # [BS, N+1, D]
-            elif (not self.append_propio_as_token) and self.append_propio_as_latent:
+            elif self.propio_conditioning == "latent":
+                print("[after]latent", self.propio_conditioning)
                 z_prop = z_prop.unsqueeze(1)
                 z_prop = z_prop.repeat(1, N, 1)
 
@@ -381,11 +349,12 @@ class VJEPA2RawBackbone(SequenceBackbone):
                 # print("enc.shape:", enc.shape)
                 
             else:
-                # 必要なら visual と別で持つ
                 enc = z_obs
-        # print("enc.shape:", enc.shape) #[16, 16, 2048]
-        # print("z_obs.shape:", z_obs.shape) #[16, 16, 1024]
-        # print("z_prop.shape: ", z_prop.shape) #[16, 16, 1024]
+        
+        print("vjepa2RawBackbone")
+        print("enc.shape:", enc.shape) #[16, 16, 2048]
+        print("z_obs.shape:", z_obs.shape) #[16, 16, 1024]
+        print("z_prop.shape: ", z_prop.shape) #[16, 16, 1024]
 
         return BackboneOutput(
             encodings=enc, #[BS, N, D] = [16, 16, 2048]
@@ -394,23 +363,6 @@ class VJEPA2RawBackbone(SequenceBackbone):
         )
 
     def forward_multiple(self, x, propio=None):
-        """
-        x:
-          - (T, BS, C, H, W)
-          - (BS, C, H, W)
-
-        propio:
-          - (T, BS, propio_dim)
-          - (BS, propio_dim)
-          - None
-
-        return:
-          BackboneOutput(
-            encodings        = [T, BS, N, D] or [T, BS, N+1, D],
-            obs_component    = [T, BS, N, D],
-            propio_component = [T, BS, D] or None,
-          )
-        """
 
         if x.dim() == 4:
             return self.forward(x, propio) if propio is not None else self.forward(x)
